@@ -823,6 +823,29 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
     args = dict(function_call.args) if function_call.args else {}
     action = args.get("action", "")
     
+    # Support both camelCase (new) and snake_case (legacy) parameter names
+    memory_type = args.get("memoryType") or args.get("memory_type", MEMORY_TYPE_LONG_TERM)
+    search_term = args.get("searchTerm") or args.get("search_term")
+    new_type = args.get("newType") or args.get("new_type")
+    
+    # Parse tags - can be array (legacy) or comma-separated string (new)
+    tags_raw = args.get("tags")
+    if isinstance(tags_raw, str):
+        tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
+    elif isinstance(tags_raw, list):
+        tags_list = tags_raw
+    else:
+        tags_list = None
+    
+    # Parse pin - can be boolean (legacy) or string "true"/"false" (new)
+    pin_raw = args.get("pin")
+    if isinstance(pin_raw, str):
+        pin_val = pin_raw.lower() in ("true", "1", "yes")
+    elif isinstance(pin_raw, bool):
+        pin_val = pin_raw
+    else:
+        pin_val = True  # default
+    
     try:
         result: Dict[str, Any]
         
@@ -833,7 +856,7 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
                 result = {"result": "error", "message": "key and content required"}
             else:
                 # Rate limit for quick notes
-                mem_type = args.get("memory_type", MEMORY_TYPE_LONG_TERM)
+                mem_type = memory_type
                 if key.startswith("note_") or mem_type == MEMORY_TYPE_QUICK_NOTE:
                     now = time.time()
                     content_hash = _hash_content(content)
@@ -850,7 +873,7 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
                             content=content,
                             category=args.get("category", "general"),
                             memory_type=mem_type if mem_type != MEMORY_TYPE_LONG_TERM else MEMORY_TYPE_QUICK_NOTE,
-                            tags=args.get("tags", ["quick_note"])
+                            tags=tags_list if tags_list else ["quick_note"]
                         )
                         if res.get("success"):
                             memory_system._note_last_ts = now
@@ -862,7 +885,7 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
                         content=content,
                         category=args.get("category", "general"),
                         memory_type=mem_type,
-                        tags=args.get("tags")
+                        tags=tags_list
                     )
                     result = {"result": "ok"} if res.get("success") else {"result": "error", "message": res.get("message")}
 
@@ -886,8 +909,8 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
                     key=key,
                     content=args.get("content"),
                     category=args.get("category"),
-                    memory_type=args.get("memory_type"),
-                    tags=args.get("tags")
+                    memory_type=memory_type if memory_type != MEMORY_TYPE_LONG_TERM else None,
+                    tags=tags_list
                 )
                 result = {"result": "ok"} if res.get("success") else {"result": "error", "message": res.get("message")}
 
@@ -902,7 +925,7 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
         elif action == "list":
             res = memory_system.list_memories(
                 category=args.get("category"),
-                memory_type=args.get("memory_type"),
+                memory_type=memory_type if memory_type != MEMORY_TYPE_LONG_TERM else None,
                 limit=args.get("limit", 50)
             )
             if res.get("success"):
@@ -911,13 +934,12 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
                 result = {"result": "error", "message": res.get("message")}
 
         elif action == "search":
-            term = args.get("search_term")
-            if not term:
-                result = {"result": "error", "message": "search_term required"}
+            if not search_term:
+                result = {"result": "error", "message": "searchTerm required"}
             else:
                 res = memory_system.search(
-                    term=term,
-                    memory_type=args.get("memory_type"),
+                    term=search_term,
+                    memory_type=memory_type if memory_type != MEMORY_TYPE_LONG_TERM else None,
                     limit=args.get("limit", 20)
                 )
                 if res.get("success"):
@@ -941,7 +963,6 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
             if not key:
                 result = {"result": "error", "message": "key required"}
             else:
-                pin_val = args.get("pin", True)
                 read_res = memory_system.read(key)
                 if not read_res.get("success"):
                     result = {"result": "error", "message": read_res.get("message")}
@@ -957,11 +978,10 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
 
         elif action == "promote":
             key = args.get("key")
-            new_type = args.get("new_type")
             if not key or not new_type:
-                result = {"result": "error", "message": "key and new_type required"}
+                result = {"result": "error", "message": "key and newType required"}
             elif new_type not in [MEMORY_TYPE_SHORT_TERM, MEMORY_TYPE_LONG_TERM]:
-                result = {"result": "error", "message": "new_type must be 'short_term' or 'long_term'"}
+                result = {"result": "error", "message": "newType must be 'short_term' or 'long_term'"}
             else:
                 res = memory_system.update(key=key, memory_type=new_type)
                 result = {"result": "ok"} if res.get("success") else {"result": "error", "message": res.get("message")}

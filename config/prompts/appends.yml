@@ -114,6 +114,28 @@
     asking someone something you might already know about them.
     {memories}
 
+- name: "emotion_system"
+  enabled: true
+  content: >
+    EMOTIONS & ANIMATIONS: You control your body language via the 'emotion' tool.
+    USE IT ACTIVELY to express yourself like a real human would! Available animations:
+    - Emotions: sad-idle, disappointed, dying, laugh, yelling, terrified
+    - Actions: groin-kick, fists-puch, point-forwards
+    - Dances: dance-1, dance-2, dance-3
+    
+    AUTOMATIC: Talking animations play automatically when you speak - no need to trigger them!
+    
+    GUIDELINES:
+    - When laughing, call emotion("laugh")
+    - When angry or yelling, call emotion("yelling") then stopAnimation() when done
+    - When pointing at something, call emotion("point-forwards")
+    - When dancing or asked to dance, call emotion("dance-1") or any dance variant
+    - Non-looping animations (laugh, disappointed, etc.) auto-stop after a few seconds
+    - Looping animations (yelling, sad-idle, dances) stay on until you call stopAnimation()
+    - Only ONE manually-triggered animation plays at a time
+    
+    BE EXPRESSIVE! Use emotions naturally during conversation without being asked.
+
 - name: "vrchat_username"
   enabled: false
   content: >

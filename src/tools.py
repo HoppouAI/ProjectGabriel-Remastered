@@ -2,16 +2,16 @@ import asyncio
 import logging
 from google.genai import types
 from src.memory import get_memory_tools, handle_memory_function_call
+from src.emotions import generate_emotion_function_declarations, handle_emotion_function_call, get_emotion_system
 
 logger = logging.getLogger(__name__)
 
 
-def get_tool_declarations():
-    return [
-        types.Tool(google_search=types.GoogleSearch()),
-        types.Tool(function_declarations=[
-            types.FunctionDeclaration(
-                name="play_sound_effect",
+def get_tool_declarations(config=None):
+    # Base function declarations - NO UNDERSCORES to avoid 1011 errors with Gemini Live
+    function_decls = [
+        types.FunctionDeclaration(
+                name="playSoundEffect",
                 description="Search and play a sound effect from MyInstants website",
                 parameters={
                     "type": "OBJECT",
@@ -22,12 +22,12 @@ def get_tool_declarations():
                 },
             ),
             types.FunctionDeclaration(
-                name="list_music",
+                name="listMusic",
                 description="List all available local music files that can be played",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="play_music",
+                name="playMusic",
                 description="Play a local music file by filename",
                 parameters={
                     "type": "OBJECT",
@@ -39,22 +39,22 @@ def get_tool_declarations():
                 },
             ),
             types.FunctionDeclaration(
-                name="stop_music",
+                name="stopMusic",
                 description="Stop currently playing music",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="pause_music",
+                name="pauseMusic",
                 description="Pause the currently playing music. Can be resumed later.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="resume_music",
+                name="resumeMusic",
                 description="Resume paused music playback.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="set_music_volume",
+                name="setMusicVolume",
                 description="Adjust the music volume while playing. Only works for volumes 0-100 during playback.",
                 parameters={
                     "type": "OBJECT",
@@ -65,7 +65,7 @@ def get_tool_declarations():
                 },
             ),
             types.FunctionDeclaration(
-                name="set_voice_boost",
+                name="setVoiceBoost",
                 description="Set voice boost level for loud distorted bass-boosted yelling effect on your microphone output",
                 parameters={
                     "type": "OBJECT",
@@ -76,61 +76,61 @@ def get_tool_declarations():
                 },
             ),
             types.FunctionDeclaration(
-                name="toggle_vrchat_mic",
+                name="toggleVrchatMic",
                 description="Mute or unmute the VRChat microphone",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "muted": {"type": "BOOLEAN", "description": "True to mute, False to unmute"},
+                        "muted": {"type": "STRING", "description": "Set to 'true' to mute, 'false' to unmute"},
                     },
                     "required": ["muted"],
                 },
             ),
             types.FunctionDeclaration(
-                name="follow_person",
+                name="followPerson",
                 description="Enable or disable following a person using YOLO vision tracking in VRChat",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "enabled": {"type": "BOOLEAN", "description": "True to start following, False to stop"},
+                        "enabled": {"type": "STRING", "description": "Set to 'true' to start following, 'false' to stop"},
                     },
                     "required": ["enabled"],
                 },
             ),
             types.FunctionDeclaration(
-                name="list_personalities",
+                name="listPersonalities",
                 description="List all available personality modes that can be switched to",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="switch_personality",
+                name="switchPersonality",
                 description="Switch to a different personality mode. This changes behavior and response style.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "personality_id": {"type": "STRING", "description": "The ID of the personality to switch to (e.g., 'chill', 'scammer', 'tsundere')"},
+                        "personalityId": {"type": "STRING", "description": "The ID of the personality to switch to (e.g., 'chill', 'scammer', 'tsundere')"},
                     },
-                    "required": ["personality_id"],
+                    "required": ["personalityId"],
                 },
             ),
             types.FunctionDeclaration(
-                name="get_current_personality",
+                name="getCurrentPersonality",
                 description="Get information about the currently active personality mode",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="vrchat_crouch",
+                name="vrchatCrouch",
                 description="Toggle crouch in VRChat. Press once to crouch, press again to stand up.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="vrchat_crawl",
+                name="vrchatCrawl",
                 description="Toggle crawl/prone position in VRChat. Press once to go prone, press again to stand up.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="vrchat_move",
-                description="Start walking in a direction in VRChat. The avatar will keep moving until stop_movement is called.",
+                name="vrchatMove",
+                description="Start walking in a direction in VRChat. The avatar will keep moving until stopMovement is called.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -141,16 +141,16 @@ def get_tool_declarations():
                 },
             ),
             types.FunctionDeclaration(
-                name="vrchat_stop",
+                name="vrchatStop",
                 description="Stop all movement in VRChat immediately.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
-                name="vrchat_jump",
+                name="vrchatJump",
                 description="Make the avatar jump in VRChat.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
-            # Memory system (unified action-based)
+            # Memory system (unified action-based) - NO BOOLEAN/ARRAY types to avoid 1008
             types.FunctionDeclaration(
                 name="memory",
                 description="Persistent memory system. Actions: save, read, update, delete, list, search, stats, pin, promote. Memory types: 'long_term' (permanent), 'short_term' (7 days), 'quick_note' (6 hours).",
@@ -161,17 +161,31 @@ def get_tool_declarations():
                         "key": {"type": "STRING", "description": "Memory identifier (required for most actions)"},
                         "content": {"type": "STRING", "description": "Content to store (required for save)"},
                         "category": {"type": "STRING", "description": "Category (e.g., 'personal', 'facts')"},
-                        "memory_type": {"type": "STRING", "description": "Type: long_term, short_term, quick_note"},
-                        "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Tags for organization"},
-                        "search_term": {"type": "STRING", "description": "Search query (for search action)"},
+                        "memoryType": {"type": "STRING", "description": "Type: long_term, short_term, quick_note"},
+                        "tags": {"type": "STRING", "description": "Comma-separated tags for organization (e.g., 'important,friend,vrc')"},
+                        "searchTerm": {"type": "STRING", "description": "Search query (for search action)"},
                         "limit": {"type": "INTEGER", "description": "Max results (default 20)"},
-                        "new_type": {"type": "STRING", "description": "Target type for promote action"},
-                        "pin": {"type": "BOOLEAN", "description": "Pin status for pin action"},
+                        "newType": {"type": "STRING", "description": "Target type for promote action"},
+                        "pin": {"type": "STRING", "description": "Set to 'true' to pin, 'false' to unpin (pinned memories won't auto-delete)"},
                     },
                     "required": ["action"],
                 },
             ),
-        ]),
+        ]
+    
+    # Add emotion function declarations if enabled
+    if config:
+        emotion_decls = generate_emotion_function_declarations(config)
+        for decl in emotion_decls:
+            function_decls.append(types.FunctionDeclaration(
+                name=decl["name"],
+                description=decl["description"],
+                parameters=decl["parameters"],
+            ))
+    
+    return [
+        types.Tool(google_search=types.GoogleSearch()),
+        types.Tool(function_declarations=function_decls),
     ]
 
 
@@ -197,52 +211,70 @@ class ToolHandler:
                 return types.FunctionResponse(
                     id=function_call.id,
                     name=name,
-                    response={"error": str(e)},
+                    response={"result": "error", "message": str(e)},
+                )
+        
+        # Emotion functions return FunctionResponse directly
+        if name in ("emotion", "stopAnimation"):
+            try:
+                return await handle_emotion_function_call(function_call)
+            except Exception as e:
+                logger.error(f"Emotion tool failed: {e}")
+                return types.FunctionResponse(
+                    id=function_call.id,
+                    name=name,
+                    response={"result": "error", "message": str(e)},
                 )
         
         try:
             result = await self._dispatch(name, args)
         except Exception as e:
             logger.error(f"Tool {name} failed: {e}")
-            result = {"error": str(e)}
+            result = {"result": "error", "message": str(e)}
+        
+        # CRITICAL: Always return a valid FunctionResponse to prevent 1008 errors
         return types.FunctionResponse(
             id=function_call.id,
             name=name,
-            response=result,
+            response=result if result else {"result": "ok"},
         )
 
     async def _dispatch(self, name, args):
-        if name == "play_sound_effect":
+        if name == "playSoundEffect":
             return await self._play_sfx(args["query"])
-        elif name == "list_music":
-            return {"files": self.audio.list_music()}
-        elif name == "play_music":
+        elif name == "listMusic":
+            return {"result": "ok", "files": self.audio.list_music()}
+        elif name == "playMusic":
             ok = self.audio.play_music(args["filename"], args.get("volume", 50))
-            return {"result": "ok" if ok else "file not found"}
-        elif name == "stop_music":
+            return {"result": "ok" if ok else "error", "message": "playing" if ok else "file not found"}
+        elif name == "stopMusic":
             self.audio.stop_music()
             return {"result": "ok"}
-        elif name == "pause_music":
+        elif name == "pauseMusic":
             ok = self.audio.pause_music()
-            return {"result": "ok" if ok else "nothing playing"}
-        elif name == "resume_music":
+            return {"result": "ok" if ok else "error", "message": "paused" if ok else "nothing playing"}
+        elif name == "resumeMusic":
             ok = self.audio.resume_music()
-            return {"result": "ok" if ok else "nothing paused"}
-        elif name == "set_music_volume":
+            return {"result": "ok" if ok else "error", "message": "resumed" if ok else "nothing paused"}
+        elif name == "setMusicVolume":
             ok = self.audio.set_music_volume(args["volume"])
-            return {"result": "ok" if ok else "nothing playing"}
-        elif name == "set_voice_boost":
+            return {"result": "ok" if ok else "error", "message": "volume set" if ok else "nothing playing"}
+        elif name == "setVoiceBoost":
             self.audio.set_boost(args["level"])
-            return {"result": "ok"}
-        elif name == "toggle_vrchat_mic":
+            return {"result": "ok", "level": args["level"]}
+        elif name == "toggleVrchatMic":
             self.osc.toggle_voice()
             return {"result": "ok"}
-        elif name == "follow_person":
-            return await self._toggle_follow(args["enabled"])
-        elif name == "list_personalities":
-            return self.personality.list_personalities()
-        elif name == "switch_personality":
-            result = self.personality.switch(args["personality_id"])
+        elif name == "followPerson":
+            # Convert string "true"/"false" to boolean
+            enabled = str(args.get("enabled", "false")).lower() in ("true", "1", "yes")
+            return await self._toggle_follow(enabled)
+        elif name == "listPersonalities":
+            result = self.personality.list_personalities()
+            result["result"] = "ok"
+            return result
+        elif name == "switchPersonality":
+            result = self.personality.switch(args["personalityId"])
             if "personality_prompt" in result and self.session:
                 await self.session.send_client_content(
                     turns=types.Content(
@@ -252,56 +284,59 @@ class ToolHandler:
                     turn_complete=True,
                 )
             return {k: v for k, v in result.items() if k != "personality_prompt"}
-        elif name == "get_current_personality":
-            return self.personality.get_current()
-        elif name == "vrchat_crouch":
+        elif name == "getCurrentPersonality":
+            result = self.personality.get_current()
+            result["result"] = "ok"
+            return result
+        elif name == "vrchatCrouch":
             self.osc.toggle_crouch()
             return {"result": "ok"}
-        elif name == "vrchat_crawl":
+        elif name == "vrchatCrawl":
             self.osc.toggle_crawl()
             return {"result": "ok"}
-        elif name == "vrchat_move":
+        elif name == "vrchatMove":
             return await self._vrchat_move(args["direction"], args["duration"])
-        elif name == "vrchat_stop":
+        elif name == "vrchatStop":
             self.osc.stop_all_movement()
             return {"result": "ok"}
-        elif name == "vrchat_jump":
+        elif name == "vrchatJump":
             self.osc.jump()
             return {"result": "ok"}
-        return {"error": "unknown function"}
+        # Default fallback - always return something
+        return {"result": "error", "message": f"unknown function: {name}"}
 
     async def _play_sfx(self, query):
         from src.myinstants import search_sound, download_sound
         result = await search_sound(query)
         if not result:
-            return {"error": "no sound found"}
+            return {"result": "error", "message": "no sound found"}
         filepath = await download_sound(result["url"])
         if not filepath:
-            return {"error": "download failed"}
+            return {"result": "error", "message": "download failed"}
         self.audio.play_sfx_file(filepath)
         return {"result": "ok", "name": result["name"]}
 
     async def _toggle_follow(self, enabled):
         if enabled:
             if self._tracking_task and not self._tracking_task.done():
-                return {"result": "already following"}
+                return {"result": "ok", "message": "already following"}
             self.tracker.active = True
             self._tracking_task = asyncio.create_task(
                 self.tracker.tracking_loop(self.osc)
             )
-            return {"result": "ok"}
+            return {"result": "ok", "message": "started following"}
         else:
             self.tracker.active = False
             if self._tracking_task:
                 await self._tracking_task
                 self._tracking_task = None
-            return {"result": "ok"}
+            return {"result": "ok", "message": "stopped following"}
 
     async def _vrchat_move(self, direction: str, duration: float):
         """Move in a direction for a specified duration."""
         direction = direction.lower()
         if direction not in ("forward", "backward", "left", "right"):
-            return {"error": f"Invalid direction: {direction}. Use forward, backward, left, or right."}
+            return {"result": "error", "message": f"Invalid direction: {direction}. Use forward, backward, left, or right."}
         
         # Clamp duration between 0.1 and 600 seconds
         duration = max(0.1, min(600.0, duration))

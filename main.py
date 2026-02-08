@@ -7,6 +7,8 @@ from src.vrchat import VRChatOSC
 from src.tracker import YOLOTracker
 from src.personalities import PersonalityManager
 from src.gemini_live import GeminiLiveSession
+from src.emotions import get_emotion_system
+from src.memory import memory_system
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,13 +17,18 @@ logging.basicConfig(
 logger = logging.getLogger("gabriel")
 
 
-def start_control_server(session):
+def start_control_server(session, audio, personality, memory, get_emotion_fn):
     """Start the control panel server in a separate thread."""
     try:
         from control_server import app, shared_state, run_control_server
         import uvicorn
         
         shared_state["session"] = session
+        shared_state["audio_mgr"] = audio
+        shared_state["personality_mgr"] = personality
+        shared_state["memory_mgr"] = memory
+        # Store reference to getter function since emotion system is initialized later
+        shared_state["get_emotion_fn"] = get_emotion_fn
         logger.info("Starting control panel on http://localhost:8766")
         uvicorn.run(app, host="0.0.0.0", port=8766, log_level="warning")
     except ImportError:
@@ -44,7 +51,11 @@ async def main():
     logger.info(f"OSC → {config.osc_ip}:{config.osc_port}")
 
     # Start control panel in background thread
-    control_thread = threading.Thread(target=start_control_server, args=(session,), daemon=True)
+    control_thread = threading.Thread(
+        target=start_control_server, 
+        args=(session, audio, personality, memory_system, get_emotion_system), 
+        daemon=True
+    )
     control_thread.start()
 
     try:
@@ -53,6 +64,9 @@ async def main():
         logger.info("Shutting down...")
     finally:
         tracker.active = False
+        emotion = get_emotion_system()
+        if emotion:
+            emotion.stop()
         audio.cleanup()
 
 

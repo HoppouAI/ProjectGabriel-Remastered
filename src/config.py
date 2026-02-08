@@ -222,3 +222,11 @@ class Config:
     @property
     def prompt_memory_count(self):
         return self.get("memory", "prompt_memory_count", default=10)
+
+    @property
+    def emotion_enabled(self):
+        return self.get("emotions", "enabled", default=True)
+
+    @property
+    def emotion_config(self):
+        return self.get("emotions", default={}) or {}

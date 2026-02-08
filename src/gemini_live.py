@@ -11,6 +11,7 @@ from google.genai.errors import APIError
 import mss
 from PIL import Image
 from src.tools import get_tool_declarations, ToolHandler
+from src.emotions import init_emotion_system, get_emotion_system
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,13 @@ class GeminiLiveSession:
             "tool_calls": 0,
         }
         self._load_session_handle()
+        
+        # Initialize emotion system
+        self._emotion_system = None
+        if config.emotion_enabled:
+            self._emotion_system = init_emotion_system(config, osc)
+            self._emotion_system.start()
+            logger.info("Emotion system initialized")
 
     def request_reconnect(self):
         """Request a reconnect on next iteration."""
@@ -98,7 +106,7 @@ class GeminiLiveSession:
                     text=self.config.build_system_instruction(self.personality)
                 )]
             ),
-            tools=get_tool_declarations(),
+            tools=get_tool_declarations(self.config),
             output_audio_transcription=transcription_config,
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow()
@@ -356,8 +364,12 @@ class GeminiLiveSession:
                     if response.server_content and response.server_content.model_turn:
                         for part in response.server_content.model_turn.parts:
                             if part.inline_data:
-                                self._speaking = True
-                                self.osc.set_typing(True)
+                                if not self._speaking:
+                                    # AI just started speaking
+                                    self._speaking = True
+                                    self.osc.set_typing(True)
+                                    if self._emotion_system:
+                                        self._emotion_system.start_speaking()
                                 # Audio processing (boost + music fade) happens in _play_audio_loop
                                 await self._audio_in_queue.put(part.inline_data.data)
 
@@ -373,11 +385,15 @@ class GeminiLiveSession:
 
                     if response.server_content and response.server_content.turn_complete:
                         self._speaking = False
+                        if self._emotion_system:
+                            self._emotion_system.stop_speaking()
                         await self._finalize_chatbox()
                         self._transcript_buffer = ""
 
                     if response.server_content and response.server_content.interrupted:
                         self._speaking = False
+                        if self._emotion_system:
+                            self._emotion_system.stop_speaking()
                         self.osc.set_typing(False)
                         self._transcript_buffer = ""
                         while not self._audio_in_queue.empty():
