@@ -63,6 +63,9 @@ class EmotionSystem:
         
         # Get talking animations for auto-switching
         self._talking_anims = [name for name, data in self.animations.items() if data.get('auto_talking', False)]
+        
+        # Track manual animation state (dances, etc.)
+        self._manual_animation_active = False
 
     def set_osc_client(self, osc_client):
         """Set the OSC client after initialization."""
@@ -84,6 +87,11 @@ class EmotionSystem:
     def start_speaking(self):
         """Start talking animations (called when AI begins speaking)."""
         if not self.enabled or self._is_speaking or not self._talking_anims:
+            return
+        
+        # Don't start talking animations if a manual animation is playing
+        if self._manual_animation_active:
+            logger.debug("Manual animation active, skipping talking animations")
             return
         
         self._is_speaking = True
@@ -166,16 +174,22 @@ class EmotionSystem:
             logger.warning(f"No OSC path for animation: {name}")
             return False
         
+        # Stop talking animations first - manual animations take priority
+        if self._is_speaking:
+            self.stop_speaking()
+        
         with self._animation_lock:
-            # Turn off previous animation first (unless it's a talking animation)
-            if self._current_animation and self._current_animation not in self._talking_anims:
+            # Turn off any current animation
+            if self._current_animation:
                 self._send_animation_osc(self._current_animation, False)
             
             # Turn on new animation
             self._current_animation = name
             self._send_animation_osc(name, True)
             
-            # Handle duration for non-looping animations
+            # ALL manual animations block talking (not just looping)
+            self._manual_animation_active = True
+            
             is_looping = anim_data.get('looping', False)
             if not is_looping:
                 anim_duration = duration if duration else anim_data.get('duration', self.default_duration)
@@ -200,6 +214,7 @@ class EmotionSystem:
             if self._current_animation == name and self._animation_end_time == end_time:
                 self._send_animation_osc(name, False)
                 self._current_animation = None
+                self._manual_animation_active = False  # Clear flag when animation auto-stops
                 logger.debug(f"Auto-stopped animation: {name}")
 
     def _send_animation_osc(self, name: str, value: bool):
@@ -234,10 +249,14 @@ class EmotionSystem:
 
     def stop_animation(self) -> Dict[str, Any]:
         """Stop the current animation (except talking animations)."""
+        was_manual = self._manual_animation_active
         with self._animation_lock:
             if self._current_animation and self._current_animation not in self._talking_anims:
                 self._send_animation_osc(self._current_animation, False)
                 self._current_animation = None
+            self._manual_animation_active = False
+        
+        # Note: Talking animations don't auto-resume here - they'll start on next audio chunk
         return {"result": "ok"}
 
 

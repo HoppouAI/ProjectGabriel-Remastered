@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from google import genai
@@ -19,6 +20,17 @@ SESSION_HANDLE_FILE = Path("session_handle.txt")
 SESSION_EXPIRY_HOURS = 2
 
 
+def _broadcast_console(log_type: str, content: str, extra: dict = None):
+    """Broadcast a log entry to the control panel console."""
+    try:
+        from control_server import add_console_log
+        add_console_log(log_type, content, extra)
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+
 class GeminiLiveSession:
     def __init__(self, config, audio_mgr, osc, tracker, personality_mgr):
         self.config = config
@@ -28,6 +40,7 @@ class GeminiLiveSession:
         self.tool_handler = ToolHandler(audio_mgr, osc, tracker, personality_mgr)
         self._speaking = False
         self._transcript_buffer = ""
+        self._input_transcript_buffer = ""  # Buffer for user speech
         self._session_handle = None
         self._handle_fail_count = 0
         self._out_queue = asyncio.Queue(maxsize=5)
@@ -35,6 +48,8 @@ class GeminiLiveSession:
         self._reconnect_requested = False
         self._mic_muted = False
         self._session = None
+        self._last_audio_time = 0  # Track when last audio was received
+        self._idle_timeout = 15.0  # Stop talking animations after 15s idle
         self._usage_metadata = {
             "prompt_tokens": 0,
             "response_tokens": 0,
@@ -107,6 +122,7 @@ class GeminiLiveSession:
                 )]
             ),
             tools=get_tool_declarations(self.config),
+            input_audio_transcription=transcription_config,
             output_audio_transcription=transcription_config,
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow()
@@ -187,6 +203,7 @@ class GeminiLiveSession:
                     config=live_config,
                 ) as session:
                     logger.info("Connected to Gemini Live")
+                    _broadcast_console("info", f"Connected to Gemini Live ({self.config.model})")
                     self._session = session
                     self._handle_fail_count = 0
                     self.tool_handler.session = session
@@ -202,6 +219,7 @@ class GeminiLiveSession:
                             self._play_audio_loop(output_stream),
                             self._reconnect_monitor_loop(),
                             self._now_playing_loop(),
+                            self._idle_check_loop(),
                         ]
                         if self.config.vision_enabled:
                             tasks.append(self._capture_screen_loop())
@@ -219,24 +237,29 @@ class GeminiLiveSession:
                     new_key = self.config.rotate_key()
                     if new_key != old_key:
                         logger.warning("Rate limited — switched API key")
+                        _broadcast_console("info", "Rate limited — switched API key")
                     else:
                         logger.warning("Rate limited — waiting 5s before retry")
+                        _broadcast_console("info", "Rate limited — waiting 5s")
                         await asyncio.sleep(5)
                     continue
                 
                 # 1007 is WebSocket protocol error - reconnect immediately
                 if "1007" in str(e):
                     logger.warning("WebSocket protocol error (1007), reconnecting immediately...")
+                    _broadcast_console("error", "Protocol error (1007), reconnecting...")
                     continue
                 
                 if self._session_handle:
                     self._handle_fail_count += 1
                     if self._handle_fail_count >= 2:
                         logger.warning("Session handle failed twice, clearing and using new session")
+                        _broadcast_console("info", "Session handle expired, starting new session")
                         self._clear_session_handle()
                     else:
                         logger.warning(f"Session handle may be invalid (attempt {self._handle_fail_count}/2)")
                 logger.error(f"API error: {e}")
+                _broadcast_console("error", f"API error: {str(e)[:100]}")
                 await asyncio.sleep(2)
             except Exception as e:
                 err_str = str(e)
@@ -244,16 +267,19 @@ class GeminiLiveSession:
                 # 1007 WebSocket errors - reconnect immediately
                 if "1007" in err_str:
                     logger.warning("WebSocket protocol error (1007), reconnecting immediately...")
+                    _broadcast_console("error", "Protocol error (1007), reconnecting...")
                     continue
                 
                 if self._session_handle:
                     self._handle_fail_count += 1
                     if self._handle_fail_count >= 2:
                         logger.warning("Session handle failed twice, clearing and using new session")
+                        _broadcast_console("info", "Session handle expired, starting new session")
                         self._clear_session_handle()
                     else:
                         logger.warning(f"Session handle may be invalid (attempt {self._handle_fail_count}/2)")
                 logger.error(f"Session error: {e}")
+                _broadcast_console("error", f"Session error: {str(e)[:100]}")
                 await asyncio.sleep(2)
 
     async def _reconnect_monitor_loop(self):
@@ -263,6 +289,20 @@ class GeminiLiveSession:
                 logger.info("Processing reconnect request...")
                 raise Exception("Reconnect requested")
             await asyncio.sleep(0.5)
+
+    async def _idle_check_loop(self):
+        """Monitor for idle state and stop talking animations after timeout."""
+        while True:
+            await asyncio.sleep(1)  # Check every second
+            if self._speaking and self._last_audio_time > 0:
+                idle_time = time.time() - self._last_audio_time
+                if idle_time >= self._idle_timeout:
+                    logger.debug(f"AI idle for {idle_time:.1f}s, stopping talking animations")
+                    self._speaking = False
+                    self._last_audio_time = 0
+                    if self._emotion_system:
+                        self._emotion_system.stop_speaking()
+                    self.osc.set_typing(False)
 
     async def _listen_audio_loop(self, input_stream):
         while True:
@@ -365,14 +405,31 @@ class GeminiLiveSession:
                         for part in response.server_content.model_turn.parts:
                             if part.inline_data:
                                 if not self._speaking:
-                                    # AI just started speaking
+                                    # AI just started speaking - clear user input buffer
                                     self._speaking = True
+                                    self._input_transcript_buffer = ""
                                     self.osc.set_typing(True)
-                                    if self._emotion_system:
-                                        self._emotion_system.start_speaking()
+                                # Try to start talking animations (idempotent, handles manual animation blocking)
+                                if self._emotion_system:
+                                    self._emotion_system.start_speaking()
+                                # Track last audio time for idle detection
+                                self._last_audio_time = time.time()
                                 # Audio processing (boost + music fade) happens in _play_audio_loop
                                 await self._audio_in_queue.put(part.inline_data.data)
 
+                    # Handle input transcription (user speech) - cumulative stream
+                    if (
+                        response.server_content
+                        and hasattr(response.server_content, "input_transcription")
+                        and response.server_content.input_transcription
+                    ):
+                        input_trans = response.server_content.input_transcription
+                        if hasattr(input_trans, "text") and input_trans.text:
+                            # Input transcription is cumulative - just store and display latest
+                            self._input_transcript_buffer = input_trans.text
+                            _broadcast_console("transcription", self._input_transcript_buffer.strip(), {"streaming": True})
+
+                    # Handle output transcription (AI speech) - real-time
                     if (
                         response.server_content
                         and hasattr(response.server_content, "output_transcription")
@@ -382,6 +439,8 @@ class GeminiLiveSession:
                         if hasattr(transcription, "text") and transcription.text:
                             self._transcript_buffer += transcription.text
                             self._update_chatbox()
+                            # Also stream to console in real-time
+                            _broadcast_console("response", transcription.text, {"streaming": True})
 
                     if response.server_content and response.server_content.turn_complete:
                         self._speaking = False
@@ -389,6 +448,7 @@ class GeminiLiveSession:
                             self._emotion_system.stop_speaking()
                         await self._finalize_chatbox()
                         self._transcript_buffer = ""
+                        self._input_transcript_buffer = ""
 
                     if response.server_content and response.server_content.interrupted:
                         self._speaking = False
@@ -396,6 +456,7 @@ class GeminiLiveSession:
                             self._emotion_system.stop_speaking()
                         self.osc.set_typing(False)
                         self._transcript_buffer = ""
+                        self._input_transcript_buffer = ""
                         while not self._audio_in_queue.empty():
                             try:
                                 self._audio_in_queue.get_nowait()
@@ -406,8 +467,14 @@ class GeminiLiveSession:
                         responses = []
                         for fc in response.tool_call.function_calls:
                             logger.info(f"Tool call: {fc.name}")
+                            # Broadcast tool call to console
+                            args_str = json.dumps(dict(fc.args)) if fc.args else "{}"
+                            _broadcast_console("tool_call", f"{fc.name}({args_str[:100]})")
                             self._usage_metadata["tool_calls"] += 1
                             fr = await self.tool_handler.handle(fc)
+                            # Broadcast tool response to console
+                            result_str = json.dumps(fr.response) if fr.response else "{}"
+                            _broadcast_console("tool_response", f"{fc.name} → {result_str[:150]}")
                             responses.append(fr)
                         await session.send_tool_response(function_responses=responses)
 

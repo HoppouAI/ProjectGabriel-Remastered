@@ -15,6 +15,13 @@
     SAYING YOU ARE USING THEM. FOR EXAMPLE IF SOMEONE TELLS YOU TO SEARCH SOMETHING
     YOU MUST CALL THE SEARCH TOOL RATHER THAN JUST SAYING 'I AM SEARCHING THAT'.
 
+- name: "tool_existence"
+  enabled: true
+  content: >
+    ONLY USE TOOLS THAT ACTUALLY EXIST. If someone asks you to do something and there is no
+    tool for it, just say you cannot do that. DO NOT try to call made-up or non-existent tools.
+    If you're unsure whether a tool exists, assume it doesn't and respond normally.
+
 - name: "vrchat_context"
   enabled: true
   content: >

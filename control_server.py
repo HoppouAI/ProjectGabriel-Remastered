@@ -33,7 +33,7 @@ app = FastAPI(title="Gabriel Control Panel")
 
 
 def add_console_log(log_type: str, content: str, extra: dict = None):
-    """Add a log entry to the console buffer and broadcast to clients."""
+    """Add a log entry to the console buffer and schedule broadcast to clients."""
     entry = {
         "type": log_type,
         "content": content,
@@ -41,7 +41,14 @@ def add_console_log(log_type: str, content: str, extra: dict = None):
         "extra": extra or {}
     }
     console_logs.append(entry)
-    # Broadcast will happen via polling or WebSocket
+    # Schedule broadcast in background (non-blocking)
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(broadcast_log(entry))
+    except Exception:
+        pass
     return entry
 
 
@@ -368,26 +375,27 @@ async def index():
             border-color: rgba(255, 107, 157, 0.3);
         }
         .now-playing-content {
-            text-align: center;
-            padding: 0.5rem 0;
+            padding: 0.25rem 0;
         }
         .song-title {
             font-weight: 600;
-            font-size: 0.95rem;
-            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
             color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
-        .song-artist {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            margin-bottom: 1rem;
+        .progress-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
         }
         .progress-bar {
-            width: 100%;
+            flex: 1;
             height: 4px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 2px;
-            margin-bottom: 0.5rem;
             overflow: hidden;
         }
         .progress-fill {
@@ -397,20 +405,19 @@ async def index():
             transition: width 0.3s ease;
         }
         .time-info {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             color: var(--text-muted);
+            min-width: 35px;
         }
         .music-controls {
             display: flex;
-            justify-content: center;
-            gap: 0.5rem;
-            margin-top: 1rem;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.75rem;
         }
         .music-btn {
-            width: 40px;
-            height: 40px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             background: var(--bg-input);
             border: 1px solid var(--border);
@@ -420,25 +427,33 @@ async def index():
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1rem;
+            font-size: 0.85rem;
         }
         .music-btn:hover {
             border-color: var(--music-accent);
             background: rgba(255, 107, 157, 0.15);
         }
         .music-btn.play-btn {
-            width: 50px;
-            height: 50px;
+            width: 38px;
+            height: 38px;
             background: linear-gradient(135deg, var(--music-accent), var(--accent));
             border: none;
-            font-size: 1.2rem;
+            font-size: 1rem;
         }
         .music-btn.play-btn:hover {
             transform: scale(1.05);
         }
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-left: auto;
+        }
+        .volume-label {
+            font-size: 0.8rem;
+        }
         .volume-slider {
-            width: 100%;
-            margin-top: 1rem;
+            width: 70px;
             -webkit-appearance: none;
             height: 4px;
             background: rgba(255, 255, 255, 0.1);
@@ -447,17 +462,50 @@ async def index():
         }
         .volume-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 14px;
-            height: 14px;
+            width: 12px;
+            height: 12px;
             background: var(--accent);
             border-radius: 50%;
             cursor: pointer;
         }
         
         /* Music List */
+        .music-library-card {
+            display: flex;
+            flex-direction: column;
+            max-height: 280px;
+        }
+        .music-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        .music-header-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .upload-btn {
+            padding: 0.3rem 0.6rem;
+            font-size: 0.7rem;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .upload-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
         .music-list {
-            max-height: 250px;
+            flex: 1;
             overflow-y: auto;
+            min-height: 0;
         }
         .music-item {
             display: flex;
@@ -558,6 +606,72 @@ async def index():
             padding: 1.5rem;
         }
         
+        /* Console */
+        .console-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-height: 400px;
+        }
+        .console-card .card-header {
+            justify-content: space-between;
+        }
+        .console {
+            flex: 1;
+            min-height: 200px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+        }
+        .console-entry {
+            padding: 0.3rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .console-entry:last-child {
+            border-bottom: none;
+        }
+        .console-entry.transcription { color: #8be9fd; }
+        .console-entry.response { color: #50fa7b; }
+        .console-entry.tool_call { color: #ffb86c; }
+        .console-entry.tool_response { color: #bd93f9; }
+        .console-entry.error { color: #ff5555; }
+        .console-entry.info { color: var(--text-secondary); }
+        .console-detail {
+            margin-top: 0.25rem;
+            padding-left: 1.5rem;
+            color: var(--text-muted);
+            font-size: 0.7rem;
+        }
+        .text-input-card {
+            flex-shrink: 0;
+        }
+        .btn-icon {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 0.25rem;
+            opacity: 0.6;
+            transition: opacity 0.15s ease;
+        }
+        .btn-icon:hover {
+            opacity: 1;
+        }
+        .column-left {
+            min-width: 250px;
+        }
+        .column-center {
+            display: flex;
+            flex-direction: column;
+        }
+        .column-right {
+            min-width: 280px;
+        }
+        
         /* Toast */
         .toast-container {
             position: fixed;
@@ -647,8 +761,62 @@ async def index():
     </div>
     
     <div class="main-container">
-        <!-- Left Column: Session & Text -->
-        <div class="column">
+        <!-- Left Column: Music -->
+        <div class="column column-left">
+            <div class="card now-playing">
+                <div class="card-header"><span class="icon">🎵</span> Now Playing</div>
+                <div class="now-playing-content">
+                    <div class="song-title" id="songTitle">No music playing</div>
+                    <div class="progress-row">
+                        <span class="time-info" id="currentTime">0:00</span>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                        </div>
+                        <span class="time-info" id="totalTime">0:00</span>
+                    </div>
+                    <div class="music-controls">
+                        <button class="music-btn play-btn" id="playBtn" onclick="togglePlay()">▶️</button>
+                        <button class="music-btn" onclick="stopMusic()">⏹️</button>
+                        <div class="volume-control">
+                            <span class="volume-label">🔊</span>
+                            <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="70" onchange="setVolume(this.value)">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card music-library-card">
+                <div class="music-header-row">
+                    <div class="music-header-title"><span class="icon">📁</span> Music Library</div>
+                    <button class="upload-btn" onclick="openMusicFolder()">📂 Open Folder</button>
+                </div>
+                <div class="music-list" id="musicList">
+                    <div class="memory-empty">Loading music...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Center Column: Console -->
+        <div class="column column-center">
+            <div class="card console-card">
+                <div class="card-header">
+                    <span class="icon">📟</span> Console
+                    <button class="btn-icon" onclick="clearConsole()" title="Clear">🗑️</button>
+                </div>
+                <div class="console" id="console">
+                    <div class="console-entry info">Waiting for connection...</div>
+                </div>
+            </div>
+            <div class="card text-input-card">
+                <div class="input-group">
+                    <input type="text" class="text-input" id="textInput" placeholder="Type message to model..." onkeypress="if(event.key==='Enter')sendText()">
+                    <button class="btn btn-primary" onclick="sendText()">📤 Send</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Column: Controls & Stats -->
+        <div class="column column-right">
             <div class="card">
                 <div class="card-header"><span class="icon">🎤</span> Session Control</div>
                 <div class="btn-group">
@@ -662,55 +830,12 @@ async def index():
             </div>
             
             <div class="card">
-                <div class="card-header"><span class="icon">💬</span> Send Text</div>
-                <div class="input-group">
-                    <input type="text" class="text-input" id="textInput" placeholder="Message to inject..." onkeypress="if(event.key==='Enter')sendText()">
-                    <button class="btn btn-primary" onclick="sendText()">📤</button>
-                </div>
-            </div>
-            
-            <div class="card">
                 <div class="card-header"><span class="icon">🎭</span> Personality</div>
                 <select class="text-input" id="personalitySelect" onchange="switchPersonality()" style="width: 100%;">
                     <option value="">Loading...</option>
                 </select>
             </div>
-        </div>
-        
-        <!-- Middle Column: Music -->
-        <div class="column">
-            <div class="card now-playing">
-                <div class="card-header"><span class="icon">🎵</span> Now Playing</div>
-                <div class="now-playing-content">
-                    <div class="song-title" id="songTitle">No music playing</div>
-                    <div class="song-artist" id="songArtist">—</div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
-                    </div>
-                    <div class="time-info">
-                        <span id="currentTime">0:00</span>
-                        <span id="totalTime">0:00</span>
-                    </div>
-                    <div class="music-controls">
-                        <button class="music-btn" onclick="prevTrack()">⏮️</button>
-                        <button class="music-btn play-btn" id="playBtn" onclick="togglePlay()">▶️</button>
-                        <button class="music-btn" onclick="nextTrack()">⏭️</button>
-                        <button class="music-btn" onclick="stopMusic()">⏹️</button>
-                    </div>
-                    <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="70" onchange="setVolume(this.value)">
-                </div>
-            </div>
             
-            <div class="card">
-                <div class="card-header"><span class="icon">📁</span> Music Library</div>
-                <div class="music-list" id="musicList">
-                    <div class="memory-empty">Loading music...</div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Right Column: Stats & Memory -->
-        <div class="column">
             <div class="card">
                 <div class="card-header"><span class="icon">📊</span> Usage Stats</div>
                 <div class="stats-grid">
@@ -739,18 +864,6 @@ async def index():
                     <div class="memory-empty">No memories yet</div>
                 </div>
             </div>
-            
-            <div class="card">
-                <div class="card-header"><span class="icon">⚡</span> Quick Actions</div>
-                <div class="btn-group">
-                    <button class="btn btn-secondary" onclick="triggerEmotion('happy')">😊 Happy</button>
-                    <button class="btn btn-secondary" onclick="triggerEmotion('sad')">😢 Sad</button>
-                </div>
-                <div class="btn-group" style="margin-top: 0.5rem;">
-                    <button class="btn btn-secondary" onclick="triggerEmotion('angry')">😠 Angry</button>
-                    <button class="btn btn-secondary" onclick="triggerEmotion('surprised')">😲 Surprised</button>
-                </div>
-            </div>
         </div>
     </div>
     
@@ -772,9 +885,70 @@ async def index():
             setTimeout(() => toast.remove(), 4000);
         }
         
+        let lastStreamingEntry = null;
+        
+        function addConsoleEntry(type, content, extra = {}) {
+            const consoleEl = document.getElementById('console');
+            
+            // For streaming responses, append to last entry
+            if (extra.streaming && lastStreamingEntry && lastStreamingEntry.dataset.type === type) {
+                const textNode = lastStreamingEntry.childNodes[0];
+                if (textNode) {
+                    textNode.textContent += content;
+                }
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+                return;
+            }
+            
+            const entry = document.createElement('div');
+            entry.className = `console-entry ${type}`;
+            entry.dataset.type = type;
+            
+            let prefix = '';
+            if (type === 'transcription') prefix = '🎤 ';
+            else if (type === 'response') prefix = '🤖 ';
+            else if (type === 'tool_call') prefix = '🔧 ';
+            else if (type === 'tool_response') prefix = '📥 ';
+            else if (type === 'error') prefix = '❌ ';
+            else if (type === 'info') prefix = 'ℹ️ ';
+            
+            entry.textContent = prefix + content;
+            if (extra.detail) {
+                const detail = document.createElement('div');
+                detail.className = 'console-detail';
+                detail.textContent = extra.detail;
+                entry.appendChild(detail);
+            }
+            
+            consoleEl.appendChild(entry);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            
+            // Track for streaming
+            if (extra.streaming) {
+                lastStreamingEntry = entry;
+            } else {
+                lastStreamingEntry = null;
+            }
+            
+            // Limit entries
+            while (consoleEl.children.length > 200) {
+                consoleEl.removeChild(consoleEl.firstChild);
+            }
+        }
+        
+        function clearConsole() {
+            const consoleEl = document.getElementById('console');
+            consoleEl.innerHTML = '<div class="console-entry info">Console cleared</div>';
+            lastStreamingEntry = null;
+        }
+        
         function connectWS() {
             const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${location.host}/ws`);
+            
+            ws.onopen = () => {
+                addConsoleEntry('info', 'WebSocket connected');
+            };
             
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
@@ -782,12 +956,15 @@ async def index():
                     updateUI(msg.data);
                 } else if (msg.type === 'toast') {
                     showToast(msg.message, msg.level);
-                } else if (msg.type === 'music_progress') {
-                    updateMusicProgress(msg.data);
+                } else if (msg.type === 'log') {
+                    addConsoleEntry(msg.data.type, msg.data.content, msg.data.extra || {});
                 }
             };
             
-            ws.onclose = () => setTimeout(connectWS, 2000);
+            ws.onclose = () => {
+                addConsoleEntry('error', 'WebSocket disconnected, reconnecting...');
+                setTimeout(connectWS, 2000);
+            };
         }
         
         function updateUI(state) {
@@ -870,7 +1047,6 @@ async def index():
             if (data.is_playing) {
                 isPlaying = true;
                 document.getElementById('songTitle').textContent = data.song_name || 'Unknown';
-                document.getElementById('songArtist').textContent = data.artist || '—';
                 document.getElementById('currentTime').textContent = formatTime(data.position);
                 document.getElementById('totalTime').textContent = formatTime(data.duration);
                 const progress = data.duration > 0 ? (data.position / data.duration) * 100 : 0;
@@ -881,7 +1057,6 @@ async def index():
                 document.getElementById('playBtn').innerHTML = '▶️';
                 if (!data.song_name) {
                     document.getElementById('songTitle').textContent = 'No music playing';
-                    document.getElementById('songArtist').textContent = '—';
                     document.getElementById('progressFill').style.width = '0%';
                 }
             }
@@ -916,7 +1091,6 @@ async def index():
                         <div class="music-icon">🎵</div>
                         <div class="music-info">
                             <div class="music-name">${f.name}</div>
-                            <div class="music-duration">${f.duration || '--:--'}</div>
                         </div>
                     </div>
                 `).join('');
@@ -972,8 +1146,8 @@ async def index():
             const text = input.value.trim();
             if (!text) return;
             try {
+                addConsoleEntry('info', `Sending: ${text}`);
                 await apiCall('/api/send-text', 'POST', { text });
-                showToast('Text sent', 'success');
                 input.value = '';
             } catch (err) {}
         }
@@ -1010,22 +1184,14 @@ async def index():
             try { await apiCall('/api/stop-music'); } catch (err) {}
         }
         
-        async function prevTrack() {
-            if (currentTrackIndex > 0) playTrack(currentTrackIndex - 1);
-        }
-        
-        async function nextTrack() {
-            if (currentTrackIndex < musicFiles.length - 1) playTrack(currentTrackIndex + 1);
-        }
-        
         async function setVolume(val) {
             try { await apiCall('/api/set-volume', 'POST', { volume: val / 100 }); } catch (err) {}
         }
         
-        async function triggerEmotion(emotion) {
+        async function openMusicFolder() {
             try {
-                await apiCall('/api/trigger-emotion', 'POST', { emotion });
-                showToast(`Triggered: ${emotion}`, 'success');
+                await apiCall('/api/open-music-folder');
+                showToast('Music folder opened', 'info');
             } catch (err) {}
         }
         
@@ -1090,9 +1256,19 @@ async def get_state():
     audio_mgr = shared_state.get("audio_mgr")
     if audio_mgr and hasattr(audio_mgr, "get_music_progress"):
         try:
-            music_progress = audio_mgr.get_music_progress()
+            raw_progress = audio_mgr.get_music_progress()
+            if raw_progress:
+                music_progress = {
+                    "is_playing": True,
+                    "song_name": raw_progress.get("name", "Unknown"),
+                    "artist": "",  # Not tracked currently
+                    "position": raw_progress.get("position", 0),
+                    "duration": raw_progress.get("duration", 0),
+                }
+            else:
+                music_progress = {"is_playing": False}
         except Exception:
-            pass
+            music_progress = {"is_playing": False}
     
     # Get recent memories
     recent_memories = []
@@ -1194,7 +1370,7 @@ async def play_music(data: MusicInput):
     try:
         result = audio_mgr.play_music(data.filename)
         await broadcast_state()
-        return result
+        return {"success": result, "filename": data.filename}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1209,7 +1385,7 @@ async def pause_music():
     try:
         result = audio_mgr.pause_music()
         await broadcast_state()
-        return result
+        return {"success": result}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1224,7 +1400,7 @@ async def resume_music():
     try:
         result = audio_mgr.resume_music()
         await broadcast_state()
-        return result
+        return {"success": result}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1237,9 +1413,9 @@ async def stop_music():
         raise HTTPException(status_code=400, detail="Audio manager not available")
     
     try:
-        result = audio_mgr.stop_music()
+        audio_mgr.stop_music()
         await broadcast_state()
-        return result
+        return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1260,6 +1436,25 @@ async def set_volume(data: VolumeInput):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/open-music-folder")
+async def open_music_folder():
+    """Open the music folder in the system file explorer."""
+    import subprocess
+    import os
+    
+    music_dir = Path("sfx/music").resolve()
+    music_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        if os.name == 'nt':  # Windows
+            os.startfile(str(music_dir))
+        else:  # macOS/Linux
+            subprocess.run(['xdg-open' if os.name != 'darwin' else 'open', str(music_dir)])
+        return {"success": True, "path": str(music_dir)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/switch-personality")
 async def switch_personality(data: PersonalityInput):
     """Switch to a different personality."""
@@ -1270,7 +1465,7 @@ async def switch_personality(data: PersonalityInput):
         raise HTTPException(status_code=400, detail="Personality manager not available")
     
     try:
-        result = personality_mgr.switch_personality(data.personality)
+        result = personality_mgr.switch(data.personality)
         if result.get("status") == "switched" and session:
             # Inject personality prompt into session
             if hasattr(session, "send_text"):
