@@ -179,3 +179,18 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# ProjectGabriel
+config.yml
+session_handle.txt
+models/yolo26/*.pt
+sfx/music/*.mp3
+sfx/music/*.wav
+sfx/music/*.ogg
+sfx/music/*.flac
+sfx/music/*.m4a
+!sfx/music/.gitkeep
+/old_stuff
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

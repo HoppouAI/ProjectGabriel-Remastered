@@ -1,0 +1,60 @@
+import asyncio
+import logging
+import threading
+from src.config import Config
+from src.audio import AudioManager
+from src.vrchat import VRChatOSC
+from src.tracker import YOLOTracker
+from src.personalities import PersonalityManager
+from src.gemini_live import GeminiLiveSession
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("gabriel")
+
+
+def start_control_server(session):
+    """Start the control panel server in a separate thread."""
+    try:
+        from control_server import app, shared_state, run_control_server
+        import uvicorn
+        
+        shared_state["session"] = session
+        logger.info("Starting control panel on http://localhost:8766")
+        uvicorn.run(app, host="0.0.0.0", port=8766, log_level="warning")
+    except ImportError:
+        logger.warning("Control server not available (missing dependencies)")
+    except Exception as e:
+        logger.error(f"Control server error: {e}")
+
+
+async def main():
+    config = Config()
+    audio = AudioManager(config)
+    osc = VRChatOSC(config)
+    tracker = YOLOTracker(config)
+    personality = PersonalityManager()
+    session = GeminiLiveSession(config, audio, osc, tracker, personality)
+
+    logger.info("ProjectGabriel starting...")
+    logger.info(f"Model: {config.model}")
+    logger.info(f"Music dir: {config.music_dir}")
+    logger.info(f"OSC → {config.osc_ip}:{config.osc_port}")
+
+    # Start control panel in background thread
+    control_thread = threading.Thread(target=start_control_server, args=(session,), daemon=True)
+    control_thread.start()
+
+    try:
+        await session.run()
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+    finally:
+        tracker.active = False
+        audio.cleanup()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

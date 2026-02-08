@@ -1,0 +1,12 @@
+google-genai>=1.0.0
+pyaudio
+python-osc
+pyyaml
+pygame
+numpy
+scipy
+ultralytics
+mss
+aiohttp
+beautifulsoup4
+Pillow
