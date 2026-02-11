@@ -58,16 +58,24 @@ async def main():
     )
     control_thread.start()
 
-    try:
-        await session.run()
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-    finally:
-        tracker.active = False
-        emotion = get_emotion_system()
-        if emotion:
-            emotion.stop()
-        audio.cleanup()
+    while True:
+        try:
+            await session.run()
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+            break
+        except Exception as e:
+            logger.error(f"Session crashed: {e}")
+            logger.info("Restarting session in 3 seconds...")
+            await asyncio.sleep(3)
+            continue
+    
+    # Cleanup only happens on KeyboardInterrupt
+    tracker.active = False
+    emotion = get_emotion_system()
+    if emotion:
+        emotion.stop()
+    audio.cleanup()
 
 
 if __name__ == "__main__":

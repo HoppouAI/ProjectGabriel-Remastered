@@ -244,10 +244,12 @@ class GeminiLiveSession:
                         await asyncio.sleep(5)
                     continue
                 
-                # 1007 is WebSocket protocol error - reconnect immediately
-                if "1007" in str(e):
-                    logger.warning("WebSocket protocol error (1007), reconnecting immediately...")
-                    _broadcast_console("error", "Protocol error (1007), reconnecting...")
+                # WebSocket protocol errors - reconnect immediately
+                if any(code in str(e) for code in ["1007", "1008", "1011", "1006"]):
+                    logger.warning(f"WebSocket error, reconnecting immediately...")
+                    _broadcast_console("error", "WebSocket error, reconnecting...")
+                    self._clear_session_handle()  # Clear handle on WebSocket errors
+                    await asyncio.sleep(0.5)
                     continue
                 
                 if self._session_handle:
@@ -261,13 +263,21 @@ class GeminiLiveSession:
                 logger.error(f"API error: {e}")
                 _broadcast_console("error", f"API error: {str(e)[:100]}")
                 await asyncio.sleep(2)
+                continue  # Always continue the loop
             except Exception as e:
                 err_str = str(e)
                 
-                # 1007 WebSocket errors - reconnect immediately
-                if "1007" in err_str:
-                    logger.warning("WebSocket protocol error (1007), reconnecting immediately...")
-                    _broadcast_console("error", "Protocol error (1007), reconnecting...")
+                # WebSocket errors - reconnect immediately
+                if any(code in err_str for code in ["1007", "1008", "1011", "1006"]):
+                    logger.warning(f"WebSocket error, reconnecting immediately...")
+                    _broadcast_console("error", "WebSocket error, reconnecting...")
+                    self._clear_session_handle()  # Clear handle on WebSocket errors
+                    await asyncio.sleep(0.5)
+                    continue
+                
+                # Reconnect request is not an error
+                if "Reconnect requested" in err_str:
+                    logger.info("Reconnecting as requested...")
                     continue
                 
                 if self._session_handle:
@@ -281,6 +291,7 @@ class GeminiLiveSession:
                 logger.error(f"Session error: {e}")
                 _broadcast_console("error", f"Session error: {str(e)[:100]}")
                 await asyncio.sleep(2)
+                continue  # Always continue the loop
 
     async def _reconnect_monitor_loop(self):
         """Monitor for reconnect requests from control panel."""
