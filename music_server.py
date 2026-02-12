@@ -5,6 +5,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from datetime import datetime
+import sys
 
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -859,6 +860,13 @@ async def delete_file(filepath: str):
 
 
 def main():
+    # Ensure stdout/stderr use UTF-8 to avoid UnicodeEncodeError on Windows consoles
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
     print("\n🎵 Gabriel Music Manager")
     print("=" * 40)
     print("Open http://localhost:8765 in your browser")
