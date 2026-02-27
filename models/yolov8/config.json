@@ -1,0 +1,16 @@
+{
+  "confidence_threshold": 0.45,
+  "iou_threshold": 0.45,
+  "target_area": 0.08,
+  "deadzone": 0.05,
+  "smoothing_alpha": 0.15,
+  "center_distance_weight": 1.0,
+  "area_weight": 0.5,
+  "lock_timeout": 2.0,
+  "reacquire_threshold": 0.3,
+  "max_detections": 10,
+  "forward_scale_min": 0.2,
+  "forward_scale_max": 0.4,
+  "strafe_threshold": 0.5,
+  "strafe_scale": 0.3
+}

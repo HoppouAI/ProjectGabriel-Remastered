@@ -189,11 +189,11 @@ class Config:
 
     @property
     def yolo_model_dir(self):
-        return self.get("yolo", "model_dir", default="models/yolo26")
+        return self.get("yolo", "model_dir", default="models/yolov8")
 
     @property
     def yolo_model_name(self):
-        return self.get("yolo", "model_name", default="yolo26n.pt")
+        return self.get("yolo", "model_name", default="yolov8n.pt")
 
     @property
     def vision_enabled(self):

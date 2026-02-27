@@ -6,6 +6,7 @@ pygame
 numpy
 scipy
 ultralytics
+dxcam
 mss
 aiohttp
 beautifulsoup4

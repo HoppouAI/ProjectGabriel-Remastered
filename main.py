@@ -4,7 +4,7 @@ import threading
 from src.config import Config
 from src.audio import AudioManager
 from src.vrchat import VRChatOSC
-from src.tracker import YOLOTracker
+from src.tracker import PlayerTracker
 from src.personalities import PersonalityManager
 from src.gemini_live import GeminiLiveSession
 from src.emotions import get_emotion_system
@@ -41,7 +41,7 @@ async def main():
     config = Config()
     audio = AudioManager(config)
     osc = VRChatOSC(config)
-    tracker = YOLOTracker(config)
+    tracker = PlayerTracker(config, osc)
     personality = PersonalityManager()
     session = GeminiLiveSession(config, audio, osc, tracker, personality)
 

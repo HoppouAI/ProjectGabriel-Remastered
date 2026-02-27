@@ -1,240 +1,474 @@
-import os
+"""
+Player tracking and following system.
+YOLOv8n + ByteTrack + dxcam screen capture → VRChat OSC movement.
+"""
+
 import json
 import logging
-import asyncio
 import time
+import threading
 import shutil
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+MODEL_DIR = "models/yolov8"
+MODEL_NAME = "yolov8n.pt"
+FRAME_W = 640
+FRAME_H = 360
+TARGET_FPS = 30
 
-class YOLOTracker:
-    def __init__(self, config):
+DEFAULT_CFG = {
+    "confidence_threshold": 0.45,
+    "iou_threshold": 0.45,
+    "target_area": 0.08,
+    "deadzone": 0.05,
+    "smoothing_alpha": 0.15,
+    "center_distance_weight": 1.0,
+    "area_weight": 0.5,
+    "lock_timeout": 2.0,
+    "reacquire_threshold": 0.3,
+    "max_detections": 10,
+    "forward_scale_min": 0.2,
+    "forward_scale_max": 0.4,
+    "strafe_threshold": 0.5,
+    "strafe_scale": 0.3,
+}
+
+
+class PlayerTracker:
+    """Detects and follows players in VRChat using screen capture, YOLO, and OSC."""
+
+    def __init__(self, config, osc=None):
         self.config = config
+        self.osc = osc
         self.model = None
-        self.active = False
-        self._load_yolo_config()
-        self._last_target = None
-        self._last_direction = None
-        self._no_player_time = 0
+        self._active = False
+        self._thread = None
+        self._camera = None
+        self._use_half = False
+        self._first_frame = True
 
-    def _load_yolo_config(self):
-        config_path = Path(self.config.yolo_model_dir) / "config.json"
+        # Tracking state
+        self._locked_id = None
+        self._lock_lost_time = None
+        self._current_target_area = 0.0
+        self._smoothed_look_h = 0.0
+        self._smoothed_look_v = 0.0
+        self._smoothed_forward = 0.0
+
+        # Config
+        self._cfg = dict(DEFAULT_CFG)
+        self._load_config()
+
+        # FPS metrics
+        self._fps = 0.0
+        self._frame_count = 0
+        self._fps_timer = time.perf_counter()
+
+    # ── Properties ────────────────────────────────────────────────────────
+
+    @property
+    def active(self):
+        return self._active
+
+    @active.setter
+    def active(self, value):
+        if not value and self._active:
+            self.stopfollow()
+        self._active = value
+
+    # ── Config I/O ────────────────────────────────────────────────────────
+
+    def _model_dir(self) -> Path:
+        return Path(self.config.get("yolo", "model_dir", default=MODEL_DIR))
+
+    def _model_name(self) -> str:
+        return self.config.get("yolo", "model_name", default=MODEL_NAME)
+
+    def _load_config(self):
+        config_path = self._model_dir() / "config.json"
         if config_path.exists():
-            with open(config_path) as f:
-                self.yolo_config = json.load(f)
-        else:
-            self.yolo_config = {
-                "confidence_threshold": 0.5,
-                "iou_threshold": 0.45,
-                "input_size": 640,
-                "max_distance": 0.6,
-                "min_distance": 0.3,
-                "deadzone": 0.15,
-                "reference_height": 200,
-                "reference_distance": 1.0,
-                "update_interval": 0.1,
-            }
+            try:
+                with open(config_path) as f:
+                    self._cfg.update(json.load(f))
+            except Exception as e:
+                logger.warning(f"Failed to load tracker config: {e}")
 
-    def ensure_model(self):
+    def _save_config(self):
+        config_path = self._model_dir() / "config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, "w") as f:
+            json.dump(self._cfg, f, indent=2)
+
+    # ── Model Loading ─────────────────────────────────────────────────────
+
+    def _ensure_model(self):
         if self.model is not None:
             return
 
-        from ultralytics import YOLO
         import torch
+        from ultralytics import YOLO
 
-        model_dir = Path(self.config.yolo_model_dir)
+        model_dir = self._model_dir()
+        model_name = self._model_name()
         model_dir.mkdir(parents=True, exist_ok=True)
-        model_path = model_dir / self.config.yolo_model_name
+        model_path = model_dir / model_name
 
         if not model_path.exists():
-            logger.info("Downloading YOLO26n model...")
-            temp_model = YOLO(self.config.yolo_model_name)
-            default_path = Path(self.config.yolo_model_name)
+            logger.info(f"Downloading {model_name} to {model_dir}...")
+            temp_model = YOLO(model_name)
+            default_path = Path(model_name)
             if default_path.exists():
                 shutil.move(str(default_path), str(model_path))
             self.model = temp_model
         else:
             self.model = YOLO(str(model_path))
 
-        # Use CUDA if available
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model.to(device)
-        logger.info(f"YOLO26n model loaded on {device}")
+        self._use_half = device == "cuda"
+        logger.info(f"{model_name} loaded on {device} (FP16={self._use_half})")
 
-    def detect_players(self, frame):
-        """Detect all people in frame and return sorted by estimated distance."""
-        if self.model is None:
-            return []
-        
-        import cv2
-        
-        # Resize frame to 640x640 for YOLO input
-        frame_h, frame_w = frame.shape[:2]
-        resized = cv2.resize(frame, (640, 640))
-        
-        results = self.model(
-            resized,
-            conf=self.yolo_config.get("confidence_threshold", 0.5),
-            iou=self.yolo_config.get("iou_threshold", 0.45),
-            verbose=False,
+    # ── Public API (called by Gemini tools) ───────────────────────────────
+
+    def startfollow(self, mode="auto"):
+        """Start following a player visible on screen."""
+        if self._active and self._thread and self._thread.is_alive():
+            return {"result": "ok", "message": "already following"}
+
+        self._active = True
+        self._reset_state()
+        self._thread = threading.Thread(
+            target=self._run_loop, daemon=True, name="player-tracker"
         )
-        
-        if not results or len(results[0].boxes) == 0:
-            return []
-        
-        # Scale factors to convert back to original frame coordinates
-        scale_x = frame_w / 640
-        scale_y = frame_h / 640
-        
-        players = []
-        for box in results[0].boxes:
-            cls_id = int(box.cls[0])
-            # Class 0 is person in COCO dataset
-            if cls_id == 0:
-                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                # Scale back to original frame size
-                x1, x2 = int(x1 * scale_x), int(x2 * scale_x)
-                y1, y2 = int(y1 * scale_y), int(y2 * scale_y)
-                box_height = y2 - y1
-                distance = self._estimate_distance(box_height)
-                conf = float(box.conf[0])
-                players.append({
-                    "x1": x1, "y1": y1, "x2": x2, "y2": y2,
-                    "cx": (x1 + x2) / 2,
-                    "distance": distance,
-                    "confidence": conf,
-                })
-        
-        # Sort by distance (closest first)
-        players.sort(key=lambda p: p["distance"])
-        return players
+        self._thread.start()
+        return {"result": "ok", "message": f"started following (mode={mode})"}
 
-    def _estimate_distance(self, box_height):
-        """Estimate distance based on bounding box height."""
-        ref_height = self.yolo_config.get("reference_height", 200)
-        ref_distance = self.yolo_config.get("reference_distance", 1.0)
-        if box_height <= 0:
-            return float("inf")
-        return ref_distance * (ref_height / box_height)
+    def stopfollow(self):
+        """Stop following."""
+        if not self._active:
+            return {"result": "ok", "message": "not following"}
 
-    async def tracking_loop(self, osc):
-        """Main tracking loop that follows detected players."""
-        import mss
-        import numpy as np
-        from concurrent.futures import ThreadPoolExecutor
+        self._active = False
+        if self._thread:
+            self._thread.join(timeout=5.0)
+            self._thread = None
+        return {"result": "ok", "message": "stopped following"}
+
+    def setfollowdistance(self, value):
+        """Set desired follow distance as target bounding-box area fraction (0.01–0.5)."""
+        value = max(0.01, min(0.5, float(value)))
+        self._cfg["target_area"] = value
+        self._save_config()
+        return {"result": "ok", "message": f"follow distance set to {value:.3f}"}
+
+    # ── Internal State ────────────────────────────────────────────────────
+
+    def _reset_state(self):
+        self._locked_id = None
+        self._lock_lost_time = None
+        self._current_target_area = 0.0
+        self._smoothed_look_h = 0.0
+        self._smoothed_look_v = 0.0
+        self._smoothed_forward = 0.0
+        self._first_frame = True
+        self._fps = 0.0
+        self._frame_count = 0
+        self._fps_timer = time.perf_counter()
+
+    # ── Main Tracking Loop (runs in thread) ───────────────────────────────
+
+    def _run_loop(self):
+        import cv2
+        import torch
+        import dxcam
+
+        self._ensure_model()
+
+        # Init screen capture via dxcam
+        monitor_idx = max(0, getattr(self.config, "vision_monitor", 1) - 1)
+        if self._camera is not None:
+            try:
+                del self._camera
+            except Exception:
+                pass
+            self._camera = None
+
         try:
-            import pygetwindow as gw
-        except ImportError:
-            gw = None
-            logger.warning("pygetwindow not installed, using full monitor capture")
+            self._camera = dxcam.create(output_idx=monitor_idx, output_color="BGR")
+        except Exception as e:
+            logger.error(f"dxcam init failed (monitor {monitor_idx}): {e}")
+            self._active = False
+            return
 
-        self.ensure_model()
-        sct = mss.mss()
-        
-        # Try to get VRChat window, fall back to monitor
-        monitor = None
-        if gw:
-            windows = gw.getWindowsWithTitle("VRChat")
-            if windows:
-                win = windows[0]
-                try:
-                    win.activate()
-                except Exception:
-                    pass  # Window might already be active
-                monitor = {
-                    "left": win.left,
-                    "top": win.top,
-                    "width": win.width,
-                    "height": win.height,
-                }
-                logger.info(f"Tracking VRChat window: {win.width}x{win.height} at ({win.left}, {win.top})")
-            else:
-                logger.warning("VRChat window not found, available windows: " + 
-                             str([w.title for w in gw.getAllWindows() if w.title][:10]))
-        
-        if not monitor:
-            monitor_idx = getattr(self.config, 'vision_monitor', 1)
-            if monitor_idx >= len(sct.monitors):
-                monitor_idx = 1
-            monitor = sct.monitors[monitor_idx]
-            logger.info(f"Tracking monitor {monitor_idx}: {monitor['width']}x{monitor['height']}")
+        logger.info(
+            f"Player tracker started — target {TARGET_FPS} FPS, monitor={monitor_idx}"
+        )
+        frame_interval = 1.0 / TARGET_FPS
 
-        self._last_target = None
-        self._last_direction = None
-        self._no_player_time = 0
+        try:
+            while self._active:
+                t0 = time.perf_counter()
 
-        logger.info("Person tracking started")
-        
-        # Use a thread pool for CPU-bound YOLO inference to avoid blocking audio
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            while self.active:
-                try:
-                    frame = np.array(sct.grab(monitor))[:, :, :3]
-                    # Run detection in thread pool to not block audio
-                    players = await asyncio.get_event_loop().run_in_executor(
-                        executor, self.detect_players, frame
+                # ── Capture ──
+                frame = self._camera.grab()
+                if frame is None:
+                    time.sleep(0.001)
+                    continue
+
+                # Resize to 640×360
+                resized = cv2.resize(frame, (FRAME_W, FRAME_H))
+
+                # ── Detect + Track ──
+                with torch.no_grad():
+                    results = self.model.track(
+                        resized,
+                        persist=not self._first_frame,
+                        tracker="bytetrack.yaml",
+                        conf=self._cfg["confidence_threshold"],
+                        iou=self._cfg["iou_threshold"],
+                        classes=[0],
+                        max_det=self._cfg["max_detections"],
+                        verbose=False,
+                        half=self._use_half,
                     )
-                    await self._track_and_move_with_players(players, monitor["width"], monitor["height"], osc)
-                    await asyncio.sleep(self.yolo_config.get("update_interval", 0.1))
-                except Exception as e:
-                    logger.error(f"Tracking error: {e}")
-                    await asyncio.sleep(0.5)
+                self._first_frame = False
 
-        osc.stop_movement()
-        logger.info("Person tracking stopped")
+                # ── Process ──
+                detections = self._parse_results(results)
+                self._update_tracking(detections)
+                self._send_osc()
 
-    async def _track_and_move_with_players(self, players, width, height, osc):
-        """Track player and send movement commands (using pre-detected players)."""
-        max_dist = self.yolo_config.get("max_distance", 0.6)
-        min_dist = self.yolo_config.get("min_distance", 0.3)
-        deadzone = self.yolo_config.get("deadzone", 0.15)
-        
-        if players:
-            self._no_player_time = 0
-            
-            # Use closest player
-            target = players[0]
-            
-            distance = target["distance"]
-            player_center_x = target["cx"]
-            screen_center_x = width / 2
-            
-            # Forward/backward movement based on distance
-            if distance > max_dist:
-                osc._move_forward()
-                osc._stop_backward()
-            elif distance < min_dist:
-                osc._move_backward()
-                osc._stop_forward()
-            else:
-                osc._stop_forward()
-                osc._stop_backward()
-            
-            # Rotation based on horizontal deviation
-            dead_zone_pixels = width * deadzone
-            deviation = player_center_x - screen_center_x
-            
-            if deviation > dead_zone_pixels and self._last_direction != "right":
-                await osc.rotate_right()
-                self._last_direction = "right"
-            elif deviation < -dead_zone_pixels and self._last_direction != "left":
-                await osc.rotate_left()
-                self._last_direction = "left"
-            else:
-                self._last_direction = None
-            
-            self._last_target = target
+                # ── FPS ──
+                self._frame_count += 1
+                elapsed = time.perf_counter() - self._fps_timer
+                if elapsed >= 2.0:
+                    self._fps = self._frame_count / elapsed
+                    logger.info(
+                        f"Tracker: {self._fps:.1f} FPS | "
+                        f"target_id={self._locked_id} | "
+                        f"area={self._current_target_area:.4f}"
+                    )
+                    self._frame_count = 0
+                    self._fps_timer = time.perf_counter()
+
+                # ── Frame pacing ──
+                dt = time.perf_counter() - t0
+                if dt < frame_interval:
+                    time.sleep(frame_interval - dt)
+
+        except Exception as e:
+            logger.error(f"Tracker loop error: {e}", exc_info=True)
+        finally:
+            self._zero_osc()
+            if self._camera is not None:
+                try:
+                    del self._camera
+                except Exception:
+                    pass
+                self._camera = None
+            self._active = False
+            logger.info(f"Player tracker stopped (last avg {self._fps:.1f} FPS)")
+
+    # ── Detection Parsing ─────────────────────────────────────────────────
+
+    def _parse_results(self, results):
+        """Extract person detections with tracking IDs from YOLO+ByteTrack."""
+        detections = []
+        if not results or not results[0].boxes or len(results[0].boxes) == 0:
+            return detections
+
+        boxes = results[0].boxes
+        for i in range(len(boxes)):
+            if int(boxes.cls[i]) != 0:
+                continue
+
+            x1, y1, x2, y2 = boxes.xyxy[i].tolist()
+            conf = float(boxes.conf[i])
+            track_id = int(boxes.id[i]) if boxes.id is not None else None
+
+            cx = (x1 + x2) / 2.0
+            cy = (y1 + y2) / 2.0
+            w = x2 - x1
+            h = y2 - y1
+            area = (w * h) / (FRAME_W * FRAME_H)
+
+            # Normalised distance from frame centre (0 = dead centre, ~1.41 = corner)
+            norm_dx = (cx - FRAME_W / 2) / (FRAME_W / 2)
+            norm_dy = (cy - FRAME_H / 2) / (FRAME_H / 2)
+            center_dist = (norm_dx**2 + norm_dy**2) ** 0.5
+
+            detections.append(
+                {
+                    "id": track_id,
+                    "cx": cx,
+                    "cy": cy,
+                    "area": area,
+                    "center_dist": center_dist,
+                    "conf": conf,
+                }
+            )
+
+        return detections
+
+    # ── Target Selection & Scoring ────────────────────────────────────────
+
+    def _score(self, det):
+        """Score a detection — lower is better (prefer centred + large)."""
+        return (
+            self._cfg["center_distance_weight"] * det["center_dist"]
+            - self._cfg["area_weight"] * det["area"]
+        )
+
+    def _update_tracking(self, detections):
+        """Select / maintain target and compute smoothed movement values."""
+        cfg = self._cfg
+        alpha = cfg["smoothing_alpha"]
+        now = time.time()
+
+        # ── No detections ──
+        if not detections:
+            if self._locked_id is not None:
+                if self._lock_lost_time is None:
+                    self._lock_lost_time = now
+                elif now - self._lock_lost_time > cfg["lock_timeout"]:
+                    self._locked_id = None
+                    self._lock_lost_time = None
+
+            self._current_target_area = 0.0
+            # Decay smoothed values toward zero
+            self._smoothed_look_h *= 1 - alpha
+            self._smoothed_look_v *= 1 - alpha
+            self._smoothed_forward *= 1 - alpha
+            return
+
+        # ── Resolve target ──
+        trackable = [d for d in detections if d["id"] is not None]
+        target = None
+
+        # Try to re-find locked target
+        if self._locked_id is not None:
+            for d in trackable:
+                if d["id"] == self._locked_id:
+                    target = d
+                    self._lock_lost_time = None
+                    break
+
+            if target is None:
+                # Locked ID not in this frame
+                if self._lock_lost_time is None:
+                    self._lock_lost_time = now
+                elif now - self._lock_lost_time > cfg["lock_timeout"]:
+                    self._locked_id = None
+                    self._lock_lost_time = None
+
+        # Score trackable detections and potentially (re)acquire
+        if trackable:
+            scored = sorted(trackable, key=self._score)
+            best = scored[0]
+
+            if target is None:
+                # No current lock — acquire best
+                target = best
+                self._locked_id = best["id"]
+                self._lock_lost_time = None
+                logger.debug(f"Locked target {self._locked_id}")
+            elif best["id"] != self._locked_id:
+                # Check if a new target is *significantly* better
+                if self._score(target) - self._score(best) > cfg["reacquire_threshold"]:
+                    target = best
+                    self._locked_id = best["id"]
+                    self._lock_lost_time = None
+                    logger.debug(f"Switched to better target {self._locked_id}")
+
+        # Fallback: use closest-to-centre un-tracked detection
+        if target is None and detections:
+            target = min(detections, key=lambda d: d["center_dist"])
+
+        if target is None:
+            self._current_target_area = 0.0
+            self._smoothed_look_h *= 1 - alpha
+            self._smoothed_look_v *= 1 - alpha
+            self._smoothed_forward *= 1 - alpha
+            return
+
+        # ── Compute raw movement values ──
+        self._current_target_area = target["area"]
+        deadzone = cfg["deadzone"]
+        target_area = cfg["target_area"]
+
+        # Normalised screen-space offsets (−1 … +1)
+        dx = (target["cx"] - FRAME_W / 2) / (FRAME_W / 2)
+        dy = (target["cy"] - FRAME_H / 2) / (FRAME_H / 2)
+        dx = max(-1.0, min(1.0, dx))
+        dy = max(-1.0, min(1.0, dy))
+
+        # Apply deadzone
+        if abs(dx) < deadzone:
+            dx = 0.0
+        if abs(dy) < deadzone:
+            dy = 0.0
+
+        raw_look_h = dx
+        raw_look_v = -dy * 0.4
+
+        # Forward control based on bounding-box area vs target area
+        if target["area"] < target_area:
+            deficit = (target_area - target["area"]) / target_area
+            raw_forward = cfg["forward_scale_min"] + deficit * (
+                cfg["forward_scale_max"] - cfg["forward_scale_min"]
+            )
+            raw_forward = min(raw_forward, cfg["forward_scale_max"])
         else:
-            # No player detected
-            osc._stop_forward()
-            osc._stop_backward()
-            self._no_player_time += 1
-            
-            # After a while, search by rotating
-            if self._no_player_time > 50:
-                await osc.rotate_right()
-            
-            self._last_direction = None
-            self._last_target = None
+            raw_forward = 0.0
+
+        # ── EMA smoothing  (smoothed = old * 0.85 + new * 0.15) ──
+        self._smoothed_look_h = (
+            self._smoothed_look_h * (1 - alpha) + raw_look_h * alpha
+        )
+        self._smoothed_look_v = (
+            self._smoothed_look_v * (1 - alpha) + raw_look_v * alpha
+        )
+        self._smoothed_forward = (
+            self._smoothed_forward * (1 - alpha) + raw_forward * alpha
+        )
+
+    # ── OSC Output ────────────────────────────────────────────────────────
+
+    def _send_osc(self):
+        """Send smoothed axis values to VRChat via OSC. All axes are float −1…+1."""
+        if not self.osc:
+            return
+
+        client = self.osc.client
+        cfg = self._cfg
+        dz = cfg["deadzone"]
+
+        # Clamp final outputs to [-1, 1]
+        look_h = max(-1.0, min(1.0, self._smoothed_look_h))
+        forward = max(-1.0, min(1.0, self._smoothed_forward))
+
+        # ── Turn axis (proportional, smooth in Desktop) ──
+        if abs(look_h) < dz:
+            look_h = 0.0
+        client.send_message("/input/LookHorizontal", float(look_h))
+
+        # ── Forward / backward axis ──
+        client.send_message("/input/Vertical", float(forward))
+
+        # ── Strafe axis (only when heavily off-centre) ──
+        if abs(look_h) > cfg["strafe_threshold"]:
+            strafe = max(-1.0, min(1.0, look_h * cfg["strafe_scale"]))
+            client.send_message("/input/Horizontal", float(strafe))
+        else:
+            client.send_message("/input/Horizontal", 0.0)
+
+    def _zero_osc(self):
+        """Reset all axes to zero — called on shutdown."""
+        if not self.osc:
+            return
+        client = self.osc.client
+        client.send_message("/input/LookHorizontal", 0.0)
+        client.send_message("/input/Vertical", 0.0)
+        client.send_message("/input/Horizontal", 0.0)

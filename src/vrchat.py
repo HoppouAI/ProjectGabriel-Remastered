@@ -113,11 +113,14 @@ class VRChatOSC:
         self.client.send_message("/input/Voice", 0)
 
     def set_movement(self, forward: float = 0.0, horizontal: float = 0.0):
-        self.client.send_message("/input/MoveForward", max(-1.0, min(1.0, forward)))
+        """Set movement axes (float -1 to 1). Reset to 0 when done."""
+        self.client.send_message("/input/Vertical", max(-1.0, min(1.0, forward)))
         self.client.send_message("/input/LookHorizontal", max(-1.0, min(1.0, horizontal)))
 
     def stop_movement(self):
-        self.set_movement(0.0, 0.0)
+        self.client.send_message("/input/Vertical", 0.0)
+        self.client.send_message("/input/LookHorizontal", 0.0)
+        self.client.send_message("/input/Horizontal", 0.0)
 
     def toggle_crouch(self):
         """Toggle crouch in VRChat by pressing C key."""
@@ -133,56 +136,24 @@ class VRChatOSC:
         _keyboard.release('z')
         logger.info("Toggled crawl (Z key)")
 
-    # Movement methods for person tracking (reference implementation style)
-    def _move_forward(self):
-        """Start moving forward."""
-        self.client.send_message("/input/MoveForward", 1)
-
-    def _stop_forward(self):
-        """Stop moving forward."""
-        self.client.send_message("/input/MoveForward", 0)
-
-    def _move_backward(self):
-        """Start moving backward."""
-        self.client.send_message("/input/MoveBackward", 1)
-
-    def _stop_backward(self):
-        """Stop moving backward."""
-        self.client.send_message("/input/MoveBackward", 0)
-
-    async def rotate_left(self, steps: int = 1):
-        """Rotate left with timed key press."""
-        for _ in range(steps):
-            self.client.send_message("/input/LookLeft", 1)
-            await asyncio.sleep(0.1)
-            self.client.send_message("/input/LookLeft", 0)
-
-    async def rotate_right(self, steps: int = 1):
-        """Rotate right with timed key press."""
-        for _ in range(steps):
-            self.client.send_message("/input/LookRight", 1)
-            await asyncio.sleep(0.1)
-            self.client.send_message("/input/LookRight", 0)
-
     # Manual movement methods for AI control
     def start_move(self, direction: str):
-        """Start moving in a direction (forward, backward, left, right)."""
+        """Start moving in a direction using axes (forward, backward, left, right)."""
         if direction == "forward":
-            self.client.send_message("/input/MoveForward", 1)
+            self.client.send_message("/input/Vertical", 1.0)
         elif direction == "backward":
-            self.client.send_message("/input/MoveBackward", 1)
+            self.client.send_message("/input/Vertical", -1.0)
         elif direction == "left":
-            self.client.send_message("/input/MoveLeft", 1)
+            self.client.send_message("/input/Horizontal", -1.0)
         elif direction == "right":
-            self.client.send_message("/input/MoveRight", 1)
+            self.client.send_message("/input/Horizontal", 1.0)
         logger.info(f"Started moving {direction}")
 
     def stop_all_movement(self):
-        """Stop all movement."""
-        self.client.send_message("/input/MoveForward", 0)
-        self.client.send_message("/input/MoveBackward", 0)
-        self.client.send_message("/input/MoveLeft", 0)
-        self.client.send_message("/input/MoveRight", 0)
+        """Reset all movement axes to zero."""
+        self.client.send_message("/input/Vertical", 0.0)
+        self.client.send_message("/input/Horizontal", 0.0)
+        self.client.send_message("/input/LookHorizontal", 0.0)
         logger.info("Stopped all movement")
 
     def jump(self):

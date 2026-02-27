@@ -87,14 +87,29 @@ def get_tool_declarations(config=None):
                 },
             ),
             types.FunctionDeclaration(
-                name="followPerson",
-                description="Enable or disable following a person using YOLO vision tracking in VRChat",
+                name="startFollow",
+                description="Start following a player visible on screen using YOLO vision tracking. Automatically detects and locks onto the nearest person.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "enabled": {"type": "STRING", "description": "Set to 'true' to start following, 'false' to stop"},
+                        "mode": {"type": "STRING", "description": "Follow mode (default 'auto')"},
                     },
-                    "required": ["enabled"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="stopFollow",
+                description="Stop following a player and halt all tracking movement.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="setFollowDistance",
+                description="Set how close to follow the target player. Value is a fraction from 0.01 (very close) to 0.5 (far away). Default is 0.08.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "value": {"type": "NUMBER", "description": "Target follow distance as bounding-box area fraction (0.01 to 0.5)"},
+                    },
+                    "required": ["value"],
                 },
             ),
             types.FunctionDeclaration(
@@ -195,7 +210,6 @@ class ToolHandler:
         self.osc = osc
         self.tracker = tracker
         self.personality = personality_mgr
-        self._tracking_task = None
         self.session = None
 
     async def handle(self, function_call) -> types.FunctionResponse:
@@ -265,10 +279,12 @@ class ToolHandler:
         elif name == "toggleVrchatMic":
             self.osc.toggle_voice()
             return {"result": "ok"}
-        elif name == "followPerson":
-            # Convert string "true"/"false" to boolean
-            enabled = str(args.get("enabled", "false")).lower() in ("true", "1", "yes")
-            return await self._toggle_follow(enabled)
+        elif name == "startFollow":
+            return self.tracker.startfollow(args.get("mode", "auto"))
+        elif name == "stopFollow":
+            return self.tracker.stopfollow()
+        elif name == "setFollowDistance":
+            return self.tracker.setfollowdistance(args["value"])
         elif name == "listPersonalities":
             result = self.personality.list_personalities()
             result["result"] = "ok"
@@ -315,22 +331,6 @@ class ToolHandler:
             return {"result": "error", "message": "download failed"}
         self.audio.play_sfx_file(filepath)
         return {"result": "ok", "name": result["name"]}
-
-    async def _toggle_follow(self, enabled):
-        if enabled:
-            if self._tracking_task and not self._tracking_task.done():
-                return {"result": "ok", "message": "already following"}
-            self.tracker.active = True
-            self._tracking_task = asyncio.create_task(
-                self.tracker.tracking_loop(self.osc)
-            )
-            return {"result": "ok", "message": "started following"}
-        else:
-            self.tracker.active = False
-            if self._tracking_task:
-                await self._tracking_task
-                self._tracking_task = None
-            return {"result": "ok", "message": "stopped following"}
 
     async def _vrchat_move(self, direction: str, duration: float):
         """Move in a direction for a specified duration."""
