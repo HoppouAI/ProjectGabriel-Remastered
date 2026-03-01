@@ -81,14 +81,8 @@ class PlayerTracker:
 
     # ── Config I/O ────────────────────────────────────────────────────────
 
-    def _model_dir(self) -> Path:
-        return Path(self.config.get("yolo", "model_dir", default=MODEL_DIR))
-
-    def _model_name(self) -> str:
-        return self.config.get("yolo", "model_name", default=MODEL_NAME)
-
     def _load_config(self):
-        config_path = self._model_dir() / "config.json"
+        config_path = Path(MODEL_DIR) / "config.json"
         if config_path.exists():
             try:
                 with open(config_path) as f:
@@ -97,9 +91,9 @@ class PlayerTracker:
                 logger.warning(f"Failed to load tracker config: {e}")
 
     def _save_config(self):
-        config_path = self._model_dir() / "config.json"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, "w") as f:
+        model_dir = Path(MODEL_DIR)
+        model_dir.mkdir(parents=True, exist_ok=True)
+        with open(model_dir / "config.json", "w") as f:
             json.dump(self._cfg, f, indent=2)
 
     # ── Model Loading ─────────────────────────────────────────────────────
@@ -112,15 +106,14 @@ class PlayerTracker:
         from ultralytics import YOLO
         import numpy as np
 
-        model_dir = self._model_dir()
-        model_name = self._model_name()
+        model_dir = Path(MODEL_DIR)
         model_dir.mkdir(parents=True, exist_ok=True)
-        model_path = model_dir / model_name
+        model_path = model_dir / MODEL_NAME
 
         if not model_path.exists():
-            logger.info(f"Downloading {model_name} to {model_dir}...")
-            temp_model = YOLO(model_name)
-            default_path = Path(model_name)
+            logger.info(f"Downloading {MODEL_NAME} to {model_dir}...")
+            temp_model = YOLO(MODEL_NAME)
+            default_path = Path(MODEL_NAME)
             if default_path.exists():
                 shutil.move(str(default_path), str(model_path))
             self.model = temp_model
@@ -134,8 +127,7 @@ class PlayerTracker:
             vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
             logger.info(f"CUDA available: {gpu_name} ({vram:.1f} GB)")
             self.model.to(device)
-            self.model.model.half()  # FP16
-            self._use_half = True
+            self._use_half = True  # FP16 handled by half= param in track()
         else:
             device = "cpu"
             self._use_half = False
@@ -145,7 +137,7 @@ class PlayerTracker:
             )
             self.model.to(device)
 
-        logger.info(f"{model_name} loaded on {device} (FP16={self._use_half})")
+        logger.info(f"{MODEL_NAME} loaded on {device} (FP16={self._use_half})")
 
         # Warmup inference (JIT compile kernels, allocate buffers)
         logger.info("Running warmup inference...")
