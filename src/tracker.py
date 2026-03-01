@@ -131,7 +131,7 @@ class PlayerTracker:
         if torch.cuda.is_available():
             device = "cuda"
             gpu_name = torch.cuda.get_device_name(0)
-            vram = torch.cuda.get_device_properties(0).total_mem / 1024**3
+            vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
             logger.info(f"CUDA available: {gpu_name} ({vram:.1f} GB)")
             self.model.to(device)
             self.model.model.half()  # FP16
