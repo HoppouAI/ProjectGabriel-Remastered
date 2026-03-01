@@ -1,6 +1,7 @@
 """
 ProjectGabriel Supervisor
-Runs both main.py and music_server.py, auto-restarts on crash.
+Runs main.py with auto-restart on crash.
+Control panel (with music management) is started by main.py.
 Uses the .venv virtual environment.
 """
 import subprocess
@@ -99,13 +100,7 @@ class ProcessSupervisor:
         print(f"Python: {VENV_PYTHON}")
         print("=" * 50)
         
-        # Start music server (doesn't need restart usually)
-        music_thread = self.start_process("music_server", "music_server.py", restart_on_exit=True)
-        
-        # Give music server a moment to start
-        time.sleep(1)
-        
-        # Start main application (always restart on crash)
+        # Start main application (control panel is started within main.py)
         main_thread = self.start_process("main", "main.py", restart_on_exit=True)
         
         # Wait for Ctrl+C

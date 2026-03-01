@@ -57,7 +57,6 @@ Issues = "https://github.com/HoppouAI/ProjectGabriel-Remaster/issues"
 
 [project.scripts]
 gabriel = "main:main"
-gabriel-music = "music_server:main"
 gabriel-control = "control_server:run_control_server"
 
 [build-system]
