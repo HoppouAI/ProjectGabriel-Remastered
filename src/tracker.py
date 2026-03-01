@@ -331,6 +331,7 @@ class PlayerTracker:
 
         logger.info(f"Player tracker started — target {TARGET_FPS} FPS")
         frame_interval = 1.0 / TARGET_FPS
+        _diag_count = 0  # diagnostic frame counter
 
         try:
             while self._active:
@@ -341,6 +342,15 @@ class PlayerTracker:
                 if frame is None:
                     time.sleep(0.001)
                     continue
+
+                # Diagnostic: log first few frames to verify content
+                _diag_count += 1
+                if _diag_count <= 5:
+                    logger.info(
+                        f"[diag] frame #{_diag_count}: shape={frame.shape}, "
+                        f"dtype={frame.dtype}, mean={frame.mean():.1f}, "
+                        f"min={frame.min()}, max={frame.max()}"
+                    )
 
                 # Resize to 640×360
                 resized = cv2.resize(frame, (FRAME_W, FRAME_H))
@@ -362,6 +372,16 @@ class PlayerTracker:
 
                 # ── Process ──
                 detections = self._parse_results(results)
+
+                # Diagnostic: log first few detection results
+                if _diag_count <= 5:
+                    raw_boxes = results[0].boxes if results and results[0].boxes is not None else None
+                    raw_count = len(raw_boxes) if raw_boxes is not None else 0
+                    logger.info(
+                        f"[diag] frame #{_diag_count}: raw_detections={raw_count}, "
+                        f"parsed_persons={len(detections)}"
+                    )
+
                 self._update_tracking(detections)
                 self._send_osc()
 
