@@ -5,6 +5,7 @@ import threading
 # Import tracker FIRST — its module-level code pre-initialises bettercam
 # via DXGI Desktop Duplication BEFORE any CUDA library loads.
 # If CUDA loads first, DXGI fails on hybrid-GPU systems.
+# Importing is safe even when tracker is disabled in config.
 from src.tracker import PlayerTracker
 
 from src.config import Config
@@ -46,7 +47,13 @@ async def main():
     config = Config()
     audio = AudioManager(config)
     osc = VRChatOSC(config)
-    tracker = PlayerTracker(config, osc)
+    tracker = PlayerTracker(config, osc) if config.tracker_enabled else None
+    if tracker:
+        tracker.preload()  # async background model load + warmup
+        if config.vision_debug:
+            from vision_server import run_vision_server
+            tracker._vision_debug = True
+            run_vision_server(port=config.vision_debug_port, tracker=tracker)
     personality = PersonalityManager()
     session = GeminiLiveSession(config, audio, osc, tracker, personality)
 
@@ -76,7 +83,8 @@ async def main():
             continue
     
     # Cleanup only happens on KeyboardInterrupt
-    tracker.active = False
+    if tracker:
+        tracker.active = False
     emotion = get_emotion_system()
     if emotion:
         emotion.stop()

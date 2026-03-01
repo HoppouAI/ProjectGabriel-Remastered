@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 def get_tool_declarations(config=None):
+    tracker_enabled = True
+    if config is not None:
+        tracker_enabled = getattr(config, "tracker_enabled", True)
+
     # Base function declarations - NO UNDERSCORES to avoid 1011 errors with Gemini Live
     function_decls = [
         types.FunctionDeclaration(
@@ -84,32 +88,6 @@ def get_tool_declarations(config=None):
                         "muted": {"type": "STRING", "description": "Set to 'true' to mute, 'false' to unmute"},
                     },
                     "required": ["muted"],
-                },
-            ),
-            types.FunctionDeclaration(
-                name="startFollow",
-                description="Start following a player visible on screen using YOLO vision tracking. Automatically detects and locks onto the nearest person.",
-                parameters={
-                    "type": "OBJECT",
-                    "properties": {
-                        "mode": {"type": "STRING", "description": "Follow mode (default 'auto')"},
-                    },
-                },
-            ),
-            types.FunctionDeclaration(
-                name="stopFollow",
-                description="Stop following a player and halt all tracking movement.",
-                parameters={"type": "OBJECT", "properties": {}},
-            ),
-            types.FunctionDeclaration(
-                name="setFollowDistance",
-                description="Set how close to follow the target player. Value is a fraction from 0.01 (very close) to 0.5 (far away). Default is 0.08.",
-                parameters={
-                    "type": "OBJECT",
-                    "properties": {
-                        "value": {"type": "NUMBER", "description": "Target follow distance as bounding-box area fraction (0.01 to 0.5)"},
-                    },
-                    "required": ["value"],
                 },
             ),
             types.FunctionDeclaration(
@@ -197,7 +175,38 @@ def get_tool_declarations(config=None):
                 description=decl["description"],
                 parameters=decl["parameters"],
             ))
-    
+
+    # Player following tools (only if tracker is enabled in config)
+    if tracker_enabled:
+        function_decls.extend([
+            types.FunctionDeclaration(
+                name="startFollow",
+                description="Start following a player visible on screen using YOLO vision tracking. Automatically detects and locks onto the nearest person.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "mode": {"type": "STRING", "description": "Follow mode (default 'auto')"},
+                    },
+                },
+            ),
+            types.FunctionDeclaration(
+                name="stopFollow",
+                description="Stop following a player and halt all tracking movement.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="setFollowDistance",
+                description="Set how close to follow the target player. Value is a fraction from 0.01 (very close) to 0.5 (far away). Default is 0.08.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "value": {"type": "NUMBER", "description": "Target follow distance as bounding-box area fraction (0.01 to 0.5)"},
+                    },
+                    "required": ["value"],
+                },
+            ),
+        ])
+
     return [
         types.Tool(google_search=types.GoogleSearch()),
         types.Tool(function_declarations=function_decls),
@@ -280,10 +289,16 @@ class ToolHandler:
             self.osc.toggle_voice()
             return {"result": "ok"}
         elif name == "startFollow":
+            if self.tracker is None:
+                return {"result": "error", "message": "Tracker is disabled in config"}
             return self.tracker.startfollow(args.get("mode", "auto"))
         elif name == "stopFollow":
+            if self.tracker is None:
+                return {"result": "error", "message": "Tracker is disabled in config"}
             return self.tracker.stopfollow()
         elif name == "setFollowDistance":
+            if self.tracker is None:
+                return {"result": "error", "message": "Tracker is disabled in config"}
             return self.tracker.setfollowdistance(args["value"])
         elif name == "listPersonalities":
             result = self.personality.list_personalities()
