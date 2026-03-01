@@ -1,16 +1,17 @@
 {
-  "confidence_threshold": 0.45,
+  "confidence_threshold": 0.40,
   "iou_threshold": 0.45,
   "target_area": 0.08,
-  "deadzone": 0.05,
-  "smoothing_alpha": 0.15,
+  "deadzone": 0.04,
+  "smoothing_alpha": 0.45,
+  "turn_gain": 2.5,
   "center_distance_weight": 1.0,
   "area_weight": 0.5,
   "lock_timeout": 2.0,
   "reacquire_threshold": 0.3,
   "max_detections": 10,
-  "forward_scale_min": 0.2,
-  "forward_scale_max": 0.4,
-  "strafe_threshold": 0.5,
-  "strafe_scale": 0.3
+  "forward_scale_min": 0.5,
+  "forward_scale_max": 1.0,
+  "strafe_threshold": 0.25,
+  "strafe_scale": 0.6
 }

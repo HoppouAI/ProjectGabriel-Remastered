@@ -19,20 +19,21 @@ FRAME_H = 360
 TARGET_FPS = 30
 
 DEFAULT_CFG = {
-    "confidence_threshold": 0.45,
+    "confidence_threshold": 0.40,
     "iou_threshold": 0.45,
     "target_area": 0.08,
-    "deadzone": 0.05,
-    "smoothing_alpha": 0.15,
+    "deadzone": 0.04,
+    "smoothing_alpha": 0.45,
+    "turn_gain": 2.5,
     "center_distance_weight": 1.0,
     "area_weight": 0.5,
     "lock_timeout": 2.0,
     "reacquire_threshold": 0.3,
     "max_detections": 10,
-    "forward_scale_min": 0.2,
-    "forward_scale_max": 0.4,
-    "strafe_threshold": 0.5,
-    "strafe_scale": 0.3,
+    "forward_scale_min": 0.5,
+    "forward_scale_max": 1.0,
+    "strafe_threshold": 0.25,
+    "strafe_scale": 0.6,
 }
 
 
@@ -109,6 +110,7 @@ class PlayerTracker:
 
         import torch
         from ultralytics import YOLO
+        import numpy as np
 
         model_dir = self._model_dir()
         model_name = self._model_name()
@@ -125,10 +127,35 @@ class PlayerTracker:
         else:
             self.model = YOLO(str(model_path))
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model.to(device)
-        self._use_half = device == "cuda"
+        # CUDA setup with detailed diagnostics
+        if torch.cuda.is_available():
+            device = "cuda"
+            gpu_name = torch.cuda.get_device_name(0)
+            vram = torch.cuda.get_device_properties(0).total_mem / 1024**3
+            logger.info(f"CUDA available: {gpu_name} ({vram:.1f} GB)")
+            self.model.to(device)
+            self.model.model.half()  # FP16
+            self._use_half = True
+        else:
+            device = "cpu"
+            self._use_half = False
+            logger.warning(
+                "CUDA not available — running on CPU (expect <10 FPS). "
+                "Install PyTorch CUDA: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121"
+            )
+            self.model.to(device)
+
         logger.info(f"{model_name} loaded on {device} (FP16={self._use_half})")
+
+        # Warmup inference (JIT compile kernels, allocate buffers)
+        logger.info("Running warmup inference...")
+        dummy = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
+        for _ in range(3):
+            self.model.track(
+                dummy, persist=False, conf=0.5, classes=[0],
+                max_det=5, verbose=False, half=self._use_half,
+            )
+        logger.info("Warmup done")
 
     # ── Public API (called by Gemini tools) ───────────────────────────────
 
@@ -410,7 +437,9 @@ class PlayerTracker:
         if abs(dy) < deadzone:
             dy = 0.0
 
-        raw_look_h = dx
+        # Apply turn gain — makes turning more aggressive so target stays on-screen
+        gain = cfg["turn_gain"]
+        raw_look_h = max(-1.0, min(1.0, dx * gain))
         raw_look_v = -dy * 0.4
 
         # Forward control based on bounding-box area vs target area
@@ -423,7 +452,7 @@ class PlayerTracker:
         else:
             raw_forward = 0.0
 
-        # ── EMA smoothing  (smoothed = old * 0.85 + new * 0.15) ──
+        # ── EMA smoothing ──
         self._smoothed_look_h = (
             self._smoothed_look_h * (1 - alpha) + raw_look_h * alpha
         )
