@@ -29,14 +29,15 @@ DEFAULT_CFG = {
     "confidence_threshold": 0.40,
     "iou_threshold": 0.45,
     "target_area": 0.07,
+    "sprint_area": 0.025,
     "deadzone": 0.07,
     "smoothing_alpha": 0.40,
     "turn_gain": 1.8,
     "max_turn_rate": 0.12,
     "center_distance_weight": 1.0,
     "area_weight": 0.5,
-    "lock_timeout": 2.0,
-    "reacquire_threshold": 0.3,
+    "lock_timeout": 5.0,
+    "reacquire_threshold": 1.0,
     "max_detections": 10,
     "forward_scale_min": 0.5,
     "forward_scale_max": 1.0,
@@ -99,6 +100,7 @@ class PlayerTracker:
         self._smoothed_look_h = 0.0
         self._smoothed_look_v = 0.0
         self._smoothed_forward = 0.0
+        self._sprinting = False
 
         # Config
         self._cfg = dict(DEFAULT_CFG)
@@ -233,6 +235,7 @@ class PlayerTracker:
         self._smoothed_look_h = 0.0
         self._smoothed_look_v = 0.0
         self._smoothed_forward = 0.0
+        self._sprinting = False
         self._first_frame = True
         self._fps = 0.0
         self._frame_count = 0
@@ -540,6 +543,7 @@ class PlayerTracker:
         raw_look_v = -dy * 0.4
 
         # Forward control based on bounding-box area vs target area
+        sprint_area = cfg["sprint_area"]
         if target["area"] < target_area:
             deficit = (target_area - target["area"]) / target_area
             raw_forward = cfg["forward_scale_min"] + deficit * (
@@ -548,6 +552,9 @@ class PlayerTracker:
             raw_forward = min(raw_forward, cfg["forward_scale_max"])
         else:
             raw_forward = 0.0
+
+        # Sprint when target is very far away (smooth transition)
+        self._sprinting = target["area"] < sprint_area and raw_forward > 0.3
 
         # ── EMA smoothing ──
         new_look_h = self._smoothed_look_h * (1 - alpha) + raw_look_h * alpha
@@ -587,6 +594,9 @@ class PlayerTracker:
         # ── Forward / backward axis ──
         client.send_message("/input/Vertical", float(forward))
 
+        # ── Sprint (button: 1 = press, 0 = release) ──
+        client.send_message("/input/Run", 1 if self._sprinting else 0)
+
         # ── Strafe axis (only when heavily off-centre) ──
         if abs(look_h) > cfg["strafe_threshold"]:
             strafe = max(-1.0, min(1.0, look_h * cfg["strafe_scale"]))
@@ -602,3 +612,4 @@ class PlayerTracker:
         client.send_message("/input/LookHorizontal", 0.0)
         client.send_message("/input/Vertical", 0.0)
         client.send_message("/input/Horizontal", 0.0)
+        client.send_message("/input/Run", 0)
