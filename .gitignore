@@ -195,3 +195,4 @@ sfx/music/*.m4a
 *.sqlite-wal
 *.sqlite-shm
 Screenshot 2026-02-08 083943.png
+*.pt
