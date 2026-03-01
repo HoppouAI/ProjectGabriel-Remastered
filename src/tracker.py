@@ -21,10 +21,11 @@ TARGET_FPS = 30
 DEFAULT_CFG = {
     "confidence_threshold": 0.40,
     "iou_threshold": 0.45,
-    "target_area": 0.08,
-    "deadzone": 0.04,
-    "smoothing_alpha": 0.45,
-    "turn_gain": 2.5,
+    "target_area": 0.14,
+    "deadzone": 0.07,
+    "smoothing_alpha": 0.40,
+    "turn_gain": 1.8,
+    "max_turn_rate": 0.12,
     "center_distance_weight": 1.0,
     "area_weight": 0.5,
     "lock_timeout": 2.0,
@@ -494,15 +495,19 @@ class PlayerTracker:
             raw_forward = 0.0
 
         # ── EMA smoothing ──
-        self._smoothed_look_h = (
-            self._smoothed_look_h * (1 - alpha) + raw_look_h * alpha
-        )
-        self._smoothed_look_v = (
-            self._smoothed_look_v * (1 - alpha) + raw_look_v * alpha
-        )
-        self._smoothed_forward = (
-            self._smoothed_forward * (1 - alpha) + raw_forward * alpha
-        )
+        new_look_h = self._smoothed_look_h * (1 - alpha) + raw_look_h * alpha
+        new_look_v = self._smoothed_look_v * (1 - alpha) + raw_look_v * alpha
+        new_forward = self._smoothed_forward * (1 - alpha) + raw_forward * alpha
+
+        # ── Rate limiter: cap how fast turn can change per frame ──
+        max_rate = cfg["max_turn_rate"]
+        delta_h = new_look_h - self._smoothed_look_h
+        if abs(delta_h) > max_rate:
+            new_look_h = self._smoothed_look_h + max_rate * (1 if delta_h > 0 else -1)
+
+        self._smoothed_look_h = new_look_h
+        self._smoothed_look_v = new_look_v
+        self._smoothed_forward = new_forward
 
     # ── OSC Output ────────────────────────────────────────────────────────
 
