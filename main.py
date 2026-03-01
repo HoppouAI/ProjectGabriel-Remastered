@@ -1,10 +1,15 @@
 import asyncio
 import logging
 import threading
+
+# Import tracker FIRST — its module-level code pre-initialises bettercam
+# via DXGI Desktop Duplication BEFORE any CUDA library loads.
+# If CUDA loads first, DXGI fails on hybrid-GPU systems.
+from src.tracker import PlayerTracker
+
 from src.config import Config
 from src.audio import AudioManager
 from src.vrchat import VRChatOSC
-from src.tracker import PlayerTracker
 from src.personalities import PersonalityManager
 from src.gemini_live import GeminiLiveSession
 from src.emotions import get_emotion_system

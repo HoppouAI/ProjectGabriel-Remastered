@@ -1,6 +1,14 @@
 """
 Player tracking and following system.
-YOLOv8n + ByteTrack + dxcam screen capture → VRChat OSC movement.
+YOLOv8n + ByteTrack + screen capture → VRChat OSC movement.
+
+Capture priority:
+  1. bettercam (DXGI Desktop Duplication — fastest, GPU-accelerated)
+     ⚠ Must be initialised BEFORE torch/CUDA loads, otherwise DXGI
+       fails with DXGI_ERROR_UNSUPPORTED on hybrid-GPU systems because
+       CUDA forces the process onto the discrete GPU.
+  2. windows-capture (Windows.Graphics.Capture API — no CUDA conflict)
+  3. mss (GDI BitBlt — works everywhere, ~10 FPS)
 """
 
 import json
@@ -36,6 +44,40 @@ DEFAULT_CFG = {
     "strafe_threshold": 0.25,
     "strafe_scale": 0.6,
 }
+
+
+# ── Early bettercam init (BEFORE torch/CUDA) ─────────────────────────────
+# CUDA linking makes DXGI DuplicateOutput fail on some systems.
+# By creating the camera object now, the DXGI context is established
+# while the process is still on the iGPU.
+_early_camera = None
+_early_camera_backend = None
+
+def _try_early_bettercam():
+    """Attempt to create a bettercam camera before any CUDA import."""
+    global _early_camera, _early_camera_backend
+    try:
+        import bettercam
+        for args in [
+            {},
+            {"output_idx": 0},
+            {"device_idx": 0, "output_idx": 0},
+        ]:
+            try:
+                cam = bettercam.create(output_color="BGR", **args)
+                time.sleep(0.15)  # let DXGI settle (known bettercam quirk)
+                _early_camera = cam
+                _early_camera_backend = "bettercam"
+                logger.info(f"Early bettercam init OK ({args or 'default'})")
+                return
+            except Exception as e:
+                logger.debug(f"Early bettercam attempt ({args}): {e}")
+                continue
+        logger.info("Early bettercam init failed on all attempts")
+    except ImportError:
+        logger.debug("bettercam not installed — skipping early init")
+
+_try_early_bettercam()
 
 
 class PlayerTracker:
@@ -200,21 +242,31 @@ class PlayerTracker:
     # ── Screen Capture Init ─────────────────────────────────────────────────
 
     def _init_screen_capture(self):
-        """Try dxcam, fall back to mss. Returns a callable that grabs BGR frames."""
+        """
+        Returns a callable that grabs BGR frames.
+        Priority:
+          1. bettercam (early-init'd before CUDA to avoid DXGI conflict)
+          2. bettercam (late init — works if CUDA didn't poison DXGI)
+          3. mss (GDI BitBlt — works everywhere, ~10 FPS)
+        """
         import numpy as np
+        global _early_camera, _early_camera_backend
 
-        # Try bettercam (fastest, GPU-accelerated — maintained dxcam fork)
+        # ── 1) Use early-initialised bettercam if available ──
+        if _early_camera is not None:
+            self._camera = _early_camera
+            _early_camera = None  # transfer ownership
+            logger.info("Using early-initialised bettercam (pre-CUDA)")
+
+            cam_ref = self._camera
+            def _grab_bettercam_early():
+                return cam_ref.grab()
+            return _grab_bettercam_early
+
+        # ── 2) Try bettercam late (may work on single-GPU desktops) ──
         try:
             import bettercam
 
-            if self._camera is not None:
-                try:
-                    del self._camera
-                except Exception:
-                    pass
-                self._camera = None
-
-            # Try default (primary monitor), then explicit indices
             for args in [
                 {},
                 {"output_idx": 0},
@@ -222,21 +274,22 @@ class PlayerTracker:
             ]:
                 try:
                     self._camera = bettercam.create(output_color="BGR", **args)
-                    logger.info(f"bettercam initialized ({args or 'default'})")
+                    time.sleep(0.15)
+                    logger.info(f"bettercam late-init OK ({args or 'default'})")
 
-                    def _grab_bettercam():
-                        return self._camera.grab()
-
-                    return _grab_bettercam
+                    cam_ref = self._camera
+                    def _grab_bettercam_late():
+                        return cam_ref.grab()
+                    return _grab_bettercam_late
                 except Exception:
                     self._camera = None
                     continue
 
-            logger.warning("bettercam: all init attempts failed, falling back to mss")
+            logger.warning("bettercam: all late-init attempts failed")
         except ImportError:
-            logger.warning("bettercam not installed, falling back to mss")
+            pass
 
-        # Fallback: mss (works everywhere, slightly slower)
+        # ── 3) Fallback: mss (GDI — works everywhere, ~10 FPS) ──
         try:
             import mss
 
@@ -262,16 +315,19 @@ class PlayerTracker:
 
     def _run_loop(self):
         import cv2
-        import torch
         import numpy as np
 
-        self._ensure_model()
-
-        # Init screen capture — try dxcam first, fall back to mss
+        # ── Init screen capture FIRST (before CUDA loads) ──
+        # This ensures the early-bettercam DXGI context is used before
+        # torch/CUDA poisoning can occur.
         capture_fn = self._init_screen_capture()
         if capture_fn is None:
             self._active = False
             return
+
+        # ── Now load model (triggers torch/CUDA import) ──
+        import torch
+        self._ensure_model()
 
         logger.info(f"Player tracker started — target {TARGET_FPS} FPS")
         frame_interval = 1.0 / TARGET_FPS
