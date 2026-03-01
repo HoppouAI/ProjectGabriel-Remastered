@@ -7,8 +7,7 @@ Capture priority:
      ⚠ Must be initialised BEFORE torch/CUDA loads, otherwise DXGI
        fails with DXGI_ERROR_UNSUPPORTED on hybrid-GPU systems because
        CUDA forces the process onto the discrete GPU.
-  2. windows-capture (Windows.Graphics.Capture API — no CUDA conflict)
-  3. mss (GDI BitBlt — works everywhere, ~10 FPS)
+  2. mss (GDI BitBlt — works everywhere, ~10 FPS)
 """
 
 import json
@@ -29,7 +28,7 @@ TARGET_FPS = 30
 DEFAULT_CFG = {
     "confidence_threshold": 0.40,
     "iou_threshold": 0.45,
-    "target_area": 0.14,
+    "target_area": 0.07,
     "deadzone": 0.07,
     "smoothing_alpha": 0.40,
     "turn_gain": 1.8,
@@ -331,7 +330,6 @@ class PlayerTracker:
 
         logger.info(f"Player tracker started — target {TARGET_FPS} FPS")
         frame_interval = 1.0 / TARGET_FPS
-        _diag_count = 0  # diagnostic frame counter
 
         try:
             while self._active:
@@ -342,15 +340,6 @@ class PlayerTracker:
                 if frame is None:
                     time.sleep(0.001)
                     continue
-
-                # Diagnostic: log first few frames to verify content
-                _diag_count += 1
-                if _diag_count <= 5:
-                    logger.info(
-                        f"[diag] frame #{_diag_count}: shape={frame.shape}, "
-                        f"dtype={frame.dtype}, mean={frame.mean():.1f}, "
-                        f"min={frame.min()}, max={frame.max()}"
-                    )
 
                 # Resize to 640×360
                 resized = cv2.resize(frame, (FRAME_W, FRAME_H))
@@ -372,16 +361,6 @@ class PlayerTracker:
 
                 # ── Process ──
                 detections = self._parse_results(results)
-
-                # Diagnostic: log first few detection results
-                if _diag_count <= 5:
-                    raw_boxes = results[0].boxes if results and results[0].boxes is not None else None
-                    raw_count = len(raw_boxes) if raw_boxes is not None else 0
-                    logger.info(
-                        f"[diag] frame #{_diag_count}: raw_detections={raw_count}, "
-                        f"parsed_persons={len(detections)}"
-                    )
-
                 self._update_tracking(detections)
                 self._send_osc()
 

@@ -1,7 +1,7 @@
 {
   "confidence_threshold": 0.40,
   "iou_threshold": 0.45,
-  "target_area": 0.14,
+  "target_area": 0.07,
   "deadzone": 0.07,
   "smoothing_alpha": 0.40,
   "turn_gain": 1.8,
