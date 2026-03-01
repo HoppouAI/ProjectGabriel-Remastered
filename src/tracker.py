@@ -196,34 +196,83 @@ class PlayerTracker:
         self._frame_count = 0
         self._fps_timer = time.perf_counter()
 
+    # ── Screen Capture Init ─────────────────────────────────────────────────
+
+    def _init_screen_capture(self):
+        """Try dxcam, fall back to mss. Returns a callable that grabs BGR frames."""
+        import numpy as np
+
+        # Try dxcam (fastest, GPU-accelerated)
+        try:
+            import dxcam
+
+            if self._camera is not None:
+                try:
+                    del self._camera
+                except Exception:
+                    pass
+                self._camera = None
+
+            # Try default (primary monitor), then explicit indices
+            for args in [
+                {},
+                {"output_idx": 0},
+                {"device_idx": 0, "output_idx": 0},
+            ]:
+                try:
+                    self._camera = dxcam.create(output_color="BGR", **args)
+                    logger.info(f"dxcam initialized ({args or 'default'})")
+
+                    def _grab_dxcam():
+                        return self._camera.grab()
+
+                    return _grab_dxcam
+                except Exception:
+                    self._camera = None
+                    continue
+
+            logger.warning("dxcam: all init attempts failed, falling back to mss")
+        except ImportError:
+            logger.warning("dxcam not installed, falling back to mss")
+
+        # Fallback: mss (works everywhere, slightly slower)
+        try:
+            import mss
+
+            sct = mss.mss()
+            monitor_cfg = getattr(self.config, "vision_monitor", 1)
+            if monitor_cfg >= len(sct.monitors):
+                monitor_cfg = 1
+            monitor = sct.monitors[monitor_cfg]
+            logger.info(
+                f"mss initialized (monitor {monitor_cfg}: "
+                f"{monitor['width']}x{monitor['height']})"
+            )
+
+            def _grab_mss():
+                return np.array(sct.grab(monitor))[:, :, :3]
+
+            return _grab_mss
+        except Exception as e:
+            logger.error(f"Screen capture init failed entirely: {e}")
+            return None
+
     # ── Main Tracking Loop (runs in thread) ───────────────────────────────
 
     def _run_loop(self):
         import cv2
         import torch
-        import dxcam
+        import numpy as np
 
         self._ensure_model()
 
-        # Init screen capture via dxcam
-        monitor_idx = max(0, getattr(self.config, "vision_monitor", 1) - 1)
-        if self._camera is not None:
-            try:
-                del self._camera
-            except Exception:
-                pass
-            self._camera = None
-
-        try:
-            self._camera = dxcam.create(output_idx=monitor_idx, output_color="BGR")
-        except Exception as e:
-            logger.error(f"dxcam init failed (monitor {monitor_idx}): {e}")
+        # Init screen capture — try dxcam first, fall back to mss
+        capture_fn = self._init_screen_capture()
+        if capture_fn is None:
             self._active = False
             return
 
-        logger.info(
-            f"Player tracker started — target {TARGET_FPS} FPS, monitor={monitor_idx}"
-        )
+        logger.info(f"Player tracker started — target {TARGET_FPS} FPS")
         frame_interval = 1.0 / TARGET_FPS
 
         try:
@@ -231,7 +280,7 @@ class PlayerTracker:
                 t0 = time.perf_counter()
 
                 # ── Capture ──
-                frame = self._camera.grab()
+                frame = capture_fn()
                 if frame is None:
                     time.sleep(0.001)
                     continue
