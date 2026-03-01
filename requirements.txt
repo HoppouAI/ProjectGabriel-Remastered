@@ -6,8 +6,11 @@ pygame
 numpy
 scipy
 ultralytics
+lap>=0.5.12
 dxcam
 mss
 aiohttp
 beautifulsoup4
 Pillow
+torch
+torchvision
