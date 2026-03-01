@@ -7,7 +7,7 @@ numpy
 scipy
 ultralytics
 lap>=0.5.12
-dxcam
+bettercam
 mss
 aiohttp
 beautifulsoup4

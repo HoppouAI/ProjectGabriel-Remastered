@@ -203,9 +203,9 @@ class PlayerTracker:
         """Try dxcam, fall back to mss. Returns a callable that grabs BGR frames."""
         import numpy as np
 
-        # Try dxcam (fastest, GPU-accelerated)
+        # Try bettercam (fastest, GPU-accelerated — maintained dxcam fork)
         try:
-            import dxcam
+            import bettercam
 
             if self._camera is not None:
                 try:
@@ -221,20 +221,20 @@ class PlayerTracker:
                 {"device_idx": 0, "output_idx": 0},
             ]:
                 try:
-                    self._camera = dxcam.create(output_color="BGR", **args)
-                    logger.info(f"dxcam initialized ({args or 'default'})")
+                    self._camera = bettercam.create(output_color="BGR", **args)
+                    logger.info(f"bettercam initialized ({args or 'default'})")
 
-                    def _grab_dxcam():
+                    def _grab_bettercam():
                         return self._camera.grab()
 
-                    return _grab_dxcam
+                    return _grab_bettercam
                 except Exception:
                     self._camera = None
                     continue
 
-            logger.warning("dxcam: all init attempts failed, falling back to mss")
+            logger.warning("bettercam: all init attempts failed, falling back to mss")
         except ImportError:
-            logger.warning("dxcam not installed, falling back to mss")
+            logger.warning("bettercam not installed, falling back to mss")
 
         # Fallback: mss (works everywhere, slightly slower)
         try:
