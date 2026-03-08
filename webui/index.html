@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gabriel Control Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <div class="header-title">
+                <h1>Gabriel</h1>
+                <span class="subtitle">VRChat AI Control Panel</span>
+            </div>
+        </div>
+        <div class="header-badges">
+            <div class="badge" id="connectionBadge">
+                <span class="badge-dot disconnected" id="connectionDot"></span>
+                <span id="connectionLabel">Disconnected</span>
+            </div>
+            <div class="badge" id="micBadge">
+                <span class="badge-dot active" id="micDot"></span>
+                <span id="micLabel">Mic Active</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tab-bar">
+        <button class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
+        <button class="tab" data-tab="music" onclick="switchTab('music')">Music</button>
+        <button class="tab" data-tab="console" onclick="switchTab('console')">Console</button>
+    </nav>
+
+    <!-- Dashboard Tab -->
+    <main class="container" id="tab-dashboard">
+        <div class="grid-dashboard">
+            <!-- Session Control -->
+            <section class="card">
+                <div class="card-header">
+                    <span class="card-icon">&#x1f3ae;</span>
+                    <h2>Session Control</h2>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="reconnectBtn" onclick="apiReconnect()">Reconnect</button>
+                    <button class="btn btn-danger" id="clearSessionBtn" onclick="apiClearSession()">Clear Session</button>
+                </div>
+                <div class="btn-row" style="margin-top:0.5rem">
+                    <button class="btn btn-warning" id="muteBtn" onclick="apiToggleMute()">Mute Mic</button>
+                </div>
+                <div class="session-meta" id="sessionMeta">No active session</div>
+            </section>
+
+            <!-- Personality -->
+            <section class="card">
+                <div class="card-header">
+                    <span class="card-icon">&#x1f3ad;</span>
+                    <h2>Personality</h2>
+                </div>
+                <select class="select" id="personalitySelect" onchange="apiSwitchPersonality()">
+                    <option value="">Loading...</option>
+                </select>
+            </section>
+
+            <!-- Send Text -->
+            <section class="card">
+                <div class="card-header">
+                    <span class="card-icon">&#x1f4ac;</span>
+                    <h2>Send Text</h2>
+                </div>
+                <div class="input-row">
+                    <input type="text" class="input" id="textInput" placeholder="Type a message to the model..." onkeydown="if(event.key==='Enter')apiSendText()">
+                    <button class="btn btn-primary" onclick="apiSendText()">Send</button>
+                </div>
+            </section>
+
+            <!-- Send System Instruction -->
+            <section class="card">
+                <div class="card-header">
+                    <span class="card-icon">&#x2699;</span>
+                    <h2>System Instruction</h2>
+                </div>
+                <div class="input-row">
+                    <input type="text" class="input" id="sysInstructionInput" placeholder="Send a system instruction to the model..." onkeydown="if(event.key==='Enter')apiSendSystemInstruction()">
+                    <button class="btn btn-accent" onclick="apiSendSystemInstruction()">Send</button>
+                </div>
+            </section>
+
+            <!-- Now Playing -->
+            <section class="card card-accent">
+                <div class="card-header">
+                    <span class="card-icon">&#x1f3b5;</span>
+                    <h2>Now Playing</h2>
+                </div>
+                <div class="now-playing">
+                    <div class="song-title" id="songTitle">No music playing</div>
+                    <div class="progress-row">
+                        <span class="time" id="currentTime">0:00</span>
+                        <div class="progress-track">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <span class="time" id="totalTime">0:00</span>
+                    </div>
+                    <div class="music-controls">
+                        <button class="ctrl-btn" onclick="apiStopMusic()" title="stop">&#x23f9;&#xfe0f;</button>
+                        <button class="ctrl-btn ctrl-play" id="playBtn" onclick="apiTogglePlay()" title="play/pause">&#x25b6;&#xfe0f;</button>
+                        <div class="volume-wrap">
+                            <span class="vol-icon">&#x1f50a;</span>
+                            <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="70" oninput="apiSetVolume(this.value)">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Usage Stats -->
+            <section class="card">
+                <div class="card-header">
+                    <span class="card-icon">&#x1f4ca;</span>
+                    <h2>Usage Stats</h2>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat">
+                        <div class="stat-val" id="promptTokens">-</div>
+                        <div class="stat-label">Prompt</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-val" id="responseTokens">-</div>
+                        <div class="stat-label">Response</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-val" id="totalTokens">-</div>
+                        <div class="stat-label">Total</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-val" id="toolCalls">-</div>
+                        <div class="stat-label">Tools</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Memories -->
+            <section class="card">
+                <div class="card-header">
+                    <span class="card-icon">&#x1f9e0;</span>
+                    <h2>Recent Memories</h2>
+                </div>
+                <div class="memory-list" id="memoryList">
+                    <div class="empty-state">No memories yet</div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Music Tab -->
+    <main class="container hidden" id="tab-music">
+        <div class="grid-music">
+            <!-- Upload Zone -->
+            <section class="card card-full">
+                <div class="card-header">
+                    <span class="card-icon">&#x1f4e4;</span>
+                    <h2>Upload Music</h2>
+                    <span class="badge-small" id="sevenzipStatus"></span>
+                </div>
+                <div class="upload-zone" id="dropZone">
+                    <div class="upload-icon">&#x1f4c1;</div>
+                    <div class="upload-text">Drag &amp; drop music files here or click to browse</div>
+                    <div class="upload-hint">Supports MP3, WAV, OGG, FLAC, M4A, AAC, WMA + ZIP/7Z/RAR archives (max 2GB)</div>
+                    <input type="file" id="fileInput" multiple accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.wma,.zip,.7z,.rar">
+                    <div class="upload-progress" id="uploadProgress">
+                        <div class="upload-progress-fill" id="uploadProgressFill"></div>
+                    </div>
+                </div>
+                <div class="folder-row">
+                    <label>Upload to:</label>
+                    <select class="select" id="folderSelect"></select>
+                    <span class="folder-or">or new:</span>
+                    <input type="text" class="input" id="newFolder" placeholder="folder/subfolder">
+                </div>
+            </section>
+
+            <!-- File Library -->
+            <section class="card card-full">
+                <div class="card-header">
+                    <span class="card-icon">&#x1f4da;</span>
+                    <h2>Music Library</h2>
+                    <span class="file-count" id="fileCount">0 files</span>
+                    <input type="text" class="input filter-input" id="filterInput" placeholder="Filter files...">
+                    <button class="btn btn-small" onclick="loadMusicFiles()">Refresh</button>
+                    <button class="btn btn-small" onclick="apiOpenMusicFolder()">Open Folder</button>
+                </div>
+                <div class="file-list" id="fileList">
+                    <div class="empty-state">Loading...</div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Console Tab -->
+    <main class="container hidden" id="tab-console">
+        <section class="card card-full console-card">
+            <div class="card-header">
+                <span class="card-icon">&#x1f4df;</span>
+                <h2>Console</h2>
+                <button class="btn btn-small" onclick="clearConsole()">Clear</button>
+            </div>
+            <div class="console" id="console">
+                <div class="console-entry info">Waiting for connection...</div>
+            </div>
+            <div class="input-row" style="margin-top:0.75rem">
+                <input type="text" class="input" id="consoleTextInput" placeholder="Type a message to the model..." onkeydown="if(event.key==='Enter')apiSendTextConsole()">
+                <button class="btn btn-primary" onclick="apiSendTextConsole()">Send</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
