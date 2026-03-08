@@ -291,14 +291,38 @@ class AudioManager:
             logger.info(f"Volume change requested to {self._current_volume}% (boosted mode - limited support)")
             return True
 
-    def play_sfx_file(self, filepath: str) -> bool:
+    def play_sfx_file(self, filepath: str, boost: int = 0) -> bool:
         try:
             sound = pygame.mixer.Sound(filepath)
+            if boost > 0:
+                import numpy as np
+                raw = pygame.sndarray.array(sound)
+                samples = raw.astype(np.float32)
+                gain = 1.0 + (boost * 0.8)
+                samples *= gain
+                if boost >= 3:
+                    alpha = 0.15 + (boost * 0.03)
+                    bass = np.zeros_like(samples)
+                    bass[0] = samples[0]
+                    for i in range(1, len(samples)):
+                        bass[i] = alpha * samples[i] + (1 - alpha) * bass[i - 1]
+                    samples = samples + bass * (boost * 0.3)
+                if boost >= 2:
+                    max_val = 32767.0
+                    samples = np.tanh(samples / max_val * (1 + boost * 0.2)) * max_val
+                samples = np.clip(samples, -32767, 32767).astype(np.int16)
+                sound = pygame.sndarray.make_sound(samples)
+                logger.info(f"SFX boost applied: level {boost}")
             sound.play()
             return True
         except Exception as e:
             logger.error(f"SFX playback failed: {e}")
             return False
+
+    def stop_sfx(self):
+        """Stop all currently playing sound effects."""
+        pygame.mixer.stop()
+        logger.info("All SFX playback stopped")
 
     def cleanup(self):
         pygame.mixer.quit()

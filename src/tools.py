@@ -15,8 +15,8 @@ def get_tool_declarations(config=None):
     # Base function declarations - NO UNDERSCORES to avoid 1011 errors with Gemini Live
     function_decls = [
         types.FunctionDeclaration(
-                name="playSoundEffect",
-                description="Search and play a sound effect from MyInstants website",
+                name="searchSoundEffects",
+                description="Search for sound effects on MyInstants. Returns a list of results with IDs and titles. Use playSoundEffect with the ID to play one.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -24,6 +24,23 @@ def get_tool_declarations(config=None):
                     },
                     "required": ["query"],
                 },
+            ),
+            types.FunctionDeclaration(
+                name="playSoundEffect",
+                description="Play a sound effect by ID from the last searchSoundEffects results. Call searchSoundEffects first to get available IDs.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "soundId": {"type": "STRING", "description": "The ID of the sound to play from search results"},
+                        "boost": {"type": "INTEGER", "description": "Bass boost/distortion level 0-10. 0=normal, higher=louder and more distorted like a blown-out mic. Great for funny earrape moments."},
+                    },
+                    "required": ["soundId"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="stopSoundEffects",
+                description="Stop all currently playing sound effects immediately.",
+                parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="listMusic",
@@ -263,8 +280,13 @@ class ToolHandler:
         )
 
     async def _dispatch(self, name, args):
-        if name == "playSoundEffect":
-            return await self._play_sfx(args["query"])
+        if name == "searchSoundEffects":
+            return await self._search_sfx(args["query"])
+        elif name == "playSoundEffect":
+            return await self._play_sfx(args["soundId"], boost=int(args.get("boost", 0)))
+        elif name == "stopSoundEffects":
+            self.audio.stop_sfx()
+            return {"result": "ok"}
         elif name == "listMusic":
             return {"result": "ok", "files": self.audio.list_music()}
         elif name == "playMusic":
@@ -336,16 +358,33 @@ class ToolHandler:
         # Default fallback - always return something
         return {"result": "error", "message": f"unknown function: {name}"}
 
-    async def _play_sfx(self, query):
-        from src.myinstants import search_sound, download_sound
-        result = await search_sound(query)
-        if not result:
-            return {"result": "error", "message": "no sound found"}
-        filepath = await download_sound(result["url"])
+    async def _search_sfx(self, query):
+        from src.myinstants import search_sounds
+        logger.info(f"searchSoundEffects: searching for '{query}'")
+        results = await search_sounds(query)
+        if not results:
+            logger.warning(f"searchSoundEffects: no sounds found for '{query}'")
+            return {"result": "error", "message": "no sounds found"}
+        logger.info(f"searchSoundEffects: found {len(results)} results")
+        return {"result": "ok", "sounds": results}
+
+    async def _play_sfx(self, sound_id, boost=0):
+        from src.myinstants import get_sound_url, download_sound
+        logger.info(f"playSoundEffect: playing ID '{sound_id}' with boost={boost}")
+        entry = get_sound_url(sound_id)
+        if not entry:
+            return {"result": "error", "message": f"Sound ID '{sound_id}' not found. Call searchSoundEffects first."}
+        # If it's already a local cached file, use it directly
+        if entry.get("_local"):
+            filepath = entry["mp3"]
+        else:
+            filepath = await download_sound(entry["mp3"])
         if not filepath:
+            logger.warning(f"playSoundEffect: download failed for '{entry['title']}'")
             return {"result": "error", "message": "download failed"}
-        self.audio.play_sfx_file(filepath)
-        return {"result": "ok", "name": result["name"]}
+        logger.info(f"playSoundEffect: playing '{entry['title']}' from {filepath} (boost={boost})")
+        self.audio.play_sfx_file(filepath, boost=boost)
+        return {"result": "ok", "name": entry["title"], "boost": boost}
 
     async def _vrchat_move(self, direction: str, duration: float):
         """Move in a direction for a specified duration."""
