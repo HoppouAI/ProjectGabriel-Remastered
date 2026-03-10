@@ -657,34 +657,39 @@ function renderMemoryTable(memories, count) {
         return;
     }
 
-    var html = '<table class="mem-table"><thead><tr>' +
-        '<th>Key</th><th>Content</th><th>Category</th><th>Type</th><th>Tags</th><th>Actions</th>' +
-        '</tr></thead><tbody>';
-
+    var html = '';
     memories.forEach(function (m) {
         var isPinned = (m.tags || []).indexOf('pinned') !== -1;
-        var pinIcon = isPinned ? '<i class="fa-solid fa-thumbtack"></i>' : '<i class="fa-regular fa-thumbtack"></i>';
+        var pinClass = isPinned ? 'mem-pin-active' : '';
         var pinTitle = isPinned ? 'Unpin' : 'Pin';
         var content = m.content || '';
-        if (content.length > 120) content = content.substring(0, 120) + '...';
-        var tags = (m.tags || []).join(', ');
+        if (content.length > 200) content = content.substring(0, 200) + '...';
+        var tags = (m.tags || []).filter(function (t) { return t !== 'pinned'; });
         var typeLabel = (m.memory_type || 'long_term').replace('_', ' ');
+        var created = m.created_at ? new Date(m.created_at).toLocaleDateString() : '';
 
-        html += '<tr class="' + (isPinned ? 'mem-row-pinned' : '') + '">' +
-            '<td class="mem-cell-key">' + escapeHtml(m.key) + '</td>' +
-            '<td class="mem-cell-content" title="' + escapeHtml(m.content || '') + '">' + escapeHtml(content) + '</td>' +
-            '<td>' + escapeHtml(m.category || 'general') + '</td>' +
-            '<td><span class="mem-type-badge mem-type-' + (m.memory_type || 'long_term') + '">' + escapeHtml(typeLabel) + '</span></td>' +
-            '<td class="mem-cell-tags">' + escapeHtml(tags) + '</td>' +
-            '<td class="mem-cell-actions">' +
+        html += '<div class="mem-item' + (isPinned ? ' mem-item-pinned' : '') + '">' +
+            '<div class="mem-item-main">' +
+                '<div class="mem-item-header">' +
+                    '<span class="mem-item-key">' + escapeHtml(m.key) + '</span>' +
+                    '<span class="mem-type-badge mem-type-' + (m.memory_type || 'long_term') + '">' + escapeHtml(typeLabel) + '</span>' +
+                    (isPinned ? '<i class="fa-solid fa-thumbtack mem-pin-indicator"></i>' : '') +
+                '</div>' +
+                '<div class="mem-item-content">' + escapeHtml(content) + '</div>' +
+                '<div class="mem-item-meta">' +
+                    '<span class="mem-item-category"><i class="fa-solid fa-folder"></i> ' + escapeHtml(m.category || 'general') + '</span>' +
+                    (tags.length ? '<span class="mem-item-tags"><i class="fa-solid fa-tags"></i> ' + escapeHtml(tags.join(', ')) + '</span>' : '') +
+                    (created ? '<span class="mem-item-date"><i class="fa-solid fa-clock"></i> ' + created + '</span>' : '') +
+                '</div>' +
+            '</div>' +
+            '<div class="mem-item-actions">' +
                 '<button class="btn-icon" onclick="openMemEditModal(\'' + escapeJs(m.key) + '\')" title="Edit"><i class="fa-solid fa-pen"></i></button>' +
-                '<button class="btn-icon" onclick="togglePinMemory(\'' + escapeJs(m.key) + '\', ' + !isPinned + ')" title="' + pinTitle + '">' + pinIcon + '</button>' +
+                '<button class="btn-icon ' + pinClass + '" onclick="togglePinMemory(\'' + escapeJs(m.key) + '\', ' + !isPinned + ')" title="' + pinTitle + '"><i class="fa-solid fa-thumbtack"></i></button>' +
                 '<button class="btn-icon btn-icon-danger" onclick="deleteMemory(\'' + escapeJs(m.key) + '\')" title="Delete"><i class="fa-solid fa-trash"></i></button>' +
-            '</td>' +
-        '</tr>';
+            '</div>' +
+        '</div>';
     });
 
-    html += '</tbody></table>';
     wrap.innerHTML = html;
 }
 

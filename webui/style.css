@@ -995,77 +995,105 @@ body {
 }
 
 .mem-table-wrap {
-    overflow-x: auto;
     overflow-y: auto;
     flex: 1;
     min-height: 0;
+    padding: 0.25rem;
 }
 
-.mem-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.75rem;
+.mem-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
 }
 
-.mem-table th {
-    text-align: left;
-    padding: 0.55rem 0.6rem;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-secondary);
-    font-weight: 500;
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    position: sticky;
-    top: 0;
-    background: var(--bg-card);
-    z-index: 1;
-}
-
-.mem-table td {
-    padding: 0.5rem 0.6rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-    vertical-align: top;
-}
-
-.mem-table tr:hover {
+.mem-item:hover {
     background: rgba(124, 92, 255, 0.04);
+    border-color: var(--border);
 }
 
-.mem-row-pinned {
-    background: rgba(251, 191, 36, 0.04) !important;
+.mem-item + .mem-item {
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
 }
 
-.mem-row-pinned:hover {
-    background: rgba(251, 191, 36, 0.08) !important;
+.mem-item-pinned {
+    background: rgba(251, 191, 36, 0.03);
+    border-color: rgba(251, 191, 36, 0.1);
 }
 
-.mem-cell-key {
+.mem-item-pinned:hover {
+    background: rgba(251, 191, 36, 0.06);
+}
+
+.mem-item-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.mem-item-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.mem-item-key {
     color: var(--accent);
     font-weight: 500;
-    white-space: nowrap;
-    max-width: 180px;
+    font-size: 0.78rem;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.mem-cell-content {
-    max-width: 350px;
-    color: var(--text-secondary);
-    line-height: 1.4;
-}
-
-.mem-cell-tags {
+.mem-pin-indicator {
+    color: var(--warning);
     font-size: 0.65rem;
-    color: var(--text-muted);
-    max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
-.mem-cell-actions {
-    white-space: nowrap;
+.mem-item-content {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.45;
+    margin-bottom: 0.3rem;
+}
+
+.mem-item-meta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.mem-item-meta span {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.mem-item-meta i {
+    font-size: 0.55rem;
+}
+
+.mem-item-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    flex-shrink: 0;
+}
+
+.mem-pin-active {
+    color: var(--warning) !important;
+}
+
+.mem-pin-active:hover {
+    background: rgba(251, 191, 36, 0.12) !important;
+    border-color: rgba(251, 191, 36, 0.3) !important;
 }
 
 .mem-type-badge {
