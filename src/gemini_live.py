@@ -537,11 +537,7 @@ class GeminiLiveSession:
                         for part in response.server_content.model_turn.parts:
                             if part.inline_data:
                                 if not self._speaking:
-                                    # AI just started speaking - log user message and clear buffer
                                     self._speaking = True
-                                    if self._input_transcript_buffer.strip():
-                                        self._conv_logger.add_user_message(self._input_transcript_buffer)
-                                    self._input_transcript_buffer = ""
                                     self.osc.set_typing(True)
                                 # Try to start talking animations (idempotent, handles manual animation blocking)
                                 if self._emotion_system:
