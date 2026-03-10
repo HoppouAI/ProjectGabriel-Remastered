@@ -32,17 +32,38 @@ class ConversationLogger:
         self._session_start = datetime.now()
         self._file_path = CONVERSATION_DIR / f"{self._session_start.strftime('%Y-%m-%d_%H-%M-%S')}.json"
         self._lock = threading.Lock()
-        self._last_logged_user = ""
+        self._pending_user_idx = None
 
     def set_system_instruction(self, text: str):
         self._system_instruction = text
         self._save_async()
 
+    def stream_user_message(self, text: str):
+        """Update user message in-place or create new entry. Called on each transcription event."""
+        text = text.strip()
+        if not text:
+            return
+        with self._lock:
+            if self._pending_user_idx is not None and self._pending_user_idx < len(self._entries):
+                self._entries[self._pending_user_idx]["content"] = text
+            else:
+                self._pending_user_idx = len(self._entries)
+                self._entries.append({
+                    "role": "user",
+                    "content": text,
+                    "timestamp": datetime.now().isoformat(),
+                })
+        self._save_async()
+
+    def finalize_user_message(self):
+        """Reset pending index so next stream call creates a new entry."""
+        self._pending_user_idx = None
+
     def add_user_message(self, text: str):
         text = text.strip()
-        if not text or text == self._last_logged_user:
+        if not text:
             return
-        self._last_logged_user = text
+        self.finalize_user_message()
         with self._lock:
             self._entries.append({
                 "role": "user",
@@ -129,6 +150,7 @@ class GeminiLiveSession:
         self._session = None
         self._last_audio_time = 0  # Track when last audio was received
         self._idle_timeout = 15.0  # Stop talking animations after 15s idle
+        self._pending_finalize_task = None
         self._usage_metadata = {
             "prompt_tokens": 0,
             "response_tokens": 0,
@@ -164,6 +186,23 @@ class GeminiLiveSession:
                 logger.info(f"Sent text to model: {text[:50]}...")
             except Exception as e:
                 logger.error(f"Failed to send text: {e}")
+
+    def _schedule_user_finalize(self):
+        """Schedule delayed finalization of user transcript to catch late events."""
+        if self._pending_finalize_task:
+            self._pending_finalize_task.cancel()
+        self._pending_finalize_task = asyncio.create_task(self._delayed_user_finalize())
+
+    async def _delayed_user_finalize(self):
+        """Wait for late transcription events, then finalize the user entry."""
+        try:
+            await asyncio.sleep(0.5)
+            self._conv_logger.finalize_user_message()
+            self._input_transcript_buffer = ""
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._pending_finalize_task = None
 
     def _needs_alpha_api(self):
         """Check if any v1alpha-only features are enabled."""
@@ -555,9 +594,10 @@ class GeminiLiveSession:
                     ):
                         input_trans = response.server_content.input_transcription
                         if hasattr(input_trans, "text") and input_trans.text:
-                            # Input transcription is cumulative - just store and display latest
+                            # Input transcription is cumulative - store, display, and stream to logger
                             self._input_transcript_buffer = input_trans.text
                             _broadcast_console("transcription", self._input_transcript_buffer.strip(), {"streaming": True})
+                            self._conv_logger.stream_user_message(self._input_transcript_buffer)
 
                     # Handle output transcription (AI speech) - real-time
                     if (
@@ -577,12 +617,12 @@ class GeminiLiveSession:
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         await self._finalize_chatbox()
-                        if self._input_transcript_buffer.strip():
-                            self._conv_logger.add_user_message(self._input_transcript_buffer)
+                        # User message already streamed in-place via stream_user_message
                         if self._transcript_buffer.strip():
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
-                        self._input_transcript_buffer = ""
+                        # Delay user finalization to catch late transcription events
+                        self._schedule_user_finalize()
 
                     if response.server_content and response.server_content.interrupted:
                         self._speaking = False
@@ -599,9 +639,12 @@ class GeminiLiveSession:
                                 break
 
                     if response.tool_call:
-                        if self._input_transcript_buffer.strip():
-                            self._conv_logger.add_user_message(self._input_transcript_buffer)
-                            self._input_transcript_buffer = ""
+                        # Finalize user message immediately - model has processed input
+                        self._conv_logger.finalize_user_message()
+                        if self._pending_finalize_task:
+                            self._pending_finalize_task.cancel()
+                            self._pending_finalize_task = None
+                        self._input_transcript_buffer = ""
                         responses = []
                         for fc in response.tool_call.function_calls:
                             logger.info(f"Tool call: {fc.name}")
