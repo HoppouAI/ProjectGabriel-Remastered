@@ -44,6 +44,18 @@ def start_control_server(session, audio, personality, memory, get_emotion_fn):
 
 
 async def main():
+    loop = asyncio.get_running_loop()
+    _orig_handler = loop.get_exception_handler()
+    def _suppress_proactor_write_assert(loop, context):
+        exc = context.get("exception")
+        if isinstance(exc, AssertionError) and "_loop_writing" in str(context.get("handle", "")):
+            return
+        if _orig_handler:
+            _orig_handler(loop, context)
+        else:
+            loop.default_exception_handler(context)
+    loop.set_exception_handler(_suppress_proactor_write_assert)
+
     config = Config()
     audio = AudioManager(config)
     osc = VRChatOSC(config)
