@@ -589,12 +589,9 @@ class GeminiLiveSession:
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         self.osc.set_typing(False)
-                        if self._input_transcript_buffer.strip():
-                            self._conv_logger.add_user_message(self._input_transcript_buffer)
                         if self._transcript_buffer.strip():
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
-                        self._input_transcript_buffer = ""
                         while not self._audio_in_queue.empty():
                             try:
                                 self._audio_in_queue.get_nowait()
