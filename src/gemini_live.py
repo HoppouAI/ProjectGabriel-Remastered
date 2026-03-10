@@ -370,8 +370,22 @@ class GeminiLiveSession:
                         await asyncio.gather(*tasks)
                     finally:
                         self._session = None
-                        input_stream.close()
-                        output_stream.close()
+                        # Drain audio queue before closing streams to prevent
+                        # writes during close (causes Access Violation on Windows)
+                        while not self._audio_in_queue.empty():
+                            try:
+                                self._audio_in_queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        await asyncio.sleep(0.1)
+                        try:
+                            input_stream.close()
+                        except Exception:
+                            pass
+                        try:
+                            output_stream.close()
+                        except Exception:
+                            pass
 
             except APIError as e:
                 err_str = str(e).lower()
@@ -485,6 +499,8 @@ class GeminiLiveSession:
                 # Only send audio if mic is not muted
                 if not self._mic_muted:
                     await self._out_queue.put(("audio", data))
+            except asyncio.CancelledError:
+                return
             except Exception as e:
                 logger.error(f"Audio listen error: {e}")
                 raise
@@ -501,6 +517,8 @@ class GeminiLiveSession:
                     await session.send_realtime_input(
                         video=types.Blob(data=data, mime_type="image/jpeg")
                     )
+            except asyncio.CancelledError:
+                return
             except Exception as e:
                 logger.error(f"Send realtime error: {e}")
                 raise
@@ -513,6 +531,8 @@ class GeminiLiveSession:
                 audio_data = self.audio.process_output_audio(audio_data)
                 if audio_data:  # Only write if not completely muted
                     await asyncio.to_thread(output_stream.write, audio_data)
+            except asyncio.CancelledError:
+                return
             except Exception as e:
                 logger.error(f"Audio play error: {e}")
                 raise
