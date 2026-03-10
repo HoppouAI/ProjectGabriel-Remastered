@@ -183,6 +183,10 @@ cython_debug/
 # ProjectGabriel
 config.yml
 session_handle.txt
+data/conversations/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 models/yolo26/*.pt
 sfx/music/*.mp3
 sfx/music/*.wav
@@ -191,9 +195,6 @@ sfx/music/*.flac
 sfx/music/*.m4a
 !sfx/music/.gitkeep
 /old_stuff
-*.sqlite
-*.sqlite-wal
-*.sqlite-shm
 Screenshot 2026-02-08 083943.png
 *.pt
 /sfx/myinstants
