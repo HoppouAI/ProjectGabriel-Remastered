@@ -39,7 +39,8 @@ class ConversationLogger:
         self._save_async()
 
     def stream_user_message(self, text: str):
-        """Update user message in-place or create new entry. Called on each transcription event."""
+        """Update user message in-place or create new entry. Called on each transcription event.
+        Only updates in-memory entries - disk writes happen at turn boundaries."""
         text = text.strip()
         if not text:
             return
@@ -53,7 +54,6 @@ class ConversationLogger:
                     "content": text,
                     "timestamp": datetime.now().isoformat(),
                 })
-        self._save_async()
 
     def finalize_user_message(self):
         """Reset pending index so next stream call creates a new entry."""
