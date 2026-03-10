@@ -15,6 +15,10 @@ function switchTab(name) {
     document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
     document.querySelectorAll('main.container').forEach(m => m.classList.add('hidden'));
     document.getElementById('tab-' + name).classList.remove('hidden');
+    if (name === 'memories') {
+        loadMemories();
+        loadMemoryStats();
+    }
 }
 
 // --- Toast ---
