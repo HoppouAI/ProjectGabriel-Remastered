@@ -270,6 +270,8 @@ class ToolHandler:
         # Memory recall sub-agent
         if name == "recallMemories":
             try:
+                if self.osc:
+                    self.osc.send_chatbox("Thinking about the past...")
                 api_key = self.config.api_key if self.config else ""
                 personality_prompt = ""
                 if self.personality:

@@ -206,6 +206,14 @@ class PersonalityInput(BaseModel):
 class EmotionInput(BaseModel):
     emotion: str
 
+class MemoryUpdateInput(BaseModel):
+    content: str | None = None
+    category: str | None = None
+    memory_type: str | None = None
+
+class MemoryPinInput(BaseModel):
+    pin: bool = True
+
 
 # --- Routes ---
 
@@ -519,6 +527,91 @@ async def _extract_archive(file: UploadFile, target_dir: Path):
         }
     finally:
         os.unlink(tmp_path)
+
+
+# --- Memory Management API ---
+
+def _get_memory_mgr():
+    mgr = shared_state.get("memory_mgr")
+    if not mgr or not mgr.is_available():
+        raise HTTPException(status_code=503, detail="Memory system unavailable")
+    return mgr
+
+
+@app.get("/api/memories")
+async def list_memories(
+    memory_type: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+):
+    mgr = _get_memory_mgr()
+    if search:
+        res = mgr.search(term=search, memory_type=memory_type, limit=limit)
+    else:
+        res = mgr.list_memories(category=category, memory_type=memory_type, limit=limit)
+    if not res.get("success"):
+        raise HTTPException(status_code=500, detail=res.get("message", "Unknown error"))
+    return {"memories": res.get("memories", []), "count": res.get("count", 0)}
+
+
+@app.get("/api/memories/stats")
+async def memory_stats():
+    mgr = _get_memory_mgr()
+    res = mgr.stats()
+    if not res.get("success"):
+        raise HTTPException(status_code=500, detail=res.get("message", "Unknown error"))
+    return res["stats"]
+
+
+@app.get("/api/memories/{key}")
+async def read_memory(key: str):
+    mgr = _get_memory_mgr()
+    res = mgr.read(key)
+    if not res.get("success"):
+        raise HTTPException(status_code=404, detail=res.get("message", "Not found"))
+    return res["memory"]
+
+
+@app.put("/api/memories/{key}")
+async def update_memory(key: str, body: MemoryUpdateInput):
+    mgr = _get_memory_mgr()
+    res = mgr.update(
+        key=key,
+        content=body.content,
+        category=body.category,
+        memory_type=body.memory_type,
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message", "Update failed"))
+    return {"result": "ok"}
+
+
+@app.delete("/api/memories/{key}")
+async def delete_memory(key: str):
+    mgr = _get_memory_mgr()
+    res = mgr.delete(key)
+    if not res.get("success"):
+        raise HTTPException(status_code=404, detail=res.get("message", "Not found"))
+    return {"result": "ok"}
+
+
+@app.post("/api/memories/{key}/pin")
+async def pin_memory(key: str, body: MemoryPinInput):
+    mgr = _get_memory_mgr()
+    read_res = mgr.read(key)
+    if not read_res.get("success"):
+        raise HTTPException(status_code=404, detail=read_res.get("message", "Not found"))
+    mem = read_res["memory"]
+    tags = mem.get("tags", [])
+    if body.pin and "pinned" not in tags:
+        tags.append("pinned")
+    elif not body.pin and "pinned" in tags:
+        tags = [t for t in tags if t != "pinned"]
+    res = mgr.update(key=key, tags=tags)
+    if not res.get("success"):
+        raise HTTPException(status_code=500, detail=res.get("message", "Pin failed"))
+    return {"result": "ok", "pinned": body.pin}
 
 
 # --- WebSocket ---

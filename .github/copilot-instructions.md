@@ -5,7 +5,7 @@
 
 ## Overview
 
-ProjectGabriel is a real-time VRChat AI powered by **Gemini Live** (WebSocket audio streaming). It listens to people in VRChat, responds with voice, and controls VRChat via OSC. It includes person-following via YOLO26 computer vision.
+ProjectGabriel is a real-time VRChat AI powered by **Gemini Live** (WebSocket audio streaming). It listens to people in VRChat, responds with voice, and controls VRChat via OSC. It includes person-following via YOLOv8 computer vision.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ src/
   audio.py               — PyAudio I/O, voice boost/distortion, pygame music/SFX playback
   vrchat.py              — VRChat OSC client (chatbox with pagination, voice toggle, movement)
   tools.py               — Function declarations for Gemini + ToolHandler dispatcher
-  tracker.py             — YOLO26n person detection + OSC movement control
+  tracker.py             — YOLOv8 person detection + OSC movement control
   personalities.py       — Personality switching system (list/switch/get via tools)
   myinstants.py          — MyInstants.com sound search & download
 config/
@@ -26,7 +26,7 @@ config/
     appends.yml          — Auto-appended context (date, tool reminders, personality list, etc.)
     personalities.yml    — Switchable personality modes (chill, scammer, anime_girl, etc.)
 config.yml               — Main config (API keys, audio, OSC, YOLO, VAD settings)
-models/yolo26/           — YOLO26n model (auto-downloaded) + config.json
+models/yolov8/           — YOLOv8n model (auto-downloaded) + config.json
 sfx/music/               — Local music files for playback
 ```
 
@@ -66,13 +66,14 @@ Keys are defined in `config.yml` (primary + backup list). On 429/quota errors, `
 - On `switch_personality`, the prompt is injected via `send_client_content` so the model adopts it immediately.
 
 ### YOLO Tracking
-- Model: `yolo26n.pt` auto-downloads to `models/yolo26/` on first use
-- Config: `models/yolo26/config.json` for thresholds, speed, update interval
+- Model: `yolov8n.pt` auto-downloads to `models/yolov8/` on first use
+- Config: `models/yolov8/config.json` for thresholds, speed, update interval
 - Screen capture via `mss`, detection via ultralytics, movement via OSC
 
 ## Development Notes
 
 - Keep comments minimal to save context window
+- Don't use em dashes in the code.
 - Config changes go in `config.yml` — add matching properties to `Config` class
 - All async code uses `asyncio` — blocking calls wrapped with `asyncio.to_thread()`
 - PyAudio requires system-level dependencies (PortAudio)

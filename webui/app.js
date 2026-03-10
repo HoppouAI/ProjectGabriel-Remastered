@@ -138,6 +138,43 @@ async function apiSendTextConsole() {
     } catch (e) { /* handled */ }
 }
 
+// Dashboard input toggle (Message vs System Instruction)
+var dashInputMode = 'message';
+
+function toggleInputMode() {
+    var toggle = document.getElementById('inputModeToggle');
+    var label = document.getElementById('inputModeLabel');
+    var input = document.getElementById('dashInput');
+    if (dashInputMode === 'message') {
+        dashInputMode = 'system';
+        label.textContent = 'System';
+        input.placeholder = 'System instruction...';
+        toggle.classList.add('system-mode');
+    } else {
+        dashInputMode = 'message';
+        label.textContent = 'Message';
+        input.placeholder = 'Type a message...';
+        toggle.classList.remove('system-mode');
+    }
+    input.focus();
+}
+
+async function dashSend() {
+    var input = document.getElementById('dashInput');
+    var text = input.value.trim();
+    if (!text) return;
+    try {
+        if (dashInputMode === 'system') {
+            addConsoleEntry('info', 'System instruction: ' + text);
+            await apiCall('/api/send-system-instruction', 'POST', { text: text });
+        } else {
+            addConsoleEntry('info', 'Sending: ' + text);
+            await apiCall('/api/send-text', 'POST', { text: text });
+        }
+        input.value = '';
+    } catch (e) { /* handled */ }
+}
+
 async function apiSwitchPersonality() {
     var sel = document.getElementById('personalitySelect');
     var val = sel.value;
@@ -168,9 +205,19 @@ async function apiSetVolume(val) {
     try { await apiCall('/api/set-volume', 'POST', { volume: val / 100 }); } catch (e) { /* handled */ }
 }
 
+function onVolumeChange(val) {
+    document.getElementById('volPct').textContent = val + '%';
+    localStorage.setItem('gabrielVolume', val);
+    apiSetVolume(val);
+}
+
 async function apiPlayTrack(filename) {
     try {
         await apiCall('/api/play-music', 'POST', { filename: filename });
+        var savedVol = localStorage.getItem('gabrielVolume');
+        if (savedVol !== null) {
+            await apiSetVolume(parseInt(savedVol));
+        }
     } catch (e) { /* handled */ }
 }
 
@@ -241,18 +288,18 @@ function renderMusicFiles() {
 
     folders.forEach(function (folder) {
         if (folders.length > 1 || folder !== '(root)') {
-            html += '<div class="file-folder-header">\ud83d\udcc1 ' + escapeHtml(folder) + '</div>';
+            html += '<div class="file-folder-header"><i class="fa-solid fa-folder"></i> ' + escapeHtml(folder) + '</div>';
         }
         grouped[folder].forEach(function (file) {
             html += '<div class="file-item">' +
-                '<div class="file-icon">\ud83c\udfb5</div>' +
+                '<div class="file-icon"><i class="fa-solid fa-music"></i></div>' +
                 '<div class="file-info">' +
                     '<div class="file-name">' + escapeHtml(file.display_name) + '</div>' +
                     '<div class="file-meta">' + file.size_mb + ' MB \u2022 ' + new Date(file.modified).toLocaleString() + '</div>' +
                 '</div>' +
                 '<div class="file-actions">' +
-                    '<button class="btn-small" onclick="apiPlayTrack(\'' + escapeJs(file.name) + '\')" title="play">\u25b6</button>' +
-                    '<button class="btn-small" onclick="deleteMusicFile(\'' + escapeJs(file.name) + '\')" title="delete" style="color:var(--danger)">\ud83d\uddd1</button>' +
+                    '<button class="btn-small" onclick="apiPlayTrack(\'' + escapeJs(file.name) + '\')" title="play"><i class="fa-solid fa-play"></i></button>' +
+                    '<button class="btn-small" onclick="deleteMusicFile(\'' + escapeJs(file.name) + '\')" title="delete" style="color:var(--danger)"><i class="fa-solid fa-trash"></i></button>' +
                 '</div>' +
             '</div>';
         });
@@ -364,7 +411,8 @@ async function handleUploadFiles(files) {
 
 function addConsoleEntry(type, content, extra) {
     extra = extra || {};
-    var consoleEl = document.getElementById('console');
+    var consoleEl = document.getElementById('dashConsole');
+    if (!consoleEl) return;
 
     if (extra.streaming && lastStreamingEntry && lastStreamingEntry.dataset.type === type) {
         var textNode = lastStreamingEntry.childNodes[0];
@@ -409,8 +457,8 @@ function addConsoleEntry(type, content, extra) {
 }
 
 function clearConsole() {
-    var consoleEl = document.getElementById('console');
-    consoleEl.innerHTML = '<div class="console-entry info">Console cleared</div>';
+    var el = document.getElementById('dashConsole');
+    if (el) el.innerHTML = '<div class="console-entry info">Console cleared</div>';
     lastStreamingEntry = null;
 }
 
@@ -472,7 +520,8 @@ function updateUI(state) {
     // Session info
     var meta = document.getElementById('sessionMeta');
     if (state.session_handle && state.session_handle.exists) {
-        meta.innerHTML = 'handle: <code>' + (state.session_handle.handle || '...') + '</code><br>age: ' + (state.session_handle.age_minutes || '?') + 'm';
+        var age = state.session_handle.age_minutes || '?';
+        meta.innerHTML = '<span class="meta-item">' + (state.session_handle.handle ? state.session_handle.handle.substring(0, 12) + '...' : 'active') + '</span><span class="meta-item">' + age + 'm</span>';
     } else {
         meta.textContent = 'No active session';
     }
@@ -514,10 +563,10 @@ function updateMusicProgress(data) {
         document.getElementById('totalTime').textContent = formatTime(data.duration);
         var pct = data.duration > 0 ? (data.position / data.duration) * 100 : 0;
         document.getElementById('progressFill').style.width = pct + '%';
-        document.getElementById('playBtn').innerHTML = '\u23f8\ufe0f';
+        document.getElementById('playBtn').innerHTML = '<i class="fa-solid fa-pause"></i>';
     } else {
         isPlaying = false;
-        document.getElementById('playBtn').innerHTML = '\u25b6\ufe0f';
+        document.getElementById('playBtn').innerHTML = '<i class="fa-solid fa-play"></i>';
         if (!data.song_name) {
             document.getElementById('songTitle').textContent = 'No music playing';
             document.getElementById('progressFill').style.width = '0%';
@@ -525,8 +574,9 @@ function updateMusicProgress(data) {
     }
 }
 
-function updateMemories(memories) {
+function updateMemories(data) {
     var list = document.getElementById('memoryList');
+    var memories = data.memories || data;
     if (!memories || memories.length === 0) {
         list.innerHTML = '<div class="empty-state">No memories yet</div>';
         return;
@@ -534,7 +584,7 @@ function updateMemories(memories) {
     list.innerHTML = memories.slice(0, 10).map(function (m) {
         return '<div class="memory-item">' +
             '<div class="mem-key">' + escapeHtml(m.key) + '</div>' +
-            '<div class="mem-val">' + escapeHtml(m.value) + '</div>' +
+            '<div class="mem-val">' + escapeHtml(m.content || m.value || '') + '</div>' +
         '</div>';
     }).join('');
 }
@@ -557,6 +607,159 @@ function check7Zip() {
         .catch(function () {});
 }
 
+// --- Memory Manager ---
+
+async function loadMemoryStats() {
+    try {
+        var resp = await fetch('/api/memories/stats');
+        if (!resp.ok) throw new Error('Failed to load stats');
+        var stats = await resp.json();
+        document.getElementById('memTotal').textContent = stats.total || 0;
+        document.getElementById('memLongTerm').textContent = stats.long_term || 0;
+        document.getElementById('memShortTerm').textContent = stats.short_term || 0;
+        document.getElementById('memQuickNote').textContent = stats.quick_note || 0;
+    } catch (e) {
+        // Stats unavailable - leave defaults
+    }
+}
+
+async function loadMemories() {
+    var search = document.getElementById('memSearchInput').value.trim();
+    var memType = document.getElementById('memTypeFilter').value;
+    var params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (memType) params.set('memory_type', memType);
+    params.set('limit', '100');
+
+    try {
+        var resp = await fetch('/api/memories?' + params.toString());
+        if (!resp.ok) {
+            var err = await resp.json();
+            showToast(err.detail || 'Failed to load memories', 'error');
+            return;
+        }
+        var data = await resp.json();
+        renderMemoryTable(data.memories || [], data.count || 0);
+        document.getElementById('memCount').textContent = (data.count || 0) + ' memor' + (data.count === 1 ? 'y' : 'ies');
+    } catch (e) {
+        document.getElementById('memTableWrap').innerHTML = '<div class="empty-state">Failed to load memories</div>';
+    }
+}
+
+function renderMemoryTable(memories, count) {
+    var wrap = document.getElementById('memTableWrap');
+    if (!memories.length) {
+        wrap.innerHTML = '<div class="empty-state">No memories found</div>';
+        return;
+    }
+
+    var html = '<table class="mem-table"><thead><tr>' +
+        '<th>Key</th><th>Content</th><th>Category</th><th>Type</th><th>Tags</th><th>Actions</th>' +
+        '</tr></thead><tbody>';
+
+    memories.forEach(function (m) {
+        var isPinned = (m.tags || []).indexOf('pinned') !== -1;
+        var pinIcon = isPinned ? '<i class="fa-solid fa-thumbtack"></i>' : '<i class="fa-regular fa-thumbtack"></i>';
+        var pinTitle = isPinned ? 'Unpin' : 'Pin';
+        var content = m.content || '';
+        if (content.length > 120) content = content.substring(0, 120) + '...';
+        var tags = (m.tags || []).join(', ');
+        var typeLabel = (m.memory_type || 'long_term').replace('_', ' ');
+
+        html += '<tr class="' + (isPinned ? 'mem-row-pinned' : '') + '">' +
+            '<td class="mem-cell-key">' + escapeHtml(m.key) + '</td>' +
+            '<td class="mem-cell-content" title="' + escapeHtml(m.content || '') + '">' + escapeHtml(content) + '</td>' +
+            '<td>' + escapeHtml(m.category || 'general') + '</td>' +
+            '<td><span class="mem-type-badge mem-type-' + (m.memory_type || 'long_term') + '">' + escapeHtml(typeLabel) + '</span></td>' +
+            '<td class="mem-cell-tags">' + escapeHtml(tags) + '</td>' +
+            '<td class="mem-cell-actions">' +
+                '<button class="btn-icon" onclick="openMemEditModal(\'' + escapeJs(m.key) + '\')" title="Edit"><i class="fa-solid fa-pen"></i></button>' +
+                '<button class="btn-icon" onclick="togglePinMemory(\'' + escapeJs(m.key) + '\', ' + !isPinned + ')" title="' + pinTitle + '">' + pinIcon + '</button>' +
+                '<button class="btn-icon btn-icon-danger" onclick="deleteMemory(\'' + escapeJs(m.key) + '\')" title="Delete"><i class="fa-solid fa-trash"></i></button>' +
+            '</td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+}
+
+async function openMemEditModal(key) {
+    try {
+        var resp = await fetch('/api/memories/' + encodeURIComponent(key));
+        if (!resp.ok) throw new Error('Failed to load memory');
+        var mem = await resp.json();
+        document.getElementById('memEditKey').value = mem.key;
+        document.getElementById('memEditCategory').value = mem.category || 'general';
+        document.getElementById('memEditType').value = mem.memory_type || 'long_term';
+        document.getElementById('memEditContent').value = mem.content || '';
+        document.getElementById('memEditModal').classList.add('active');
+    } catch (e) {
+        showToast('Failed to load memory for editing', 'error');
+    }
+}
+
+function closeMemEditModal() {
+    document.getElementById('memEditModal').classList.remove('active');
+}
+
+async function saveMemoryEdit() {
+    var key = document.getElementById('memEditKey').value;
+    var body = {
+        content: document.getElementById('memEditContent').value,
+        category: document.getElementById('memEditCategory').value,
+        memory_type: document.getElementById('memEditType').value,
+    };
+    try {
+        var resp = await fetch('/api/memories/' + encodeURIComponent(key), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+            var err = await resp.json();
+            throw new Error(err.detail || 'Update failed');
+        }
+        showToast('Memory updated', 'success');
+        closeMemEditModal();
+        loadMemories();
+        loadMemoryStats();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function deleteMemory(key) {
+    if (!confirm('Delete memory "' + key + '"? This cannot be undone.')) return;
+    try {
+        var resp = await fetch('/api/memories/' + encodeURIComponent(key), { method: 'DELETE' });
+        if (!resp.ok) {
+            var err = await resp.json();
+            throw new Error(err.detail || 'Delete failed');
+        }
+        showToast('Memory deleted', 'success');
+        loadMemories();
+        loadMemoryStats();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function togglePinMemory(key, pin) {
+    try {
+        var resp = await fetch('/api/memories/' + encodeURIComponent(key) + '/pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: pin }),
+        });
+        if (!resp.ok) throw new Error('Pin toggle failed');
+        showToast(pin ? 'Memory pinned' : 'Memory unpinned', 'success');
+        loadMemories();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
 // --- Init ---
 
 function init() {
@@ -566,6 +769,14 @@ function init() {
     loadMusicFiles();
     loadMusicFolders();
     loadPlaybackMusicList();
+    loadMemoryStats();
+
+    // Restore saved volume
+    var savedVol = localStorage.getItem('gabrielVolume');
+    if (savedVol !== null) {
+        document.getElementById('volumeSlider').value = savedVol;
+        document.getElementById('volPct').textContent = savedVol + '%';
+    }
 
     // Initial state fetch
     fetch('/api/state').then(function (r) { return r.json(); }).then(updateUI).catch(function () {});
