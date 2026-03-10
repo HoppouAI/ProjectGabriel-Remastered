@@ -22,6 +22,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("gabriel")
 
+# Suppress the known CPython 3.12 Windows ProactorEventLoop assertion error
+# This fires during pipe transport cleanup and is harmless
+class _ProactorAssertFilter(logging.Filter):
+    def filter(self, record):
+        return not (record.name == "asyncio" and "_loop_writing" in str(record.msg))
+
+logging.getLogger("asyncio").addFilter(_ProactorAssertFilter())
+
 
 def start_control_server(session, audio, personality, memory, get_emotion_fn):
     """Start the control panel server in a separate thread."""
