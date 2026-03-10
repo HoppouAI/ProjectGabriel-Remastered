@@ -664,7 +664,7 @@ class MemorySystem:
             return False
 
     def get_recent_for_prompt(self, count: int = 10) -> List[Dict[str, Any]]:
-        """Get memories for system prompt, prioritizing pinned and frequently accessed."""
+        """Get most recent memories for system prompt, pinned first."""
         if not self.is_available():
             return []
 
@@ -673,13 +673,12 @@ class MemorySystem:
             
             if self.backend == "sqlite":
                 with self._sqlite_lock:
-                    # Prioritize: pinned first, then blend of access_count and recency
                     rows = self.sqlite_conn.execute(
                         "SELECT key, content, category, created_at, tags_json, access_count FROM memories "
                         "WHERE memory_type IN (?, ?) "
                         "ORDER BY "
                         "  CASE WHEN tags_json LIKE '%\"pinned\"%' THEN 0 ELSE 1 END, "
-                        "  (access_count * 0.4 + (julianday(created_at) - julianday('2024-01-01')) * 0.6) DESC "
+                        "  created_at DESC "
                         "LIMIT ?",
                         (MEMORY_TYPE_LONG_TERM, MEMORY_TYPE_SHORT_TERM, count)
                     ).fetchall()
@@ -693,7 +692,7 @@ class MemorySystem:
                         "tags": json.loads(row["tags_json"]) if row["tags_json"] else [],
                     })
             else:
-                # MongoDB: two-phase fetch — pinned first, then scored
+                # MongoDB: two-phase fetch - pinned first, then most recent
                 pinned = list(self.collection.find(
                     {"memory_type": {"$in": [MEMORY_TYPE_LONG_TERM, MEMORY_TYPE_SHORT_TERM]}, "tags": "pinned"},
                     {"key": 1, "content": 1, "category": 1, "created_at": 1, "tags": 1, "access_count": 1}
@@ -709,7 +708,7 @@ class MemorySystem:
                             "key": {"$nin": list(pinned_keys)},
                         },
                         {"key": 1, "content": 1, "category": 1, "created_at": 1, "tags": 1, "access_count": 1}
-                    ).sort([("access_count", DESCENDING), ("created_at", DESCENDING)]).limit(remaining))
+                    ).sort("created_at", DESCENDING).limit(remaining))
 
                 for doc in pinned + others:
                     memories.append({
