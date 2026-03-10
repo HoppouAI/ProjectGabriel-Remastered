@@ -31,7 +31,8 @@ body {
     font-family: var(--font);
     background: var(--bg-body);
     color: var(--text);
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     background-image:
         radial-gradient(ellipse at 15% 0%, rgba(124, 92, 255, 0.05) 0%, transparent 55%),
         radial-gradient(ellipse at 85% 100%, rgba(92, 140, 255, 0.03) 0%, transparent 45%);
