@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import logging
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -22,7 +23,7 @@ CONVERSATION_DIR = Path("data/conversations")
 
 
 class ConversationLogger:
-    """Logs conversation history to JSON files per session."""
+    """Logs conversation history to JSON files per session. Thread-safe, non-blocking."""
 
     def __init__(self):
         CONVERSATION_DIR.mkdir(parents=True, exist_ok=True)
@@ -30,57 +31,68 @@ class ConversationLogger:
         self._system_instruction = None
         self._session_start = datetime.now()
         self._file_path = CONVERSATION_DIR / f"{self._session_start.strftime('%Y-%m-%d_%H-%M-%S')}.json"
-        self._user_buffer = ""
-        self._assistant_buffer = ""
+        self._lock = threading.Lock()
+        self._last_logged_user = ""
 
     def set_system_instruction(self, text: str):
         self._system_instruction = text
-        self._save()
+        self._save_async()
 
     def add_user_message(self, text: str):
-        if not text.strip():
+        text = text.strip()
+        if not text or text == self._last_logged_user:
             return
-        self._entries.append({
-            "role": "user",
-            "content": text.strip(),
-            "timestamp": datetime.now().isoformat(),
-        })
-        self._save()
+        self._last_logged_user = text
+        with self._lock:
+            self._entries.append({
+                "role": "user",
+                "content": text,
+                "timestamp": datetime.now().isoformat(),
+            })
+        self._save_async()
 
     def add_assistant_message(self, text: str):
-        if not text.strip():
+        text = text.strip()
+        if not text:
             return
-        self._entries.append({
-            "role": "assistant",
-            "content": text.strip(),
-            "timestamp": datetime.now().isoformat(),
-        })
-        self._save()
+        with self._lock:
+            self._entries.append({
+                "role": "assistant",
+                "content": text,
+                "timestamp": datetime.now().isoformat(),
+            })
+        self._save_async()
 
     def add_tool_call(self, name: str, args: dict):
-        self._entries.append({
-            "role": "tool_call",
-            "name": name,
-            "arguments": args,
-            "timestamp": datetime.now().isoformat(),
-        })
-        self._save()
+        with self._lock:
+            self._entries.append({
+                "role": "tool_call",
+                "name": name,
+                "arguments": args,
+                "timestamp": datetime.now().isoformat(),
+            })
+        self._save_async()
 
     def add_tool_response(self, name: str, response: dict):
-        self._entries.append({
-            "role": "tool_response",
-            "name": name,
-            "response": response,
-            "timestamp": datetime.now().isoformat(),
-        })
-        self._save()
+        with self._lock:
+            self._entries.append({
+                "role": "tool_response",
+                "name": name,
+                "response": response,
+                "timestamp": datetime.now().isoformat(),
+            })
+        self._save_async()
 
-    def _save(self):
-        data = {
-            "session_start": self._session_start.isoformat(),
-            "system_instruction": self._system_instruction,
-            "messages": self._entries,
-        }
+    def _save_async(self):
+        with self._lock:
+            data = {
+                "session_start": self._session_start.isoformat(),
+                "system_instruction": self._system_instruction,
+                "messages": list(self._entries),
+            }
+        threading.Thread(target=self._write_file, args=(data,), daemon=True).start()
+
+    def _write_file(self, data):
         try:
             self._file_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception as e:
@@ -569,6 +581,8 @@ class GeminiLiveSession:
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         await self._finalize_chatbox()
+                        if self._input_transcript_buffer.strip():
+                            self._conv_logger.add_user_message(self._input_transcript_buffer)
                         if self._transcript_buffer.strip():
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
@@ -579,6 +593,10 @@ class GeminiLiveSession:
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         self.osc.set_typing(False)
+                        if self._input_transcript_buffer.strip():
+                            self._conv_logger.add_user_message(self._input_transcript_buffer)
+                        if self._transcript_buffer.strip():
+                            self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
                         self._input_transcript_buffer = ""
                         while not self._audio_in_queue.empty():
@@ -588,6 +606,9 @@ class GeminiLiveSession:
                                 break
 
                     if response.tool_call:
+                        if self._input_transcript_buffer.strip():
+                            self._conv_logger.add_user_message(self._input_transcript_buffer)
+                            self._input_transcript_buffer = ""
                         responses = []
                         for fc in response.tool_call.function_calls:
                             logger.info(f"Tool call: {fc.name}")
