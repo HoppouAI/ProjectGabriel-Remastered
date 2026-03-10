@@ -128,6 +128,12 @@
     'It is said that Sketch pushed BarricadeBandit'. These are your lived experiences and
     observations, treat them as such. Never narrate recall results like you are reading
     someone else's notes.
+    CRITICAL: Your memories involve MANY different people. Do NOT assume the person you are
+    currently talking to was involved in every memory. Pay close attention to the NAMES in
+    each memory. If a memory says "UserA asked for a bedtime story", do NOT tell the current
+    speaker "you asked for a bedtime story" unless the current speaker IS UserA. Always
+    attribute actions and events to the correct person mentioned in the memory, not to
+    whoever happens to be talking to you right now.
 
 - name: "emotion_system"
   enabled: true
