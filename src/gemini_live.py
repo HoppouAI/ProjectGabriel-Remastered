@@ -37,7 +37,7 @@ class GeminiLiveSession:
         self.audio = audio_mgr
         self.osc = osc
         self.personality = personality_mgr
-        self.tool_handler = ToolHandler(audio_mgr, osc, tracker, personality_mgr)
+        self.tool_handler = ToolHandler(audio_mgr, osc, tracker, personality_mgr, config)
         self._speaking = False
         self._transcript_buffer = ""
         self._input_transcript_buffer = ""  # Buffer for user speech
@@ -76,17 +76,20 @@ class GeminiLiveSession:
         logger.info(f"Mic mute set to {muted}")
 
     async def send_text(self, text: str):
-        """Send text to the model via client content."""
+        """Send text to the model via realtime input."""
         if self._session:
             try:
-                await self._session.send_client_content(
-                    turns=[types.Content(role="user", parts=[types.Part.from_text(text=text)])]
-                )
+                await self._session.send_realtime_input(text=text)
                 logger.info(f"Sent text to model: {text[:50]}...")
             except Exception as e:
                 logger.error(f"Failed to send text: {e}")
 
-    def _build_config(self):
+    def _needs_alpha_api(self):
+        """Check if any v1alpha-only features are enabled."""
+        return (self.config.enable_affective_dialog is not None 
+                or self.config.proactivity is not None)
+
+    def _build_config(self, skip_alpha_features=False):
         start_sens_map = {
             "START_SENSITIVITY_LOW": types.StartSensitivity.START_SENSITIVITY_LOW,
             "START_SENSITIVITY_HIGH": types.StartSensitivity.START_SENSITIVITY_HIGH,
@@ -111,8 +114,6 @@ class GeminiLiveSession:
         )
 
         transcription_config = types.AudioTranscriptionConfig()
-        if self.config.language:
-            transcription_config = types.AudioTranscriptionConfig(language=self.config.language)
 
         config_kwargs = dict(
             response_modalities=["AUDIO"],
@@ -124,9 +125,6 @@ class GeminiLiveSession:
             tools=get_tool_declarations(self.config),
             input_audio_transcription=transcription_config,
             output_audio_transcription=transcription_config,
-            context_window_compression=types.ContextWindowCompressionConfig(
-                sliding_window=types.SlidingWindow()
-            ),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -150,10 +148,21 @@ class GeminiLiveSession:
             config_kwargs["top_k"] = self.config.top_k
         if self.config.max_output_tokens is not None:
             config_kwargs["max_output_tokens"] = self.config.max_output_tokens
-        if self.config.enable_affective_dialog is not None:
-            config_kwargs["enable_affective_dialog"] = self.config.enable_affective_dialog
-        if self.config.proactivity is not None:
-            config_kwargs["proactivity"] = self.config.proactivity
+        if not skip_alpha_features:
+            if self.config.enable_affective_dialog is not None:
+                config_kwargs["enable_affective_dialog"] = self.config.enable_affective_dialog
+            if self.config.proactivity is not None:
+                config_kwargs["proactivity"] = self.config.proactivity
+
+        # Context window compression
+        if self.config.compression_enabled:
+            sw_kwargs = {}
+            if self.config.compression_target_tokens is not None:
+                sw_kwargs["target_tokens"] = self.config.compression_target_tokens
+            cw_kwargs = {"sliding_window": types.SlidingWindow(**sw_kwargs)}
+            if self.config.compression_trigger_tokens is not None:
+                cw_kwargs["trigger_tokens"] = self.config.compression_trigger_tokens
+            config_kwargs["context_window_compression"] = types.ContextWindowCompressionConfig(**cw_kwargs)
 
         return types.LiveConnectConfig(**config_kwargs)
 
@@ -188,11 +197,21 @@ class GeminiLiveSession:
             logger.info("Cleared session handle")
 
     async def run(self):
+        self._alpha_fallback_failed = False  # Track if v1alpha features failed
         while True:
             self._reconnect_requested = False
             try:
-                client = genai.Client(api_key=self.config.api_key)
-                live_config = self._build_config()
+                use_alpha = self._needs_alpha_api() and not self._alpha_fallback_failed
+                if use_alpha:
+                    client = genai.Client(
+                        api_key=self.config.api_key,
+                        http_options={"api_version": "v1alpha"},
+                    )
+                    live_config = self._build_config()
+                    logger.info("Using v1alpha API for affective dialog / proactivity")
+                else:
+                    client = genai.Client(api_key=self.config.api_key)
+                    live_config = self._build_config(skip_alpha_features=self._alpha_fallback_failed)
                 if self._session_handle:
                     logger.info(f"Connecting to Gemini Live with session resumption...")
                 else:
@@ -244,10 +263,18 @@ class GeminiLiveSession:
                         await asyncio.sleep(5)
                     continue
                 
+                # v1alpha features not supported - fall back
+                if not self._alpha_fallback_failed and ("enableAffectiveDialog" in str(e) or "proactivity" in str(e) or "proactive_audio" in str(e)):
+                    logger.warning(f"v1alpha features rejected ({e}), falling back to standard API")
+                    _broadcast_console("info", "v1alpha features not supported, falling back")
+                    self._alpha_fallback_failed = True
+                    await asyncio.sleep(0.5)
+                    continue
+                
                 # WebSocket protocol errors - reconnect immediately
                 if any(code in str(e) for code in ["1007", "1008", "1011", "1006"]):
-                    logger.warning(f"WebSocket error, reconnecting immediately...")
-                    _broadcast_console("error", "WebSocket error, reconnecting...")
+                    logger.warning(f"WebSocket error ({e}), reconnecting immediately...")
+                    _broadcast_console("error", f"WebSocket error: {str(e)[:100]}")
                     self._clear_session_handle()  # Clear handle on WebSocket errors
                     await asyncio.sleep(0.5)
                     continue
@@ -267,10 +294,18 @@ class GeminiLiveSession:
             except Exception as e:
                 err_str = str(e)
                 
+                # v1alpha features not supported - fall back
+                if not self._alpha_fallback_failed and ("enableAffectiveDialog" in err_str or "proactivity" in err_str or "proactive_audio" in err_str):
+                    logger.warning(f"v1alpha features rejected ({e}), falling back to standard API")
+                    _broadcast_console("info", "v1alpha features not supported, falling back")
+                    self._alpha_fallback_failed = True
+                    await asyncio.sleep(0.5)
+                    continue
+                
                 # WebSocket errors - reconnect immediately
                 if any(code in err_str for code in ["1007", "1008", "1011", "1006"]):
-                    logger.warning(f"WebSocket error, reconnecting immediately...")
-                    _broadcast_console("error", "WebSocket error, reconnecting...")
+                    logger.warning(f"WebSocket error ({e}), reconnecting immediately...")
+                    _broadcast_console("error", f"WebSocket error: {str(e)[:100]}")
                     self._clear_session_handle()  # Clear handle on WebSocket errors
                     await asyncio.sleep(0.5)
                     continue
@@ -325,7 +360,7 @@ class GeminiLiveSession:
                 )
                 # Only send audio if mic is not muted
                 if not self._mic_muted:
-                    await self._out_queue.put({"data": data, "mime_type": "audio/pcm"})
+                    await self._out_queue.put(("audio", data))
             except Exception as e:
                 logger.error(f"Audio listen error: {e}")
                 raise
@@ -333,11 +368,15 @@ class GeminiLiveSession:
     async def _send_realtime_loop(self, session):
         while True:
             try:
-                msg = await self._out_queue.get()
-                if msg["mime_type"] == "audio/pcm":
-                    await session.send_realtime_input(audio=msg)
-                else:
-                    await session.send_realtime_input(media=msg)
+                msg_type, data = await self._out_queue.get()
+                if msg_type == "audio":
+                    await session.send_realtime_input(
+                        audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                    )
+                elif msg_type == "video":
+                    await session.send_realtime_input(
+                        video=types.Blob(data=data, mime_type="image/jpeg")
+                    )
             except Exception as e:
                 logger.error(f"Send realtime error: {e}")
                 raise
@@ -369,10 +408,7 @@ class GeminiLiveSession:
                 buffer = io.BytesIO()
                 img.save(buffer, format="JPEG", quality=self.config.vision_quality)
                 buffer.seek(0)
-                return {
-                    "mime_type": "image/jpeg",
-                    "data": base64.b64encode(buffer.read()).decode(),
-                }
+                return buffer.read()
         except Exception as e:
             logger.error(f"Screen capture error: {e}")
             return None
@@ -391,14 +427,14 @@ class GeminiLiveSession:
                 frame = await asyncio.to_thread(self._capture_screen_frame)
                 if frame:
                     try:
-                        self._out_queue.put_nowait(frame)
+                        self._out_queue.put_nowait(("video", frame))
                     except asyncio.QueueFull:
                         try:
                             self._out_queue.get_nowait()
                         except asyncio.QueueEmpty:
                             pass
                         try:
-                            self._out_queue.put_nowait(frame)
+                            self._out_queue.put_nowait(("video", frame))
                         except asyncio.QueueFull:
                             pass
                 await asyncio.sleep(interval)

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from google.genai import types
-from src.memory import get_memory_tools, handle_memory_function_call
+from src.memory import get_memory_tools, handle_memory_function_call, recall_memories
 from src.emotions import generate_emotion_function_declarations, handle_emotion_function_call, get_emotion_system
 
 logger = logging.getLogger(__name__)
@@ -181,6 +181,18 @@ def get_tool_declarations(config=None):
                     "required": ["action"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="recallMemories",
+                description="Deep memory recall agent. Searches through ALL stored memories using AI to find and summarize relevant information. Use this when you need to remember something specific about a person, event, or topic. Much more thorough than the basic memory search.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "What to recall — a person's name, topic, event, or question about past interactions"},
+                        "context": {"type": "STRING", "description": "Why you need this info — helps the recall agent find the most relevant memories"},
+                    },
+                    "required": ["query"],
+                },
+            ),
         ]
     
     # Add emotion function declarations if enabled
@@ -231,11 +243,12 @@ def get_tool_declarations(config=None):
 
 
 class ToolHandler:
-    def __init__(self, audio_mgr, osc, tracker, personality_mgr):
+    def __init__(self, audio_mgr, osc, tracker, personality_mgr, config=None):
         self.audio = audio_mgr
         self.osc = osc
         self.tracker = tracker
         self.personality = personality_mgr
+        self.config = config
         self.session = None
 
     async def handle(self, function_call) -> types.FunctionResponse:
@@ -248,6 +261,33 @@ class ToolHandler:
                 return await handle_memory_function_call(function_call)
             except Exception as e:
                 logger.error(f"Memory tool failed: {e}")
+                return types.FunctionResponse(
+                    id=function_call.id,
+                    name=name,
+                    response={"result": "error", "message": str(e)},
+                )
+        
+        # Memory recall sub-agent
+        if name == "recallMemories":
+            try:
+                api_key = self.config.api_key if self.config else ""
+                personality_prompt = ""
+                if self.personality:
+                    current = self.personality.get_current()
+                    personality_prompt = current.get("prompt", "")
+                result = await recall_memories(
+                    query=args.get("query", ""),
+                    context=args.get("context", ""),
+                    api_key=api_key,
+                    personality_prompt=personality_prompt,
+                )
+                return types.FunctionResponse(
+                    id=function_call.id,
+                    name=name,
+                    response=result,
+                )
+            except Exception as e:
+                logger.error(f"Recall agent failed: {e}")
                 return types.FunctionResponse(
                     id=function_call.id,
                     name=name,

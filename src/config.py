@@ -148,6 +148,18 @@ class Config:
         return self.get("gemini", "proactivity")
 
     @property
+    def compression_enabled(self):
+        return self.get("gemini", "context_window_compression", "enabled", default=True)
+
+    @property
+    def compression_trigger_tokens(self):
+        return self.get("gemini", "context_window_compression", "trigger_tokens")
+
+    @property
+    def compression_target_tokens(self):
+        return self.get("gemini", "context_window_compression", "target_tokens")
+
+    @property
     def language(self):
         return self.get("gemini", "language")
 

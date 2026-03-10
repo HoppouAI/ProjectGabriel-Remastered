@@ -11,6 +11,7 @@ Usage:
     from src.memory import memory_system, get_memory_tools, handle_memory_function_call
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -663,7 +664,7 @@ class MemorySystem:
             return False
 
     def get_recent_for_prompt(self, count: int = 10) -> List[Dict[str, Any]]:
-        """Get recent memories formatted for system prompt injection."""
+        """Get memories for system prompt, prioritizing pinned and frequently accessed."""
         if not self.is_available():
             return []
 
@@ -672,9 +673,14 @@ class MemorySystem:
             
             if self.backend == "sqlite":
                 with self._sqlite_lock:
+                    # Prioritize: pinned first, then blend of access_count and recency
                     rows = self.sqlite_conn.execute(
-                        "SELECT key, content, category, created_at, tags_json FROM memories "
-                        "WHERE memory_type IN (?, ?) ORDER BY created_at DESC LIMIT ?",
+                        "SELECT key, content, category, created_at, tags_json, access_count FROM memories "
+                        "WHERE memory_type IN (?, ?) "
+                        "ORDER BY "
+                        "  CASE WHEN tags_json LIKE '%\"pinned\"%' THEN 0 ELSE 1 END, "
+                        "  (access_count * 0.4 + (julianday(created_at) - julianday('2024-01-01')) * 0.6) DESC "
+                        "LIMIT ?",
                         (MEMORY_TYPE_LONG_TERM, MEMORY_TYPE_SHORT_TERM, count)
                     ).fetchall()
 
@@ -687,12 +693,25 @@ class MemorySystem:
                         "tags": json.loads(row["tags_json"]) if row["tags_json"] else [],
                     })
             else:
-                cursor = self.collection.find(
-                    {"memory_type": {"$in": [MEMORY_TYPE_LONG_TERM, MEMORY_TYPE_SHORT_TERM]}},
-                    {"key": 1, "content": 1, "category": 1, "created_at": 1, "tags": 1}
-                ).sort("created_at", DESCENDING).limit(count)
+                # MongoDB: two-phase fetch — pinned first, then scored
+                pinned = list(self.collection.find(
+                    {"memory_type": {"$in": [MEMORY_TYPE_LONG_TERM, MEMORY_TYPE_SHORT_TERM]}, "tags": "pinned"},
+                    {"key": 1, "content": 1, "category": 1, "created_at": 1, "tags": 1, "access_count": 1}
+                ).sort("created_at", DESCENDING).limit(count))
 
-                for doc in cursor:
+                remaining = count - len(pinned)
+                pinned_keys = {doc["key"] for doc in pinned}
+                others = []
+                if remaining > 0:
+                    others = list(self.collection.find(
+                        {
+                            "memory_type": {"$in": [MEMORY_TYPE_LONG_TERM, MEMORY_TYPE_SHORT_TERM]},
+                            "key": {"$nin": list(pinned_keys)},
+                        },
+                        {"key": 1, "content": 1, "category": 1, "created_at": 1, "tags": 1, "access_count": 1}
+                    ).sort([("access_count", DESCENDING), ("created_at", DESCENDING)]).limit(remaining))
+
+                for doc in pinned + others:
                     memories.append({
                         "key": doc.get("key"),
                         "content": doc.get("content"),
@@ -824,7 +843,8 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
     action = args.get("action", "")
     
     # Support both camelCase (new) and snake_case (legacy) parameter names
-    memory_type = args.get("memoryType") or args.get("memory_type", MEMORY_TYPE_LONG_TERM)
+    memory_type_raw = args.get("memoryType") or args.get("memory_type")
+    memory_type = memory_type_raw or MEMORY_TYPE_LONG_TERM
     search_term = args.get("searchTerm") or args.get("search_term")
     new_type = args.get("newType") or args.get("new_type")
     
@@ -909,7 +929,7 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
                     key=key,
                     content=args.get("content"),
                     category=args.get("category"),
-                    memory_type=memory_type if memory_type != MEMORY_TYPE_LONG_TERM else None,
+                    memory_type=memory_type_raw,
                     tags=tags_list
                 )
                 result = {"result": "ok"} if res.get("success") else {"result": "error", "message": res.get("message")}
@@ -925,7 +945,7 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
         elif action == "list":
             res = memory_system.list_memories(
                 category=args.get("category"),
-                memory_type=memory_type if memory_type != MEMORY_TYPE_LONG_TERM else None,
+                memory_type=memory_type_raw,
                 limit=args.get("limit", 50)
             )
             if res.get("success"):
@@ -939,7 +959,7 @@ async def handle_memory_function_call(function_call) -> Dict[str, Any]:
             else:
                 res = memory_system.search(
                     term=search_term,
-                    memory_type=memory_type if memory_type != MEMORY_TYPE_LONG_TERM else None,
+                    memory_type=memory_type_raw,
                     limit=args.get("limit", 20)
                 )
                 if res.get("success"):
@@ -1031,3 +1051,79 @@ def get_memory_content_for_prompt(count: int = 10) -> str:
         total = memory_system.stats().get("stats", {}).get("total", 0)
         return f"\n=== MEMORIES ({len(memories)} of {total} total) ===\n{formatted}"
     return ""
+
+
+async def recall_memories(query: str, context: str = "", api_key: str = "", personality_prompt: str = "") -> Dict[str, Any]:
+    """
+    Agentic memory recall: fetches ALL memories, sends them to Gemini Flash Lite
+    to summarize relevant information in-character. 15s timeout.
+    """
+    if not memory_system.is_available():
+        return {"result": "error", "message": "Memory system unavailable"}
+    
+    if not api_key:
+        return {"result": "error", "message": "No API key available for recall agent"}
+
+    # Fetch ALL memories (not search-filtered — let the sub-agent decide relevance)
+    all_memories = memory_system.list_memories(limit=500)
+    memories_found = all_memories.get("memories", [])
+
+    if not memories_found:
+        return {"result": "ok", "summary": "No memories stored yet.", "count": 0}
+
+    # Format all memories for the sub-agent with key, content, and date
+    memory_lines = []
+    for mem in memories_found:
+        key = mem.get("key", "unknown")
+        content = mem.get("content", "")
+        created = mem.get("created_at", "unknown")
+        category = mem.get("category", "general")
+        memory_lines.append(f"[{key}] ({category}, {created}): {content}")
+
+    memories_block = "\n".join(memory_lines)
+
+    system_prompt = (
+        "You are a memory recall assistant. You have been given ALL stored memories and a search query. "
+        "Your job is to find every relevant memory and provide a concise, accurate summary. "
+        "Include specific details like names, dates, events, and quotes. "
+        "If the query is about a person, include everything you know about them. "
+        "If nothing is relevant, say so clearly. "
+        "Keep your response under 300 words. Be direct and informative."
+    )
+    if personality_prompt:
+        system_prompt += f"\n\nDeliver the summary in-character as: {personality_prompt[:300]}"
+
+    user_prompt = f"QUERY: {query}"
+    if context:
+        user_prompt += f"\nCONTEXT: {context}"
+    user_prompt += f"\n\n=== ALL MEMORIES ({len(memories_found)} total) ===\n{memories_block}"
+
+    try:
+        from google import genai
+        from google.genai import types as gtypes
+
+        client = genai.Client(api_key=api_key)
+
+        # 15-second timeout
+        response = await asyncio.wait_for(
+            client.aio.models.generate_content(
+                model="gemini-3.1-flash-lite-preview",
+                contents=user_prompt,
+                config=gtypes.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.7,
+                    max_output_tokens=500,
+                ),
+            ),
+            timeout=15.0,
+        )
+
+        summary = response.text if response.text else "Could not generate summary."
+        return {"result": "ok", "summary": summary, "count": len(memories_found)}
+
+    except asyncio.TimeoutError:
+        logger.warning("Recall agent timed out after 15s")
+        return {"result": "error", "message": "Couldn't summarize memories at this time."}
+    except Exception as e:
+        logger.error(f"Recall agent failed: {e}")
+        return {"result": "error", "message": "Couldn't summarize memories at this time."}
