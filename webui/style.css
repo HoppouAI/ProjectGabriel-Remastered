@@ -1051,8 +1051,6 @@ body {
 
 .mem-cell-actions {
     white-space: nowrap;
-    display: flex;
-    gap: 0.2rem;
 }
 
 .mem-type-badge {
@@ -1084,20 +1082,23 @@ body {
     border: 1px solid transparent;
     border-radius: 6px;
     cursor: pointer;
-    padding: 0.25rem 0.35rem;
+    padding: 0.25rem 0.4rem;
     font-size: 0.78rem;
     line-height: 1;
-    transition: background 0.15s, border-color 0.15s;
+    color: var(--text-secondary);
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .btn-icon:hover {
     background: var(--accent-soft);
     border-color: var(--border-hover);
+    color: var(--text-primary);
 }
 
 .btn-icon-danger:hover {
     background: rgba(248, 113, 113, 0.12);
     border-color: rgba(248, 113, 113, 0.3);
+    color: #f87171;
 }
 
 /* Modal */
