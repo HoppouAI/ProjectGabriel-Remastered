@@ -594,9 +594,11 @@ class GeminiLiveSession:
                     ):
                         input_trans = response.server_content.input_transcription
                         if hasattr(input_trans, "text") and input_trans.text:
-                            # Input transcription is cumulative - store, display, and stream to logger
-                            self._input_transcript_buffer = input_trans.text
-                            _broadcast_console("transcription", self._input_transcript_buffer.strip(), {"streaming": True})
+                            # Input transcription arrives as chunks - accumulate like output
+                            self._input_transcript_buffer += input_trans.text
+                            # Broadcast chunk to WebUI (it appends via +=)
+                            _broadcast_console("transcription", input_trans.text, {"streaming": True})
+                            # Update logger with full accumulated text (replaces in-place)
                             self._conv_logger.stream_user_message(self._input_transcript_buffer)
 
                     # Handle output transcription (AI speech) - real-time
