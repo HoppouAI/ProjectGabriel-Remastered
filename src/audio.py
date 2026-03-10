@@ -218,7 +218,7 @@ class AudioManager:
         progress = (position / duration) if duration > 0 else 0.0
         
         return {
-            "name": self._current_song_name or "Unknown",
+            "song_name": self._current_song_name or "Unknown",
             "position": position,
             "duration": duration,
             "progress": min(1.0, progress),
