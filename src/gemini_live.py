@@ -751,7 +751,7 @@ class GeminiLiveSession:
         ──────•───────────
         0:45 / 3:21
         """
-        name = progress_info["name"]
+        name = progress_info["song_name"]
         position = progress_info["position"]
         duration = progress_info["duration"]
         progress = progress_info["progress"]
