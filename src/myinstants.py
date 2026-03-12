@@ -1,4 +1,5 @@
 import aiohttp
+import json
 import logging
 import os
 import re
@@ -12,9 +13,34 @@ API_URL = "https://myinstants.barricade.dev/search?q={}"
 _CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sfx", "myinstants")
 os.makedirs(_CACHE_DIR, exist_ok=True)
 
+_CACHE_FILE = os.path.join(_CACHE_DIR, "soundeffects.json")
 
-# Accumulated sound registry: ID -> {title, mp3} (persists for session lifetime)
+# Accumulated sound registry: ID -> {title, mp3} (persists across sessions via JSON)
 _known_sounds: dict[str, dict] = {}
+
+
+def _load_cache():
+    global _known_sounds
+    if os.path.exists(_CACHE_FILE):
+        try:
+            with open(_CACHE_FILE, "r", encoding="utf-8") as f:
+                _known_sounds = json.load(f)
+            logger.info(f"Loaded {len(_known_sounds)} sounds from cache")
+        except Exception as e:
+            logger.warning(f"Failed to load sound cache: {e}")
+            _known_sounds = {}
+
+
+def _save_cache():
+    try:
+        with open(_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(_known_sounds, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to save sound cache: {e}")
+
+
+# Load cache on module import
+_load_cache()
 
 
 async def search_sounds(query: str, limit: int = 10) -> list[dict] | None:
@@ -45,6 +71,7 @@ async def search_sounds(query: str, limit: int = 10) -> list[dict] | None:
                 _known_sounds[sid] = {"title": title, "mp3": mp3}
                 sounds.append({"id": sid, "title": title})
 
+        _save_cache()
         logger.info(f"MyInstants search '{query}': {len(sounds)} results cached")
         return sounds
     except Exception as e:
