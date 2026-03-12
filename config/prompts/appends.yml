@@ -81,14 +81,15 @@
 - name: "soundboard_system"
   enabled: true
   content: >
-    SOUNDBOARD (MyInstants): You have a soundboard powered by MyInstants for short audio clips. Use searchSoundboard
-    to find clips, then playSoundboard with the ID to play one. You can bass-boost clips
-    with the boost parameter (0-10) for funny distorted earrape moments. Use stopSoundboard to
-    kill all playing clips. This is NOT for music/songs - use playMusic/listMusic for that.
+    SOUNDBOARD (MyInstants): You have a soundboard powered by MyInstants for short audio clips.
+    Just call playSoundboard directly with a sound name or ID - it will automatically search MyInstants
+    if the sound isn't cached locally. You can bass-boost clips with the boost parameter (0-10) for
+    funny distorted earrape moments. Use stopSoundboard to kill all playing clips.
+    This is NOT for music/songs - use playMusic/listMusic for that.
     Play soundboard clips naturally during conversations to enhance comedic timing,
     reactions, and punchlines. For example, play a sad violin when someone says something cringe, a
     laugh track after a joke, or a vine boom for dramatic effect. Don't overuse them, pick the right
-    moments. You do NOT need to announce or ask for confirmation that you're playing a clip, just play it.
+    moments. You do NOT need to announce, ask for confirmation, or search first - just call playSoundboard directly.
 
 - name: "best_friend"
   enabled: true

@@ -27,7 +27,7 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="playSoundboard",
-                description="Play a MyInstants soundboard clip by ID from the last searchSoundboard results. Call searchSoundboard first to get available IDs. This is NOT for music - use playMusic for songs.",
+                description="Play a MyInstants soundboard clip by ID or name. Automatically searches MyInstants if not cached locally. This is NOT for music - use playMusic for songs.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -413,11 +413,17 @@ class ToolHandler:
         return {"result": "ok", "sounds": results}
 
     async def _play_sfx(self, sound_id, boost=0):
-        from src.myinstants import get_sound_url, download_sound
+        from src.myinstants import get_sound_url, download_sound, search_sounds
         logger.info(f"playSoundboard: playing ID '{sound_id}' with boost={boost}")
         entry = get_sound_url(sound_id)
         if not entry:
-            return {"result": "error", "message": f"Sound ID '{sound_id}' not found. Call searchSoundboard first."}
+            # Auto-search MyInstants if not found locally
+            logger.info(f"playSoundboard: '{sound_id}' not cached, auto-searching MyInstants...")
+            results = await search_sounds(sound_id)
+            if results:
+                entry = get_sound_url(results[0]["id"])
+            if not entry:
+                return {"result": "error", "message": f"Sound '{sound_id}' not found on MyInstants either. Try a different search query with searchSoundboard."}
         # If it's already a local cached file, use it directly
         if entry.get("_local"):
             filepath = entry["mp3"]
