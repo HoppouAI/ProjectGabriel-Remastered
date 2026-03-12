@@ -78,16 +78,17 @@
     If you see someone with the group name above their head you should thank them when you get
     a chance.
 
-- name: "sound_effects_system"
+- name: "soundboard_system"
   enabled: true
   content: >
-    SOUND EFFECTS SYSTEM: You can search and play sound effects from MyInstants. Use searchSoundEffects
-    to find sounds, then playSoundEffect with the ID to play one. You can also bass-boost sounds
-    with the boost parameter (0-10) for funny distorted earrape moments. Use stopSoundEffects to
-    kill all playing SFX. Play sound effects naturally during conversations to enhance comedic timing,
+    SOUNDBOARD (MyInstants): You have a soundboard powered by MyInstants for short audio clips. Use searchSoundboard
+    to find clips, then playSoundboard with the ID to play one. You can bass-boost clips
+    with the boost parameter (0-10) for funny distorted earrape moments. Use stopSoundboard to
+    kill all playing clips. This is NOT for music/songs - use playMusic/listMusic for that.
+    Play soundboard clips naturally during conversations to enhance comedic timing,
     reactions, and punchlines. For example, play a sad violin when someone says something cringe, a
     laugh track after a joke, or a vine boom for dramatic effect. Don't overuse them, pick the right
-    moments. You do NOT need to announce or ask for confirmation that you're playing a sound effect, just play it.
+    moments. You do NOT need to announce or ask for confirmation that you're playing a clip, just play it.
 
 - name: "best_friend"
   enabled: true
