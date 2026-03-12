@@ -1,4 +1,5 @@
 import aiohttp
+import html
 import json
 import logging
 import os
@@ -25,6 +26,15 @@ def _load_cache():
         try:
             with open(_CACHE_FILE, "r", encoding="utf-8") as f:
                 _known_sounds = json.load(f)
+            # Clean up HTML entities in existing cached titles
+            dirty = False
+            for sid, entry in _known_sounds.items():
+                cleaned = html.unescape(entry.get("title", ""))
+                if cleaned != entry.get("title", ""):
+                    entry["title"] = cleaned
+                    dirty = True
+            if dirty:
+                _save_cache()
             logger.info(f"Loaded {len(_known_sounds)} sounds from cache")
         except Exception as e:
             logger.warning(f"Failed to load sound cache: {e}")
@@ -65,7 +75,7 @@ async def search_sounds(query: str, limit: int = 10) -> list[dict] | None:
         sounds = []
         for item in results[:limit]:
             sid = item.get("id", "")
-            title = item.get("title", "")
+            title = html.unescape(item.get("title", ""))
             mp3 = item.get("mp3", "")
             if sid and mp3:
                 _known_sounds[sid] = {"title": title, "mp3": mp3}
