@@ -426,9 +426,15 @@ class GeminiLiveSession:
                 if any(code in err_str for code in ("1006", "1007", "1008", "1009", "1011", "1012", "1013", "1014")):
                     logger.warning(f"WebSocket close ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
-                    # Only clear handle for policy violation (1008), let fail counter handle others
-                    if "1008" in err_str:
-                        self._clear_session_handle()
+                    # 1007 (invalid argument) and 1008 (policy violation) - clear handle after 2 hits
+                    if "1007" in err_str or "1008" in err_str:
+                        if self._session_handle:
+                            self._handle_fail_count += 1
+                            if self._handle_fail_count >= 2:
+                                logger.warning("1007/1008 error twice, clearing session handle")
+                                self._clear_session_handle()
+                        else:
+                            self._handle_fail_count += 1
                     elif self._session_handle:
                         self._handle_fail_count += 1
                         if self._handle_fail_count >= 3:
@@ -457,10 +463,15 @@ class GeminiLiveSession:
                 reason = getattr(e, 'reason', '') or ''
                 logger.warning(f"WebSocket closed (code={code}, reason={reason[:80]}), reconnecting...")
                 _broadcast_console("error", f"WebSocket closed: {code} {reason[:60]}")
-                # Keep handle for transient errors (1006, 1011, 1012, etc.)
-                # Only clear for policy violations
-                if code == 1008:
-                    self._clear_session_handle()
+                # 1007/1008 - clear handle after 2 consecutive failures
+                if code in (1007, 1008):
+                    if self._session_handle:
+                        self._handle_fail_count += 1
+                        if self._handle_fail_count >= 2:
+                            logger.warning("1007/1008 error twice, clearing session handle")
+                            self._clear_session_handle()
+                    else:
+                        self._handle_fail_count += 1
                 elif self._session_handle:
                     self._handle_fail_count += 1
                     if self._handle_fail_count >= 3:
@@ -494,8 +505,14 @@ class GeminiLiveSession:
                 if any(code in err_str for code in ("1006", "1007", "1008", "1009", "1011", "1012", "1013", "1014")):
                     logger.warning(f"WebSocket error ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
-                    if "1008" in err_str:
-                        self._clear_session_handle()
+                    if "1007" in err_str or "1008" in err_str:
+                        if self._session_handle:
+                            self._handle_fail_count += 1
+                            if self._handle_fail_count >= 2:
+                                logger.warning("1007/1008 error twice, clearing session handle")
+                                self._clear_session_handle()
+                        else:
+                            self._handle_fail_count += 1
                     elif self._session_handle:
                         self._handle_fail_count += 1
                         if self._handle_fail_count >= 3:

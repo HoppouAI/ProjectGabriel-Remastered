@@ -32,7 +32,6 @@ class ProcessSupervisor:
     def start_process(self, name: str, script: str, restart_on_exit: bool = True):
         """Start a process and optionally auto-restart it."""
         def run():
-            restart_count = 0
             while self.running:
                 print(f"[Supervisor] Starting {name}...")
                 
@@ -64,15 +63,7 @@ class ProcessSupervisor:
                     break
                     
                 if restart_on_exit:
-                    restart_count += 1
-                    # Exponential backoff with max 30s delay
-                    delay = min(2 ** restart_count, 30)
-                    print(f"[Supervisor] {name} exited (code {exit_code}), restarting in {delay}s...")
-                    time.sleep(delay)
-                    
-                    # Reset restart count after successful run (10 minutes)
-                    if restart_count > 5:
-                        restart_count = 0
+                    print(f"[Supervisor] {name} exited (code {exit_code}), restarting...")
                 else:
                     print(f"[Supervisor] {name} exited (code {exit_code})")
                     break
