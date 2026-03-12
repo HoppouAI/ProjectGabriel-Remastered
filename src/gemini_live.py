@@ -144,6 +144,7 @@ class GeminiLiveSession:
         self._input_transcript_buffer = ""  # Buffer for user speech
         self._session_handle = None
         self._handle_fail_count = 0
+        self._tool_call_pending = False
         self._out_queue = asyncio.Queue(maxsize=5)
         self._audio_in_queue = asyncio.Queue()
         self._reconnect_requested = False
@@ -181,6 +182,9 @@ class GeminiLiveSession:
     async def send_text(self, text: str):
         """Send text to the model via realtime input."""
         if self._session:
+            if self._tool_call_pending:
+                logger.debug("Skipping text send - tool call pending")
+                return
             try:
                 await self._session.send_realtime_input(text=text)
                 self._conv_logger.add_user_message(text)
@@ -565,6 +569,8 @@ class GeminiLiveSession:
         while True:
             try:
                 msg_type, data = await self._out_queue.get()
+                if self._tool_call_pending:
+                    continue
                 if msg_type == "audio":
                     await session.send_realtime_input(
                         audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
@@ -720,27 +726,31 @@ class GeminiLiveSession:
                                 break
 
                     if response.tool_call:
+                        self._tool_call_pending = True
                         # Finalize user message immediately - model has processed input
                         self._conv_logger.finalize_user_message()
                         if self._pending_finalize_task:
                             self._pending_finalize_task.cancel()
                             self._pending_finalize_task = None
                         self._input_transcript_buffer = ""
-                        responses = []
-                        for fc in response.tool_call.function_calls:
-                            logger.info(f"Tool call: {fc.name}")
-                            args_dict = dict(fc.args) if fc.args else {}
-                            args_str = json.dumps(args_dict)
-                            _broadcast_console("tool_call", f"{fc.name}({args_str[:100]})")
-                            self._usage_metadata["tool_calls"] += 1
-                            self._conv_logger.add_tool_call(fc.name, args_dict)
-                            fr = await self.tool_handler.handle(fc)
-                            result_dict = fr.response if fr.response else {}
-                            result_str = json.dumps(result_dict)
-                            _broadcast_console("tool_response", f"{fc.name} → {result_str[:150]}")
-                            self._conv_logger.add_tool_response(fc.name, result_dict)
-                            responses.append(fr)
-                        await session.send_tool_response(function_responses=responses)
+                        try:
+                            responses = []
+                            for fc in response.tool_call.function_calls:
+                                logger.info(f"Tool call: {fc.name}")
+                                args_dict = dict(fc.args) if fc.args else {}
+                                args_str = json.dumps(args_dict)
+                                _broadcast_console("tool_call", f"{fc.name}({args_str[:100]})")
+                                self._usage_metadata["tool_calls"] += 1
+                                self._conv_logger.add_tool_call(fc.name, args_dict)
+                                fr = await self.tool_handler.handle(fc)
+                                result_dict = fr.response if fr.response else {}
+                                result_str = json.dumps(result_dict)
+                                _broadcast_console("tool_response", f"{fc.name} → {result_str[:150]}")
+                                self._conv_logger.add_tool_response(fc.name, result_dict)
+                                responses.append(fr)
+                            await session.send_tool_response(function_responses=responses)
+                        finally:
+                            self._tool_call_pending = False
 
                     # Track usage metadata if available
                     if hasattr(response, "usage_metadata") and response.usage_metadata:
