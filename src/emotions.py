@@ -65,6 +65,7 @@ class EmotionSystem:
         self._talking_anims = [name for name, data in self.animations.items() if data.get('auto_talking', False)]
         
         # Idle animation config
+        self._idle_enabled = emo_cfg.get('idle_enabled', True)
         self._idle_animation_name = emo_cfg.get('idle_animation', '')
         self._idle_timeout = float(emo_cfg.get('idle_timeout', 30))
         self._idle_active = False
@@ -99,7 +100,7 @@ class EmotionSystem:
 
     def check_idle(self):
         """Check if idle animation should start. Call periodically from a loop."""
-        if not self.enabled or not self._idle_animation_name:
+        if not self.enabled or not self._idle_enabled or not self._idle_animation_name:
             return
         if self._idle_active or self._is_speaking or self._manual_animation_active:
             return
