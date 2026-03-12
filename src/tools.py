@@ -335,7 +335,7 @@ class ToolHandler:
             ok = self.audio.play_music(args["filename"], args.get("volume", 50))
             if ok:
                 return {"result": "ok", "message": "playing"}
-            return {"result": "error", "message": "file not found", "hint": "Use listMusic to see available files and try again with the exact filename"}
+            return {"result": "error", "message": "file not found. Use listMusic to see available files and try again with the exact filename"}
         elif name == "stopMusic":
             self.audio.stop_music()
             return {"result": "ok"}
