@@ -475,7 +475,7 @@ class GeminiLiveSession:
             await asyncio.sleep(0.5)
 
     async def _idle_check_loop(self):
-        """Monitor for idle state and stop talking animations after timeout."""
+        """Monitor for idle state, stop talking animations, and trigger idle animation."""
         while True:
             await asyncio.sleep(1)  # Check every second
             if self._speaking and self._last_audio_time > 0:
@@ -487,6 +487,9 @@ class GeminiLiveSession:
                     if self._emotion_system:
                         self._emotion_system.stop_speaking()
                     self.osc.set_typing(False)
+            # Check if idle animation should start
+            if self._emotion_system:
+                self._emotion_system.check_idle()
 
     async def _listen_audio_loop(self, input_stream):
         while True:
@@ -614,6 +617,9 @@ class GeminiLiveSession:
                     ):
                         input_trans = response.server_content.input_transcription
                         if hasattr(input_trans, "text") and input_trans.text:
+                            # User is speaking - mark activity to cancel idle animation
+                            if self._emotion_system:
+                                self._emotion_system.mark_activity()
                             # Input transcription arrives as chunks - accumulate like output
                             self._input_transcript_buffer += input_trans.text
                             # Broadcast chunk to WebUI (it appends via +=)

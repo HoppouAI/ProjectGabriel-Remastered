@@ -64,6 +64,12 @@ class EmotionSystem:
         # Get talking animations for auto-switching
         self._talking_anims = [name for name, data in self.animations.items() if data.get('auto_talking', False)]
         
+        # Idle animation config
+        self._idle_animation_name = emo_cfg.get('idle_animation', '')
+        self._idle_timeout = float(emo_cfg.get('idle_timeout', 30))
+        self._idle_active = False
+        self._last_activity_time = time.time()
+        
         # Track manual animation state (dances, etc.)
         self._manual_animation_active = False
 
@@ -81,11 +87,52 @@ class EmotionSystem:
     def stop(self):
         """Stop the emotion system."""
         self.stop_speaking()
+        self._stop_idle_animation()
         self._clear_current_animation()
         logger.info("Emotion system stopped")
 
+    def mark_activity(self):
+        """Mark that activity occurred (user speech, AI speech, etc). Resets idle timer."""
+        self._last_activity_time = time.time()
+        if self._idle_active:
+            self._stop_idle_animation()
+
+    def check_idle(self):
+        """Check if idle animation should start. Call periodically from a loop."""
+        if not self.enabled or not self._idle_animation_name:
+            return
+        if self._idle_active or self._is_speaking or self._manual_animation_active:
+            return
+        if time.time() - self._last_activity_time >= self._idle_timeout:
+            self._start_idle_animation()
+
+    def _start_idle_animation(self):
+        """Start the idle animation."""
+        anim_data = self.animations.get(self._idle_animation_name)
+        if not anim_data:
+            return
+        self._idle_active = True
+        with self._animation_lock:
+            if self._current_animation:
+                self._send_animation_osc(self._current_animation, False)
+            self._current_animation = self._idle_animation_name
+            self._send_animation_osc(self._idle_animation_name, True)
+        logger.info(f"Idle animation started: {self._idle_animation_name}")
+
+    def _stop_idle_animation(self):
+        """Stop the idle animation."""
+        if not self._idle_active:
+            return
+        self._idle_active = False
+        with self._animation_lock:
+            if self._current_animation == self._idle_animation_name:
+                self._send_animation_osc(self._idle_animation_name, False)
+                self._current_animation = None
+        logger.debug("Idle animation stopped")
+
     def start_speaking(self):
         """Start talking animations (called when AI begins speaking)."""
+        self.mark_activity()
         if not self.enabled or self._is_speaking or not self._talking_anims:
             return
         
@@ -104,6 +151,7 @@ class EmotionSystem:
         """Stop talking animations (called when AI stops speaking)."""
         if not self._is_speaking:
             return
+        self.mark_activity()
         
         self._is_speaking = False
         self._talking_stop_event.set()
