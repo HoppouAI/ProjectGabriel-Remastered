@@ -10,6 +10,7 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
+from websockets.exceptions import ConnectionClosed
 import mss
 from PIL import Image
 from src.tools import get_tool_declarations, ToolHandler
@@ -388,35 +389,39 @@ class GeminiLiveSession:
                             pass
 
             except APIError as e:
-                err_str = str(e).lower()
-                if "429" in err_str or "quota" in err_str or "rate" in err_str:
+                err_str = str(e)
+                err_lower = err_str.lower()
+
+                # Rate limiting - rotate key
+                if "429" in err_lower or "quota" in err_lower or "rate" in err_lower:
                     old_key = self.config.api_key
                     new_key = self.config.rotate_key()
                     if new_key != old_key:
-                        logger.warning("Rate limited — switched API key")
-                        _broadcast_console("info", "Rate limited — switched API key")
+                        logger.warning("Rate limited - switched API key")
+                        _broadcast_console("info", "Rate limited - switched API key")
                     else:
-                        logger.warning("Rate limited — waiting 5s before retry")
-                        _broadcast_console("info", "Rate limited — waiting 5s")
+                        logger.warning("Rate limited - waiting 5s before retry")
+                        _broadcast_console("info", "Rate limited - waiting 5s")
                         await asyncio.sleep(5)
                     continue
-                
+
                 # v1alpha features not supported - fall back
-                if not self._alpha_fallback_failed and ("enableAffectiveDialog" in str(e) or "proactivity" in str(e) or "proactive_audio" in str(e)):
+                if not self._alpha_fallback_failed and any(kw in err_str for kw in ("enableAffectiveDialog", "proactivity", "proactive_audio")):
                     logger.warning(f"v1alpha features rejected ({e}), falling back to standard API")
                     _broadcast_console("info", "v1alpha features not supported, falling back")
                     self._alpha_fallback_failed = True
                     await asyncio.sleep(0.5)
                     continue
-                
-                # WebSocket protocol errors - reconnect immediately
-                if any(code in str(e) for code in ["1007", "1008", "1011", "1006"]):
-                    logger.warning(f"WebSocket error ({e}), reconnecting immediately...")
-                    _broadcast_console("error", f"WebSocket error: {str(e)[:100]}")
-                    self._clear_session_handle()  # Clear handle on WebSocket errors
+
+                # WebSocket close codes - reconnect immediately
+                if any(code in err_str for code in ("1006", "1007", "1008", "1009", "1011", "1012", "1013", "1014")):
+                    logger.warning(f"WebSocket close ({e}), reconnecting...")
+                    _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
+                    self._clear_session_handle()
                     await asyncio.sleep(0.5)
                     continue
-                
+
+                # Session handle issues
                 if self._session_handle:
                     self._handle_fail_count += 1
                     if self._handle_fail_count >= 2:
@@ -425,34 +430,57 @@ class GeminiLiveSession:
                         self._clear_session_handle()
                     else:
                         logger.warning(f"Session handle may be invalid (attempt {self._handle_fail_count}/2)")
+
                 logger.error(f"API error: {e}")
-                _broadcast_console("error", f"API error: {str(e)[:100]}")
+                _broadcast_console("error", f"API error: {err_str[:100]}")
                 await asyncio.sleep(2)
-                continue  # Always continue the loop
+                continue
+
+            except ConnectionClosed as e:
+                # Direct websockets close - extract code for logging
+                code = getattr(e, 'code', None)
+                reason = getattr(e, 'reason', '') or ''
+                logger.warning(f"WebSocket closed (code={code}, reason={reason[:80]}), reconnecting...")
+                _broadcast_console("error", f"WebSocket closed: {code} {reason[:60]}")
+                self._clear_session_handle()
+                await asyncio.sleep(0.5)
+                continue
+
+            except (ConnectionError, OSError, TimeoutError) as e:
+                # Network-level errors (DNS, TCP, TLS, timeouts)
+                logger.warning(f"Network error: {e}, reconnecting in 3s...")
+                _broadcast_console("error", f"Network error: {str(e)[:80]}")
+                await asyncio.sleep(3)
+                continue
+
+            except (KeyboardInterrupt, SystemExit):
+                raise
+
             except Exception as e:
                 err_str = str(e)
-                
+
                 # v1alpha features not supported - fall back
-                if not self._alpha_fallback_failed and ("enableAffectiveDialog" in err_str or "proactivity" in err_str or "proactive_audio" in err_str):
+                if not self._alpha_fallback_failed and any(kw in err_str for kw in ("enableAffectiveDialog", "proactivity", "proactive_audio")):
                     logger.warning(f"v1alpha features rejected ({e}), falling back to standard API")
                     _broadcast_console("info", "v1alpha features not supported, falling back")
                     self._alpha_fallback_failed = True
                     await asyncio.sleep(0.5)
                     continue
-                
-                # WebSocket errors - reconnect immediately
-                if any(code in err_str for code in ["1007", "1008", "1011", "1006"]):
-                    logger.warning(f"WebSocket error ({e}), reconnecting immediately...")
-                    _broadcast_console("error", f"WebSocket error: {str(e)[:100]}")
-                    self._clear_session_handle()  # Clear handle on WebSocket errors
+
+                # WebSocket close codes (may come wrapped in generic exceptions)
+                if any(code in err_str for code in ("1006", "1007", "1008", "1009", "1011", "1012", "1013", "1014")):
+                    logger.warning(f"WebSocket error ({e}), reconnecting...")
+                    _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
+                    self._clear_session_handle()
                     await asyncio.sleep(0.5)
                     continue
-                
+
                 # Reconnect request is not an error
                 if "Reconnect requested" in err_str:
                     logger.info("Reconnecting as requested...")
                     continue
-                
+
+                # Session handle issues
                 if self._session_handle:
                     self._handle_fail_count += 1
                     if self._handle_fail_count >= 2:
@@ -461,10 +489,11 @@ class GeminiLiveSession:
                         self._clear_session_handle()
                     else:
                         logger.warning(f"Session handle may be invalid (attempt {self._handle_fail_count}/2)")
-                logger.error(f"Session error: {e}")
-                _broadcast_console("error", f"Session error: {str(e)[:100]}")
+
+                logger.error(f"Session error: {type(e).__name__}: {e}")
+                _broadcast_console("error", f"Session error: {err_str[:100]}")
                 await asyncio.sleep(2)
-                continue  # Always continue the loop
+                continue
 
     async def _reconnect_monitor_loop(self):
         """Monitor for reconnect requests from control panel."""
@@ -712,6 +741,11 @@ class GeminiLiveSession:
                         if update.resumable and update.new_handle:
                             self._save_session_handle(update.new_handle)
 
+            except asyncio.CancelledError:
+                return
+            except (ConnectionClosed, ConnectionError, OSError) as e:
+                logger.warning(f"Receive loop connection error: {e}")
+                raise
             except Exception as e:
                 logger.error(f"Receive error: {e}")
                 raise
