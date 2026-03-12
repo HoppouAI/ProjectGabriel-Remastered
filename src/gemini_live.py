@@ -261,6 +261,11 @@ class GeminiLiveSession:
             ) if self._session_handle else types.SessionResumptionConfig(),
         )
 
+        if self._session_handle:
+            logger.debug(f"Config includes session handle: {self._session_handle[:24]}...")
+        else:
+            logger.debug("Config requesting new session handle (no existing handle)")
+
         if self.config.temperature is not None:
             config_kwargs["temperature"] = self.config.temperature
         if self.config.top_p is not None:
@@ -413,15 +418,22 @@ class GeminiLiveSession:
                     await asyncio.sleep(0.5)
                     continue
 
-                # WebSocket close codes - reconnect immediately
+                # WebSocket close codes - keep handle for transient errors, use fail counter
                 if any(code in err_str for code in ("1006", "1007", "1008", "1009", "1011", "1012", "1013", "1014")):
                     logger.warning(f"WebSocket close ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
-                    self._clear_session_handle()
+                    # Only clear handle for policy violation (1008), let fail counter handle others
+                    if "1008" in err_str:
+                        self._clear_session_handle()
+                    elif self._session_handle:
+                        self._handle_fail_count += 1
+                        if self._handle_fail_count >= 3:
+                            logger.warning("Session handle failed 3 times after WS errors, clearing")
+                            self._clear_session_handle()
                     await asyncio.sleep(0.5)
                     continue
 
-                # Session handle issues
+                # Session handle issues (non-WS errors)
                 if self._session_handle:
                     self._handle_fail_count += 1
                     if self._handle_fail_count >= 2:
@@ -437,17 +449,24 @@ class GeminiLiveSession:
                 continue
 
             except ConnectionClosed as e:
-                # Direct websockets close - extract code for logging
                 code = getattr(e, 'code', None)
                 reason = getattr(e, 'reason', '') or ''
                 logger.warning(f"WebSocket closed (code={code}, reason={reason[:80]}), reconnecting...")
                 _broadcast_console("error", f"WebSocket closed: {code} {reason[:60]}")
-                self._clear_session_handle()
+                # Keep handle for transient errors (1006, 1011, 1012, etc.)
+                # Only clear for policy violations
+                if code == 1008:
+                    self._clear_session_handle()
+                elif self._session_handle:
+                    self._handle_fail_count += 1
+                    if self._handle_fail_count >= 3:
+                        logger.warning("Session handle failed 3 times, clearing")
+                        self._clear_session_handle()
                 await asyncio.sleep(0.5)
                 continue
 
             except (ConnectionError, OSError, TimeoutError) as e:
-                # Network-level errors (DNS, TCP, TLS, timeouts)
+                # Network-level errors - keep handle, just retry
                 logger.warning(f"Network error: {e}, reconnecting in 3s...")
                 _broadcast_console("error", f"Network error: {str(e)[:80]}")
                 await asyncio.sleep(3)
@@ -471,7 +490,12 @@ class GeminiLiveSession:
                 if any(code in err_str for code in ("1006", "1007", "1008", "1009", "1011", "1012", "1013", "1014")):
                     logger.warning(f"WebSocket error ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
-                    self._clear_session_handle()
+                    if "1008" in err_str:
+                        self._clear_session_handle()
+                    elif self._session_handle:
+                        self._handle_fail_count += 1
+                        if self._handle_fail_count >= 3:
+                            self._clear_session_handle()
                     await asyncio.sleep(0.5)
                     continue
 
