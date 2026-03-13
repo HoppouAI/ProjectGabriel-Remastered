@@ -1,0 +1,217 @@
+# ╔══════════════════════════════════════════════════════════╗
+# ║              ProjectGabriel Configuration                ║
+# ╚══════════════════════════════════════════════════════════╝
+# Copy this file to config.yml and fill in your values.
+
+gemini:
+  # Primary API key (required) - get from https://aistudio.google.com/apikey
+  api_key: "YOUR_GEMINI_API_KEY_HERE"
+
+  # Backup keys for automatic rotation when rate limited (optional)
+  # The system will cycle through these when the primary key hits quota limits
+  backup_keys: []
+  #  - "BACKUP_KEY_1"
+  #  - "BACKUP_KEY_2"
+  #  - "BACKUP_KEY_3"
+
+  # Gemini Live model - must support native audio
+  model: "gemini-2.5-flash-native-audio-preview-09-2025"
+
+  # System prompt -- select a named prompt from config/prompts/prompts.yml
+  prompt: "normal"
+
+  # ── Voice Configuration ──
+  # Prebuilt voice name. Available voices:
+  #   Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr
+  voice: "Puck"
+
+  # ── Voice Activity Detection (VAD) ──
+  # Controls how Gemini detects when you start/stop speaking
+  vad:
+    # Set to true to disable automatic VAD (you'd need to send manual signals)
+    disabled: false
+
+    # Sensitivity for detecting the START of speech
+    # Options: START_SENSITIVITY_LOW, START_SENSITIVITY_HIGH
+    # HIGH = triggers faster but may pick up noise, LOW = more selective
+    start_of_speech_sensitivity: "START_SENSITIVITY_HIGH"
+
+    # Sensitivity for detecting the END of speech
+    # Options: END_SENSITIVITY_LOW, END_SENSITIVITY_HIGH
+    # HIGH = ends speech detection quicker, LOW = waits longer
+    end_of_speech_sensitivity: "END_SENSITIVITY_HIGH"
+
+    # Milliseconds of audio to capture BEFORE speech is detected (context padding)
+    prefix_padding_ms: 100
+
+    # Milliseconds of silence required to consider speech complete
+    silence_duration_ms: 200
+
+  # ── Generation Parameters ──
+  temperature: 1.0     # 0.0-2.0, controls randomness (default: 1.0, higher = more creative)
+
+  # ── Thinking Configuration ──
+  # Enables the model to "think" before responding (inner monologue).
+  # Requires a model that supports thinking (e.g. gemini-2.5-flash-native-audio-preview-12-2025).
+  # Dynamic thinking is enabled by default on supported models.
+  thinking:
+    # Thinking token budget - guides how many tokens the model uses to think.
+    # Higher = more thorough but slower responses. Set to 0 to disable thinking.
+    # null = use model default (dynamic thinking)
+    budget: null
+
+    # Whether to include thought summaries in server responses.
+    # Useful for debugging what the model is reasoning about.
+    include_thoughts: false
+
+  # ── Advanced Live Features (require v1alpha API, auto-fallback if unsupported) ──
+  # enable_affective_dialog: true   # Emotional/expressive responses
+  # proactivity: null                # Model proactivity level (float), null = default
+
+  # ── Context Window Compression ──
+  # Prevents session termination when context gets too large.
+  # Without compression: audio-only 15 min, audio+video 2 min.
+  # With compression: unlimited session length.
+  context_window_compression:
+    enabled: true
+    # Token count that triggers compression (null = 80% of model's 128k context window)
+    trigger_tokens: 60000
+    # Tokens to keep after compression (null = trigger_tokens / 2)
+    target_tokens: 30000
+
+audio:
+  # Audio device indices - null uses system default
+  # Run `python -c "import pyaudio; p=pyaudio.PyAudio(); [print(i, p.get_device_info_by_index(i)['name']) for i in range(p.get_device_count())]"` to list devices
+  input_device: null
+  output_device: null
+
+  # Sample rates (don't change unless you know what you're doing)
+  send_sample_rate: 16000
+  receive_sample_rate: 24000
+  chunk_size: 1024
+
+vrchat:
+  # VRChat OSC settings
+  osc_ip: "127.0.0.1"
+  osc_send_port: 9000
+
+  # Seconds to display each chatbox page before advancing
+  chatbox_page_delay: 3.0
+
+music:
+  # Folder containing local music files (.mp3, .wav, .ogg, .flac)
+  music_dir: "sfx/music"
+
+yolo:
+  # Master switch -- set to false to completely disable the player-following system
+  # (removes the tool declarations from Gemini and skips tracker init)
+  enabled: true
+
+  # Vision debug WebUI -- view YOLO detections + bounding boxes + OSC data in browser
+  # Access at http://localhost:8767/vision when enabled
+  vision_debug: false
+  vision_debug_port: 8767
+
+  # YOLOv8n model auto-downloads here if missing
+  model_dir: "models/yolov8"
+  model_name: "yolov8n.pt"
+
+face_tracker:
+  # Face tracking - smoothly looks at faces using yolov8n-face model
+  # When AI is speaking: locks onto the closest face
+  # When idle: randomly glances at visible faces every 5-10 seconds
+  enabled: false
+
+vision:
+  # Screen capture for Gemini Live vision
+  # Allows the AI to SEE what's on your screen
+  enabled: true
+
+  # Monitor index to capture (0 = all monitors combined, 1 = primary, 2 = secondary, etc.)
+  # Run `python -c "import mss; s=mss.mss(); [print(i, m) for i,m in enumerate(s.monitors)]"` to list
+  monitor: 1
+
+  # Seconds between screen captures (lower = more responsive but uses more tokens)
+  # Note: audio+video sessions are limited to 2 minutes, use context window compression
+  interval: 1.0
+
+  # Max resolution (images are scaled to fit this size, preserving aspect ratio)
+  max_size: 1024
+
+  # JPEG quality (1-100, higher = better quality but larger payload)
+  quality: 80
+
+# ══════════════════════════════════════════════════════════
+# Persistent Memory System
+# ══════════════════════════════════════════════════════════
+memory:
+  # Enable memory system
+  enabled: true
+
+  # Backend: "sqlite" (local file) or "mongo" (MongoDB Atlas)
+  backend: "sqlite"
+
+  # SQLite settings (used if backend is "sqlite")
+  sqlite_path: "gabriel_memories.sqlite"
+
+  # MongoDB settings (used if backend is "mongo")
+  # Set GABRIEL_MONGO_URI environment variable, or configure below
+  mongo_uri: ""
+  mongo_db: ""
+  mongo_collection: ""
+
+  # Memory TTL (time-to-live) settings
+  quick_note_ttl_hours: 6      # Quick notes auto-delete after 6 hours
+  short_term_ttl_days: 7       # Short-term memories auto-delete after 7 days
+
+  # Rate limiting for quick notes (prevents spam)
+  note_min_interval_seconds: 120   # Min seconds between quick notes
+  dedupe_window_seconds: 300       # Deduplication window
+
+  # How many recent memories to include in the system prompt
+  prompt_memory_count: 15
+
+# ══════════════════════════════════════════════════════════
+# Avatar Emotion/Animation System
+# ══════════════════════════════════════════════════════════
+emotions:
+  # Enable emotion system
+  enabled: false
+
+  # VRChat Avatar ID (optional, for logging/tracking)
+  avatar_id: ""
+
+  # Default duration for non-looping animations (seconds)
+  default_duration: 3.0
+
+  # How often to switch between talking animations when speaking (seconds)
+  talking_switch_interval: 5.0
+
+  # Idle animation - plays when nobody is speaking for a while
+  idle_enabled: true               # Enable/disable idle animation
+  idle_animation: "sad-idle"       # Animation name to play when idle (must be defined below)
+  idle_timeout: 10                 # Seconds of silence before idle animation starts
+
+  # ── Animations ──
+  # Each animation maps to its VRChat OSC parameter path
+  # looping: true = stays on until stopAnimation is called
+  # auto_talking: true = auto-triggered when AI speaks (not manually callable)
+  animations:
+    # Example emotion animation
+    # sad-idle:
+    #   osc_path: "/avatar/parameters/YourParam/sad-idle"
+    #   category: "emotion"
+    #   looping: true
+
+    # Example talking animation (auto-triggered when AI speaks)
+    # talking-1:
+    #   osc_path: "/avatar/parameters/YourParam/talking-1"
+    #   category: "talking"
+    #   looping: true
+    #   auto_talking: true
+
+    # Example dance animation
+    # dance-1:
+    #   osc_path: "/avatar/parameters/YourParam/dance-1"
+    #   category: "dance"
+    #   looping: true
