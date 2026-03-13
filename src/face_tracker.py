@@ -248,6 +248,12 @@ class FaceTracker:
             while self._active:
                 t0 = time.perf_counter()
 
+                # Pause detection when player tracker is following
+                if self._player_tracker_active():
+                    self._zero_osc()
+                    time.sleep(0.5)
+                    continue
+
                 frame = capture_fn()
                 if frame is None:
                     time.sleep(0.001)

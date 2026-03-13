@@ -856,13 +856,7 @@ class GeminiLiveSession:
         self.osc.set_typing(False)
 
     def _format_now_playing(self, progress_info: dict) -> str:
-        """Format Now Playing display for chatbox.
-        
-        Format:
-        ♪ Song Name ♪
-        ──────•───────────
-        0:45 / 3:21
-        """
+        """Format Now Playing display for chatbox."""
         name = progress_info["song_name"]
         position = progress_info["position"]
         duration = progress_info["duration"]
@@ -873,21 +867,33 @@ class GeminiLiveSession:
         dur_min, dur_sec = divmod(int(duration), 60)
         time_str = f"{pos_min}:{pos_sec:02d} / {dur_min}:{dur_sec:02d}"
         
-        # Create progress bar (use remaining space for max width)
-        # Title line: ♪ Song Name ♪
-        # Leave room for ball position
+        # Create progress bar
         bar_width = 12
         filled = int(progress * bar_width)
-        
-        # Build progress bar: | at edges, ─ for track, • for position
         bar = "|" + "─" * filled + "•" + "─" * (bar_width - filled - 1) + "|"
         
-        # Truncate song name if too long (leave room for ♪ symbols)
-        max_name_len = 140 - len(time_str) - len(bar) - 10
-        if len(name) > max_name_len:
-            name = name[:max_name_len-3] + "..."
+        # Get current lyric
+        lyric = self.audio.get_current_lyric()
         
-        return f"♪ {name} ♪\n{bar}\n{time_str}"
+        lines = []
+        if lyric:
+            max_lyric = 100
+            if len(lyric) > max_lyric:
+                lyric = lyric[:max_lyric - 3] + "..."
+            lines.append("LYRICS")
+            lines.append(lyric)
+            lines.append("────────────")
+        
+        # Truncate song name if needed
+        max_name = 100
+        if len(name) > max_name:
+            name = name[:max_name - 3] + "..."
+        
+        lines.append(name)
+        lines.append(bar)
+        lines.append(time_str)
+        
+        return "\n".join(lines)
 
     async def _now_playing_loop(self):
         """Background task that updates chatbox with Now Playing when music plays."""

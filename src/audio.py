@@ -2,6 +2,7 @@ import pyaudio
 import numpy as np
 import logging
 import os
+import re
 import time
 import pygame
 
@@ -23,6 +24,7 @@ class AudioManager:
         self._current_volume = 50  # Track current volume (0-300)
         self._using_boosted_sound = False  # True if using boosted Sound instead of music
         self._boosted_sound_channel = None  # Channel for boosted playback
+        self._lyrics = []  # Parsed SRT entries: [(start_sec, end_sec, text), ...]
         self._setup_devices()
         self._setup_pygame()
 
@@ -155,6 +157,9 @@ class AudioManager:
             # Try to get duration using mutagen
             self._current_song_duration = self._get_audio_duration(filepath)
             
+            # Load matching SRT lyrics
+            self._lyrics = self._load_srt(filename)
+            
             if vol_float <= 1.0:
                 self._using_boosted_sound = False
                 self._boosted_sound_channel = None
@@ -175,6 +180,7 @@ class AudioManager:
             self._music_paused_at = None
             self._current_song_name = None
             self._current_song_duration = None
+            self._lyrics = []
             logger.error(f"Music playback failed: {e}")
             return False
 
@@ -196,6 +202,58 @@ class AudioManager:
             pass
         
         return 0.0
+
+    def _parse_srt_time(self, ts: str) -> float:
+        """Parse SRT timestamp (HH:MM:SS,mmm) to seconds."""
+        m = re.match(r"(\d+):(\d+):(\d+)[,.](\d+)", ts.strip())
+        if not m:
+            return 0.0
+        h, mi, s, ms = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+        return h * 3600 + mi * 60 + s + ms / 1000.0
+
+    def _load_srt(self, music_filename: str) -> list:
+        """Load matching .srt from sfx/music/srt/ for the given music file."""
+        from pathlib import Path
+        stem = Path(music_filename).stem
+        srt_path = Path(self.config.music_dir) / "srt" / f"{stem}.srt"
+        if not srt_path.exists():
+            return []
+        try:
+            text = srt_path.read_text(encoding="utf-8")
+            entries = []
+            blocks = re.split(r"\n\s*\n", text.strip())
+            for block in blocks:
+                lines = block.strip().split("\n")
+                if len(lines) < 3:
+                    continue
+                time_line = lines[1]
+                arrow = re.split(r"\s*-->\s*", time_line)
+                if len(arrow) != 2:
+                    continue
+                start = self._parse_srt_time(arrow[0])
+                end = self._parse_srt_time(arrow[1])
+                lyric = " ".join(lines[2:]).strip()
+                if lyric:
+                    entries.append((start, end, lyric))
+            if entries:
+                logger.info(f"Loaded {len(entries)} lyric entries from {srt_path.name}")
+            return entries
+        except Exception as e:
+            logger.warning(f"Failed to load SRT {srt_path}: {e}")
+            return []
+
+    def get_current_lyric(self) -> str | None:
+        """Get the lyric line for the current playback position, or None."""
+        if not self._lyrics or self._music_start_time is None:
+            return None
+        if self._music_paused_at is not None:
+            pos = self._music_paused_at - self._music_start_time
+        else:
+            pos = time.time() - self._music_start_time
+        for start, end, text in self._lyrics:
+            if start <= pos < end:
+                return text
+        return None
 
     def get_music_progress(self) -> dict | None:
         """Get current music playback status.
@@ -233,6 +291,7 @@ class AudioManager:
         self._current_song_duration = None
         self._using_boosted_sound = False
         self._boosted_sound_channel = None
+        self._lyrics = []
 
     def pause_music(self) -> bool:
         """Pause currently playing music. Returns False if nothing is playing."""
