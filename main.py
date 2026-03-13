@@ -7,7 +7,6 @@ import threading
 # If CUDA loads first, DXGI fails on hybrid-GPU systems.
 # Importing is safe even when tracker is disabled in config.
 from src.tracker import PlayerTracker
-from src.face_tracker import FaceTracker
 
 from src.config import Config
 from src.audio import AudioManager
@@ -76,9 +75,11 @@ async def main():
             tracker._vision_debug = True
             run_vision_server(port=config.vision_debug_port, tracker=tracker)
 
-    # Face tracker for looking at people
-    face_tracker = FaceTracker(config, osc) if config.face_tracker_enabled else None
-    if face_tracker:
+    # Face tracker for looking at people (lazy import to skip heavy deps when disabled)
+    face_tracker = None
+    if config.face_tracker_enabled:
+        from src.face_tracker import FaceTracker
+        face_tracker = FaceTracker(config, osc)
         face_tracker.preload()
 
     personality = PersonalityManager()
