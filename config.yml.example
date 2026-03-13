@@ -75,9 +75,9 @@ gemini:
   context_window_compression:
     enabled: true
     # Token count that triggers compression (null = 80% of model's 128k context window)
-    trigger_tokens: 60000
+    trigger_tokens: 50000
     # Tokens to keep after compression (null = trigger_tokens / 2)
-    target_tokens: 30000
+    target_tokens: 25000
 
 audio:
   # Audio device indices - null uses system default
