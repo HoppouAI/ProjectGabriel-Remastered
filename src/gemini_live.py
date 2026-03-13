@@ -140,6 +140,7 @@ class GeminiLiveSession:
         self.personality = personality_mgr
         self.tool_handler = ToolHandler(audio_mgr, osc, tracker, personality_mgr, config)
         self._speaking = False
+        self._thinking_shown = False
         self._transcript_buffer = ""
         self._input_transcript_buffer = ""  # Buffer for user speech
         self._session_handle = None
@@ -293,6 +294,17 @@ class GeminiLiveSession:
             if self.config.compression_trigger_tokens is not None:
                 cw_kwargs["trigger_tokens"] = self.config.compression_trigger_tokens
             config_kwargs["context_window_compression"] = types.ContextWindowCompressionConfig(**cw_kwargs)
+
+        # Thinking configuration
+        thinking_budget = self.config.thinking_budget
+        include_thoughts = self.config.thinking_include_thoughts
+        if thinking_budget is not None or include_thoughts:
+            thinking_kwargs = {}
+            if thinking_budget is not None:
+                thinking_kwargs["thinking_budget"] = thinking_budget
+            if include_thoughts:
+                thinking_kwargs["include_thoughts"] = True
+            config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
 
         return types.LiveConnectConfig(**config_kwargs)
 
@@ -670,7 +682,17 @@ class GeminiLiveSession:
                 async for response in session.receive():
                     if response.server_content and response.server_content.model_turn:
                         for part in response.server_content.model_turn.parts:
-                            if part.inline_data:
+                            # Thought summaries (when include_thoughts is enabled)
+                            if getattr(part, "thought", False) and part.text:
+                                _broadcast_console("thinking", part.text, {"streaming": True})
+                                logger.debug(f"Thought: {part.text[:100]}")
+                                # Show "Thinking..." in VRChat chatbox (only once per thinking phase)
+                                if not self._thinking_shown:
+                                    self._thinking_shown = True
+                                    self.osc.set_typing(True)
+                                    self.osc.send_chatbox("Thinking...")
+                            elif part.inline_data:
+                                self._thinking_shown = False
                                 if not self._speaking:
                                     self._speaking = True
                                     self.osc.set_typing(True)
@@ -715,6 +737,7 @@ class GeminiLiveSession:
 
                     if response.server_content and response.server_content.turn_complete:
                         self._speaking = False
+                        self._thinking_shown = False
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         await self._finalize_chatbox()
@@ -727,6 +750,7 @@ class GeminiLiveSession:
 
                     if response.server_content and response.server_content.interrupted:
                         self._speaking = False
+                        self._thinking_shown = False
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         self.osc.set_typing(False)

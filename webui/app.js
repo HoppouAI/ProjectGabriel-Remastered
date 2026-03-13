@@ -432,6 +432,7 @@ function addConsoleEntry(type, content, extra) {
     var prefixes = {
         transcription: '\ud83c\udf99 ',
         response: '\ud83e\udd16 ',
+        thinking: '\ud83d\udca1 ',
         tool_call: '\ud83d\udd27 ',
         tool_response: '\ud83d\udce5 ',
         error: '\u274c ',

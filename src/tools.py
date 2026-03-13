@@ -16,7 +16,7 @@ def get_tool_declarations(config=None):
     function_decls = [
         types.FunctionDeclaration(
                 name="searchSoundboard",
-                description="Search the MyInstants soundboard for short audio clips. Returns results with IDs and titles. Use playSoundboard with the ID to play one. This is NOT for music - use playMusic/listMusic for songs.",
+                description="Search the MyInstants soundboard for short audio clips. Returns results with IDs and titles. Use playSoundboard with the ID to play one.\n**Invocation Condition:** Call only when you want to browse results before playing, or when the user asks to search. For direct playback, use playSoundboard instead (it auto-searches).",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -27,7 +27,7 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="playSoundboard",
-                description="Play a MyInstants soundboard clip by ID or name. Automatically searches MyInstants if not cached locally. This is NOT for music - use playMusic for songs.",
+                description="Play a MyInstants soundboard clip by ID or name. Automatically searches MyInstants if not cached locally.\n**Invocation Condition:** Call directly when a sound clip would enhance the conversation. Do not search first. Do not ask for confirmation.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -39,17 +39,17 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="stopSoundboard",
-                description="Stop all currently playing MyInstants soundboard clips immediately.",
+                description="Stop all currently playing MyInstants soundboard clips immediately.\n**Invocation Condition:** Call when asked to stop a clip or when it is disruptive.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="listMusic",
-                description="List all available local music files that can be played",
+                description="List all available local music files that can be played.\n**Invocation Condition:** Call when asked what songs are available, or after a playMusic failure to get the correct filename.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="playMusic",
-                description="Play a local music file by filename",
+                description="Play a local music file by filename.\n**Invocation Condition:** Call when asked to play a song. Use exact filenames from listMusic results.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -61,22 +61,22 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="stopMusic",
-                description="Stop currently playing music",
+                description="Stop currently playing music.\n**Invocation Condition:** Call when asked to stop the current song.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="pauseMusic",
-                description="Pause the currently playing music. Can be resumed later.",
+                description="Pause the currently playing music. Can be resumed later.\n**Invocation Condition:** Call when asked to pause.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="resumeMusic",
-                description="Resume paused music playback.",
+                description="Resume paused music playback.\n**Invocation Condition:** Call when asked to resume or unpause.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="setMusicVolume",
-                description="Adjust the music volume while playing. Only works for volumes 0-100 during playback.",
+                description="Adjust the music volume while playing. Only works during playback.\n**Invocation Condition:** Call when asked to change music volume.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -87,7 +87,7 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="setVoiceBoost",
-                description="Set voice boost level for loud distorted bass-boosted yelling effect on your microphone output",
+                description="Set voice boost level for loud distorted bass-boosted yelling effect on your microphone output.\n**Invocation Condition:** Call when asked to get loud or distorted, or for comedic yelling effects.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -98,7 +98,7 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="toggleVrchatMic",
-                description="Mute or unmute the VRChat microphone",
+                description="Mute or unmute the VRChat microphone.\n**Invocation Condition:** Call when asked to mute or unmute.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -109,12 +109,12 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="listPersonalities",
-                description="List all available personality modes that can be switched to",
+                description="List all available personality modes that can be switched to.\n**Invocation Condition:** Call when asked what personalities are available.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="switchPersonality",
-                description="Switch to a different personality mode. This changes behavior and response style.",
+                description="Switch to a different personality mode. This changes behavior and response style.\n**Invocation Condition:** Call only when explicitly asked to switch, or when context unmistakably calls for it.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -125,45 +125,74 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="getCurrentPersonality",
-                description="Get information about the currently active personality mode",
+                description="Get information about the currently active personality mode.\n**Invocation Condition:** Call when asked what mode you are in.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="vrchatCrouch",
-                description="Toggle crouch in VRChat. Press once to crouch, press again to stand up.",
+                description="Toggle crouch in VRChat. Press once to crouch, press again to stand up.\n**Invocation Condition:** Call when asked to crouch or stand.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="vrchatCrawl",
-                description="Toggle crawl/prone position in VRChat. Press once to go prone, press again to stand up.",
+                description="Toggle crawl/prone position in VRChat. Press once to go prone, press again to stand up.\n**Invocation Condition:** Call when asked to crawl or go prone.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="vrchatMove",
-                description="Start walking in a direction in VRChat. The avatar will keep moving until stopMovement is called.",
+                description="Start walking in a direction in VRChat. Supports strafing (left/right) and sprinting. The avatar will keep moving until duration expires or vrchatStop is called.\n**Invocation Condition:** Call when asked to walk, run, or move somewhere.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "direction": {"type": "STRING", "description": "Direction to move: 'forward', 'backward', 'left', or 'right'"},
+                        "direction": {"type": "STRING", "description": "Direction to move: 'forward', 'backward', 'left' (strafe left), or 'right' (strafe right)"},
                         "duration": {"type": "NUMBER", "description": "How long to move in seconds (0.1 to 600). After this time, movement stops automatically."},
+                        "speed": {"type": "STRING", "description": "Movement speed: 'slow' (careful walk), 'normal' (default walk), 'fast' (brisk walk), 'sprint' (full run)"},
                     },
                     "required": ["direction", "duration"],
                 },
             ),
             types.FunctionDeclaration(
                 name="vrchatStop",
-                description="Stop all movement in VRChat immediately.",
+                description="Stop all movement in VRChat immediately.\n**Invocation Condition:** Call immediately when asked to stop moving.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="vrchatJump",
-                description="Make the avatar jump in VRChat.",
+                description="Make the avatar jump in VRChat.\n**Invocation Condition:** Call when asked to jump.",
                 parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="vrchatGrab",
+                description="Grab/pickup the item directly in front of you (center of your view) in VRChat. You must be looking straight at the item.\n**Invocation Condition:** Call when someone says 'grab this', 'pick that up', or similar. The item must be centered in your vision.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="vrchatDrop",
+                description="Drop the item you are currently holding in VRChat.\n**Invocation Condition:** Call when someone says 'drop it', 'let go', 'put it down', or similar.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="vrchatUse",
+                description="Use/interact with the item directly in front of you (center of your view) in VRChat. This activates interactable objects like buttons, doors, or pickups.\n**Invocation Condition:** Call when someone says 'use that', 'press that', 'interact with that', or similar. The item must be centered in your vision.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="vrchatLook",
+                description="Smoothly turn/rotate the avatar left or right in VRChat. Uses the same smooth EMA turning as the follow system with gradual ramp up and ramp down.\n**Invocation Condition:** Call when asked to look left or right, turn around, or face a direction. Also useful for aiming your view at objects before grabbing/using them.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "direction": {"type": "STRING", "description": "Direction to turn: 'left' or 'right'"},
+                        "duration": {"type": "NUMBER", "description": "How long to turn in seconds (0.1 to 10). Small values for slight adjustments, larger for big turns."},
+                        "speed": {"type": "STRING", "description": "Turn speed: 'slow' (gentle glance), 'normal' (default), 'fast' (quick snap)"},
+                    },
+                    "required": ["direction", "duration"],
+                },
             ),
             # Memory system (unified action-based) - NO BOOLEAN/ARRAY types to avoid 1008
             types.FunctionDeclaration(
                 name="memory",
-                description="Persistent memory system. Actions: save, read, update, delete, list, search, stats, pin, promote. Memory types: 'long_term' (permanent), 'short_term' (7 days), 'quick_note' (6 hours).",
+                description="Persistent memory system. Actions: save, read, update, delete, list, search, stats, pin, promote. Memory types: long_term (permanent), short_term (7 days), quick_note (6 hours).\n**Invocation Condition:** Call with action=save when you learn something worth remembering. Call with action=search before asking someone a question you might already know. Always include actual usernames, never generic terms like 'User'.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -183,7 +212,7 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="recallMemories",
-                description="Deep memory recall agent. Searches through ALL stored memories using AI to find and summarize relevant information. Use this when you need to remember something specific about a person, event, or topic. Much more thorough than the basic memory search.",
+                description="Deep memory recall agent. Searches through ALL stored memories using AI to find and summarize relevant information.\n**Invocation Condition:** Call when you need to remember something specific about a person, event, or topic. More thorough than basic memory search. Use when someone references past events or asks about people you have met.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -210,7 +239,7 @@ def get_tool_declarations(config=None):
         function_decls.extend([
             types.FunctionDeclaration(
                 name="startFollow",
-                description="Start following a player visible on screen using YOLO vision tracking. Automatically detects and locks onto the nearest person.",
+                description="Start following a player visible on screen using YOLO vision tracking. Automatically detects and locks onto the nearest person.\n**Invocation Condition:** Call when asked to follow someone.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -220,12 +249,12 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="stopFollow",
-                description="Stop following a player and halt all tracking movement.",
+                description="Stop following a player and halt all tracking movement.\n**Invocation Condition:** Call immediately when told to stop following.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="setFollowDistance",
-                description="Set how close to follow the target player. Value is a fraction from 0.01 (very close) to 0.5 (far away). Default is 0.08.",
+                description="Set how close to follow the target player. Value is a fraction from 0.01 (very close) to 0.5 (far away). Default is 0.08.\n**Invocation Condition:** Call when asked to get closer or farther while following.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -392,12 +421,27 @@ class ToolHandler:
             self.osc.toggle_crawl()
             return {"result": "ok"}
         elif name == "vrchatMove":
-            return await self._vrchat_move(args["direction"], args["duration"])
+            return await self._vrchat_move(args["direction"], args["duration"], args.get("speed", "normal"))
         elif name == "vrchatStop":
             self.osc.stop_all_movement()
             return {"result": "ok"}
         elif name == "vrchatJump":
             self.osc.jump()
+            return {"result": "ok"}
+        elif name == "vrchatGrab":
+            await asyncio.to_thread(self.osc.grab)
+            return {"result": "ok"}
+        elif name == "vrchatDrop":
+            await asyncio.to_thread(self.osc.drop)
+            return {"result": "ok"}
+        elif name == "vrchatUse":
+            await asyncio.to_thread(self.osc.use)
+            return {"result": "ok"}
+        elif name == "vrchatLook":
+            direction = args.get("direction", "right")
+            duration = min(max(float(args.get("duration", 0.5)), 0.1), 10.0)
+            speed = args.get("speed", "normal")
+            await asyncio.to_thread(self.osc.look, direction, duration, speed)
             return {"result": "ok"}
         # Default fallback - always return something
         return {"result": "error", "message": f"unknown function: {name}"}
@@ -436,8 +480,8 @@ class ToolHandler:
         self.audio.play_sfx_file(filepath, boost=boost)
         return {"result": "ok", "name": entry["title"], "boost": boost}
 
-    async def _vrchat_move(self, direction: str, duration: float):
-        """Move in a direction for a specified duration."""
+    async def _vrchat_move(self, direction: str, duration: float, speed: str = "normal"):
+        """Move in a direction for a specified duration with speed control."""
         direction = direction.lower()
         if direction not in ("forward", "backward", "left", "right"):
             return {"result": "error", "message": f"Invalid direction: {direction}. Use forward, backward, left, or right."}
@@ -445,11 +489,11 @@ class ToolHandler:
         # Clamp duration between 0.1 and 600 seconds
         duration = max(0.1, min(600.0, duration))
         
-        # Start movement
-        self.osc.start_move(direction)
+        # Start movement with speed
+        self.osc.start_move(direction, speed)
         
         # Wait for duration then stop
         await asyncio.sleep(duration)
         self.osc.stop_all_movement()
         
-        return {"result": "ok", "direction": direction, "duration": duration}
+        return {"result": "ok", "direction": direction, "duration": duration, "speed": speed}

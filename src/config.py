@@ -148,6 +148,14 @@ class Config:
         return self.get("gemini", "proactivity")
 
     @property
+    def thinking_budget(self):
+        return self.get("gemini", "thinking", "budget")
+
+    @property
+    def thinking_include_thoughts(self):
+        return self.get("gemini", "thinking", "include_thoughts", default=False)
+
+    @property
     def compression_enabled(self):
         return self.get("gemini", "context_window_compression", "enabled", default=True)
 
@@ -202,6 +210,10 @@ class Config:
     @property
     def tracker_enabled(self):
         return self.get("yolo", "enabled", default=True)
+
+    @property
+    def face_tracker_enabled(self):
+        return self.get("face_tracker", "enabled", default=False)
 
     @property
     def vision_debug(self):

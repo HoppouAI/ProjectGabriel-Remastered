@@ -137,23 +137,34 @@ class VRChatOSC:
         logger.info("Toggled crawl (Z key)")
 
     # Manual movement methods for AI control
-    def start_move(self, direction: str):
-        """Start moving in a direction using axes (forward, backward, left, right)."""
+    def start_move(self, direction: str, speed: str = "normal"):
+        """Start moving in a direction with speed control.
+        
+        direction: forward, backward, left (strafe), right (strafe)
+        speed: 'slow' (0.5), 'normal' (0.8), 'fast' (1.0), 'sprint' (1.0 + Run)
+        """
+        speed_map = {"slow": 0.5, "normal": 0.8, "fast": 1.0, "sprint": 1.0}
+        axis_val = speed_map.get(speed, 0.8)
+        sprinting = speed == "sprint"
+
         if direction == "forward":
-            self.client.send_message("/input/Vertical", 1.0)
+            self.client.send_message("/input/Vertical", axis_val)
         elif direction == "backward":
-            self.client.send_message("/input/Vertical", -1.0)
+            self.client.send_message("/input/Vertical", -axis_val)
         elif direction == "left":
-            self.client.send_message("/input/Horizontal", -1.0)
+            self.client.send_message("/input/Horizontal", -axis_val)
         elif direction == "right":
-            self.client.send_message("/input/Horizontal", 1.0)
-        logger.info(f"Started moving {direction}")
+            self.client.send_message("/input/Horizontal", axis_val)
+
+        self.client.send_message("/input/Run", 1 if sprinting else 0)
+        logger.info(f"Started moving {direction} (speed={speed}, axis={axis_val}, sprint={sprinting})")
 
     def stop_all_movement(self):
-        """Reset all movement axes to zero."""
+        """Reset all movement axes and sprint to zero."""
         self.client.send_message("/input/Vertical", 0.0)
         self.client.send_message("/input/Horizontal", 0.0)
         self.client.send_message("/input/LookHorizontal", 0.0)
+        self.client.send_message("/input/Run", 0)
         logger.info("Stopped all movement")
 
     def jump(self):
@@ -162,3 +173,60 @@ class VRChatOSC:
         time.sleep(0.05)
         self.client.send_message("/input/Jump", 0)
         logger.info("Jumped")
+
+    def look(self, direction: str, duration: float, speed: str = "normal"):
+        """Smooth turn left or right, ramping up/down like the tracker system.
+        
+        speed: 'slow' (0.3), 'normal' (0.6), 'fast' (1.0) - max axis value
+        """
+        speed_map = {"slow": 0.6, "normal": 0.8, "fast": 1.0}
+        target = speed_map.get(speed, 0.6)
+        if direction == "left":
+            target = -target
+
+        step_interval = 1.0 / 30  # ~30 updates per second like the tracker
+        alpha = 0.4  # EMA smoothing factor (same as tracker default)
+        max_rate = 0.12  # Max change per step (same as tracker)
+        current = 0.0
+
+        elapsed = 0.0
+        # Ramp up and hold
+        while elapsed < duration:
+            new_val = current * (1 - alpha) + target * alpha
+            delta = new_val - current
+            if abs(delta) > max_rate:
+                new_val = current + max_rate * (1 if delta > 0 else -1)
+            current = max(-1.0, min(1.0, new_val))
+            self.client.send_message("/input/LookHorizontal", float(current))
+            time.sleep(step_interval)
+            elapsed += step_interval
+
+        # Ramp down smoothly
+        while abs(current) > 0.01:
+            new_val = current * (1 - alpha)
+            delta = new_val - current
+            if abs(delta) > max_rate:
+                new_val = current + max_rate * (1 if delta > 0 else -1)
+            current = max(-1.0, min(1.0, new_val))
+            self.client.send_message("/input/LookHorizontal", float(current))
+            time.sleep(step_interval)
+
+        self.client.send_message("/input/LookHorizontal", 0.0)
+        logger.info(f"Looked {direction} for {duration}s (speed={speed})")
+
+    def grab(self):
+        """Grab and hold the item highlighted in front of you. Stays held until drop() is called."""
+        self.client.send_message("/input/GrabRight", 1)
+        logger.info("Grabbing item (GrabRight held)")
+
+    def drop(self):
+        """Release the item currently held in right hand."""
+        self.client.send_message("/input/GrabRight", 0)
+        logger.info("Dropped item (GrabRight released)")
+
+    def use(self):
+        """Use/interact with the item highlighted in front of you using right hand."""
+        self.client.send_message("/input/UseRight", 1)
+        time.sleep(0.15)
+        self.client.send_message("/input/UseRight", 0)
+        logger.info("Used item (UseRight)")

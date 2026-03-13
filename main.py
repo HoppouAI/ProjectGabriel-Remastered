@@ -7,6 +7,7 @@ import threading
 # If CUDA loads first, DXGI fails on hybrid-GPU systems.
 # Importing is safe even when tracker is disabled in config.
 from src.tracker import PlayerTracker
+from src.face_tracker import FaceTracker
 
 from src.config import Config
 from src.audio import AudioManager
@@ -74,8 +75,21 @@ async def main():
             from vision_server import run_vision_server
             tracker._vision_debug = True
             run_vision_server(port=config.vision_debug_port, tracker=tracker)
+
+    # Face tracker for looking at people
+    face_tracker = FaceTracker(config, osc) if config.face_tracker_enabled else None
+    if face_tracker:
+        face_tracker.preload()
+
     personality = PersonalityManager()
     session = GeminiLiveSession(config, audio, osc, tracker, personality)
+
+    # Wire face tracker speaking callback and start
+    if face_tracker:
+        face_tracker.set_speaking_callback(lambda: session._speaking)
+        if tracker:
+            face_tracker.set_player_tracker(tracker)
+        face_tracker.start()
 
     logger.info("ProjectGabriel starting...")
     logger.info(f"Model: {config.model}")
@@ -103,6 +117,8 @@ async def main():
             continue
     
     # Cleanup only happens on KeyboardInterrupt
+    if face_tracker:
+        face_tracker.stop()
     if tracker:
         tracker.active = False
     emotion = get_emotion_system()

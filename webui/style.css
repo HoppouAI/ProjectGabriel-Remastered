@@ -902,6 +902,7 @@ body {
 
 .console-entry.transcription { color: #8be9fd; }
 .console-entry.response { color: #50fa7b; }
+.console-entry.thinking { color: #f1fa8c; font-style: italic; opacity: 0.85; }
 .console-entry.tool_call { color: #ffb86c; }
 .console-entry.tool_response { color: #bd93f9; }
 .console-entry.error { color: #ff5555; }
