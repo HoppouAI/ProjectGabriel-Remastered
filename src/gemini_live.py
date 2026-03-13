@@ -428,13 +428,12 @@ class GeminiLiveSession:
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
                     # 1007 (invalid argument) and 1008 (policy violation) - clear handle after 2 hits
                     if "1007" in err_str or "1008" in err_str:
-                        if self._session_handle:
-                            self._handle_fail_count += 1
-                            if self._handle_fail_count >= 2:
-                                logger.warning("1007/1008 error twice, clearing session handle")
-                                self._clear_session_handle()
-                        else:
-                            self._handle_fail_count += 1
+                        self._handle_fail_count += 1
+                        has_handle = "with handle" if self._session_handle else "no handle"
+                        logger.warning(f"1007/1008 error ({has_handle}, attempt {self._handle_fail_count}/2)")
+                        if self._handle_fail_count >= 2 and self._session_handle:
+                            logger.warning("Clearing session handle after 2 consecutive 1007/1008 errors")
+                            self._clear_session_handle()
                     elif self._session_handle:
                         self._handle_fail_count += 1
                         if self._handle_fail_count >= 3:
@@ -465,13 +464,12 @@ class GeminiLiveSession:
                 _broadcast_console("error", f"WebSocket closed: {code} {reason[:60]}")
                 # 1007/1008 - clear handle after 2 consecutive failures
                 if code in (1007, 1008):
-                    if self._session_handle:
-                        self._handle_fail_count += 1
-                        if self._handle_fail_count >= 2:
-                            logger.warning("1007/1008 error twice, clearing session handle")
-                            self._clear_session_handle()
-                    else:
-                        self._handle_fail_count += 1
+                    self._handle_fail_count += 1
+                    has_handle = "with handle" if self._session_handle else "no handle"
+                    logger.warning(f"1007/1008 error ({has_handle}, attempt {self._handle_fail_count}/2)")
+                    if self._handle_fail_count >= 2 and self._session_handle:
+                        logger.warning("Clearing session handle after 2 consecutive 1007/1008 errors")
+                        self._clear_session_handle()
                 elif self._session_handle:
                     self._handle_fail_count += 1
                     if self._handle_fail_count >= 3:
@@ -506,13 +504,12 @@ class GeminiLiveSession:
                     logger.warning(f"WebSocket error ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
                     if "1007" in err_str or "1008" in err_str:
-                        if self._session_handle:
-                            self._handle_fail_count += 1
-                            if self._handle_fail_count >= 2:
-                                logger.warning("1007/1008 error twice, clearing session handle")
-                                self._clear_session_handle()
-                        else:
-                            self._handle_fail_count += 1
+                        self._handle_fail_count += 1
+                        has_handle = "with handle" if self._session_handle else "no handle"
+                        logger.warning(f"1007/1008 error ({has_handle}, attempt {self._handle_fail_count}/2)")
+                        if self._handle_fail_count >= 2 and self._session_handle:
+                            logger.warning("Clearing session handle after 2 consecutive 1007/1008 errors")
+                            self._clear_session_handle()
                     elif self._session_handle:
                         self._handle_fail_count += 1
                         if self._handle_fail_count >= 3:
