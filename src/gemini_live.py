@@ -599,7 +599,14 @@ class GeminiLiveSession:
                 if self._stream_closing:
                     return
                 if not self._mic_muted:
-                    await self._out_queue.put(("audio", data))
+                    try:
+                        self._out_queue.put_nowait(("audio", data))
+                    except asyncio.QueueFull:
+                        try:
+                            self._out_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                        self._out_queue.put_nowait(("audio", data))
             except asyncio.CancelledError:
                 return
             except OSError:
@@ -620,7 +627,7 @@ class GeminiLiveSession:
                     )
                 elif msg_type == "video":
                     await session.send_realtime_input(
-                        video=types.Blob(data=data, mime_type="image/jpeg")
+                        media=types.Blob(data=data, mime_type="image/jpeg")
                     )
             except asyncio.CancelledError:
                 return
