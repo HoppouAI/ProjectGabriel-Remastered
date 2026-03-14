@@ -612,7 +612,7 @@ class GeminiLiveSession:
         while True:
             try:
                 msg_type, data = await self._out_queue.get()
-                if self._tool_call_pending:
+                if self._tool_call_pending and msg_type != "video":
                     continue
                 if msg_type == "audio":
                     await session.send_realtime_input(
