@@ -15,8 +15,14 @@ import requests
 logger = logging.getLogger(__name__)
 
 # Sentence-ending punctuation for splitting transcription chunks
-# Only split on true sentence ends - commas/semicolons cause unnatural breaks
 SENTENCE_ENDS = re.compile(r'[.!?]\s+')
+# Clause boundaries for fallback splitting when buffer gets long
+CLAUSE_BREAKS = re.compile(r'[,;:]\s+')
+
+BUFFER_MIN_SPLIT = 20       # Minimum chars before attempting sentence split
+BUFFER_CLAUSE_SPLIT = 100   # Chars before falling back to clause-boundary splits
+BUFFER_HARD_FLUSH = 200     # Chars before force-flushing regardless of punctuation
+BUFFER_MAX_AGE = 3.0        # Seconds before force-flushing stale buffer
 
 
 class QwenTTSProvider:
@@ -49,6 +55,7 @@ class QwenTTSProvider:
         self._target_sr = config.get("audio", "receive_sample_rate", default=24000)
 
         self._text_buffer = ""
+        self._buffer_first_add = 0  # Timestamp when text first entered the buffer
         self._sentence_queue = deque()
         self._audio_queue = asyncio.Queue()
         self._lock = threading.Lock()
@@ -81,6 +88,8 @@ class QwenTTSProvider:
             return
         self._interrupted = False  # New speech started, clear interrupt flag
         with self._lock:
+            if not self._text_buffer:
+                self._buffer_first_add = time.monotonic()
             self._text_buffer += text
             self._flush_sentences()
 
@@ -91,6 +100,7 @@ class QwenTTSProvider:
             if remaining:
                 self._sentence_queue.append(remaining)
                 self._text_buffer = ""
+                self._buffer_first_add = 0
 
     def interrupt(self):
         """Called on interruption. Clears buffer and queue, cancels in-flight request.
@@ -126,28 +136,65 @@ class QwenTTSProvider:
 
     def _flush_sentences(self):
         """Split buffered text on sentence boundaries and queue complete sentences.
-        Only flushes when there's enough text to form a natural speech chunk."""
-        # Don't split until we have a reasonable amount of text
-        if len(self._text_buffer) < 20:
+        
+        Strategy:
+        1. Primary: split on . ? ! (sentence ends) when buffer >= 20 chars
+        2. Fallback: split on , ; : (clause breaks) when buffer >= 100 chars
+        3. Hard flush: force-send when buffer >= 200 chars
+        """
+        buf_len = len(self._text_buffer)
+        if buf_len < BUFFER_MIN_SPLIT:
             return
-        parts = SENTENCE_ENDS.split(self._text_buffer)
-        if len(parts) <= 1:
+
+        # Try sentence-end splitting first
+        if self._try_split(SENTENCE_ENDS):
             return
-        # All but the last part are complete sentences
-        # Re-find the actual punctuation to keep it attached
-        splits = list(SENTENCE_ENDS.finditer(self._text_buffer))
+
+        # Fallback to clause-boundary splitting for long buffers
+        if buf_len >= BUFFER_CLAUSE_SPLIT and self._try_split(CLAUSE_BREAKS):
+            return
+
+        # Hard flush for very long buffers with no punctuation
+        if buf_len >= BUFFER_HARD_FLUSH:
+            self._sentence_queue.append(self._text_buffer.strip())
+            self._text_buffer = ""
+            self._buffer_first_add = 0
+
+    def _check_stale_buffer(self):
+        """Called from worker thread: flush buffer if it's been sitting too long."""
+        with self._lock:
+            if (self._text_buffer
+                    and self._buffer_first_add > 0
+                    and time.monotonic() - self._buffer_first_add >= BUFFER_MAX_AGE):
+                text = self._text_buffer.strip()
+                if text:
+                    self._sentence_queue.append(text)
+                self._text_buffer = ""
+                self._buffer_first_add = 0
+
+    def _try_split(self, pattern) -> bool:
+        """Try to split buffer on the given regex pattern. Returns True if split occurred."""
+        splits = list(pattern.finditer(self._text_buffer))
+        if not splits:
+            return False
         for match in splits:
             end_pos = match.end()
             sentence = self._text_buffer[:end_pos].strip()
             if sentence:
                 self._sentence_queue.append(sentence)
             self._text_buffer = self._text_buffer[end_pos:]
-        # What remains is the incomplete part
         self._text_buffer = self._text_buffer.lstrip()
+        if self._text_buffer:
+            self._buffer_first_add = time.monotonic()
+        else:
+            self._buffer_first_add = 0
+        return True
 
     def _worker_loop(self):
         """Background thread: pulls sentences from queue, sends to TTS, queues audio."""
         while self._running:
+            # Check for stale buffer that needs flushing
+            self._check_stale_buffer()
             sentence = None
             with self._lock:
                 if self._sentence_queue:

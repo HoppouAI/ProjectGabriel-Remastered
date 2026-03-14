@@ -206,3 +206,4 @@ config/prompts/prompts.yml
 config/prompts/personalities.yml
 config/prompts/Backup/
 /sfx/music/srt
+/voices
