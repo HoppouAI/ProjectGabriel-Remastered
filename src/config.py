@@ -268,6 +268,10 @@ class Config:
         return self.tts_provider == "qwen3"
 
     @property
+    def tts_hoppou_enabled(self):
+        return self.tts_provider == "hoppou"
+
+    @property
     def emotion_enabled(self):
         return self.get("emotions", "enabled", default=True)
 

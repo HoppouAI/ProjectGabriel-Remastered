@@ -86,6 +86,8 @@ gemini:
 # "gemini" = use Gemini Live's native audio (default)
 # "qwen3"  = discard Gemini audio, use Qwen3 TTS server instead
 #            (uses output transcription text -> Qwen3 streaming TTS)
+# "hoppou" = discard Gemini audio, use Hoppou AI cloud TTS
+#            (OpenAI-compatible API, ~200ms latency, get key at https://hoppou.ai/api-portal/)
 tts:
   provider: "gemini"
 
@@ -122,6 +124,17 @@ tts:
     temperature: 0.9
     top_k: 50
     repetition_penalty: 1.05
+
+  # Hoppou AI cloud TTS settings (only used when provider is "hoppou")
+  hoppou:
+    # API endpoint
+    api_url: "https://api.hoppou.ai/tts"
+    # API key (get one at https://hoppou.ai/api-portal/)
+    api_key: ""
+    # Voice preset name
+    voice: "alba"
+    # Model name
+    model: "tts-1"
 
 audio:
   # Audio device indices - null uses system default

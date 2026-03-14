@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import threading
 
 # Import tracker FIRST — its module-level code pre-initialises bettercam
 # via DXGI Desktop Duplication BEFORE any CUDA library loads.
@@ -31,24 +30,28 @@ class _ProactorAssertFilter(logging.Filter):
 logging.getLogger("asyncio").addFilter(_ProactorAssertFilter())
 
 
-def start_control_server(session, audio, personality, memory, get_emotion_fn):
-    """Start the control panel server in a separate thread."""
+def setup_control_server(session, audio, personality, memory, get_emotion_fn):
+    """Setup the control panel shared state and return a uvicorn Server."""
     try:
-        from control_server import app, shared_state, run_control_server
+        from control_server import app, shared_state
         import uvicorn
         
         shared_state["session"] = session
         shared_state["audio_mgr"] = audio
         shared_state["personality_mgr"] = personality
         shared_state["memory_mgr"] = memory
-        # Store reference to getter function since emotion system is initialized later
         shared_state["get_emotion_fn"] = get_emotion_fn
         logger.info("Starting control panel on http://localhost:8766")
-        uvicorn.run(app, host="0.0.0.0", port=8766, log_level="warning")
+        config = uvicorn.Config(app, host="0.0.0.0", port=8766, log_level="warning")
+        server = uvicorn.Server(config)
+        server.install_signal_handlers = lambda: None  # Don't override main app's signals
+        return server
     except ImportError:
         logger.warning("Control server not available (missing dependencies)")
+        return None
     except Exception as e:
-        logger.error(f"Control server error: {e}")
+        logger.error(f"Control server setup error: {e}")
+        return None
 
 
 async def main():
@@ -91,6 +94,11 @@ async def main():
         tts_provider = QwenTTSProvider(config)
         tts_provider.start()
         logger.info("Using Qwen3 TTS provider (Gemini audio will be discarded)")
+    elif config.tts_hoppou_enabled:
+        from src.tts import HoppouTTSProvider
+        tts_provider = HoppouTTSProvider(config)
+        tts_provider.start()
+        logger.info("Using Hoppou TTS provider (Gemini audio will be discarded)")
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
 
@@ -106,13 +114,10 @@ async def main():
     logger.info(f"Music dir: {config.music_dir}")
     logger.info(f"OSC → {config.osc_ip}:{config.osc_port}")
 
-    # Start control panel in background thread
-    control_thread = threading.Thread(
-        target=start_control_server, 
-        args=(session, audio, personality, memory_system, get_emotion_system), 
-        daemon=True
-    )
-    control_thread.start()
+    # Start control panel as async task in same event loop
+    control_server = setup_control_server(session, audio, personality, memory_system, get_emotion_system)
+    if control_server:
+        asyncio.create_task(control_server.serve())
 
     while True:
         try:

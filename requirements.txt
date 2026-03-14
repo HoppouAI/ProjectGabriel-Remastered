@@ -15,4 +15,6 @@ Pillow
 torch
 torchvision
 requests
+httpx
 soundfile
+stream2sentence
