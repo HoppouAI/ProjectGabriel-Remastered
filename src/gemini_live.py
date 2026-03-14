@@ -152,6 +152,7 @@ class GeminiLiveSession:
         self._reconnect_requested = False
         self._mic_muted = False
         self._session = None
+        self._stream_closing = False  # Flag to stop audio I/O before stream close
         self._last_audio_time = 0  # Track when last audio was received
         self._idle_timeout = 15.0  # Stop talking animations after 15s idle
         self._pending_finalize_task = None
@@ -375,6 +376,7 @@ class GeminiLiveSession:
                     self.tool_handler.session = session
                     self._out_queue = asyncio.Queue(maxsize=5)
                     self._audio_in_queue = asyncio.Queue()
+                    self._stream_closing = False
                     input_stream = self.audio.open_input_stream()
                     output_stream = self.audio.open_output_stream()
                     try:
@@ -395,14 +397,20 @@ class GeminiLiveSession:
                         await asyncio.gather(*tasks)
                     finally:
                         self._session = None
-                        # Drain audio queue before closing streams to prevent
-                        # writes during close (causes Access Violation on Windows)
+                        self._stream_closing = True
+                        # Drain audio queue and wait for in-flight writes
                         while not self._audio_in_queue.empty():
                             try:
                                 self._audio_in_queue.get_nowait()
                             except asyncio.QueueEmpty:
                                 break
-                        await asyncio.sleep(0.1)
+                        while not self._out_queue.empty():
+                            try:
+                                self._out_queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        # Wait for any in-progress to_thread writes to finish
+                        await asyncio.sleep(0.5)
                         try:
                             input_stream.close()
                         except Exception:
@@ -411,6 +419,7 @@ class GeminiLiveSession:
                             output_stream.close()
                         except Exception:
                             pass
+                        self._stream_closing = False
 
             except APIError as e:
                 err_str = str(e)
@@ -580,15 +589,20 @@ class GeminiLiveSession:
     async def _listen_audio_loop(self, input_stream):
         while True:
             try:
+                if self._stream_closing:
+                    return
                 data = await asyncio.to_thread(
                     input_stream.read,
                     self.config.chunk_size,
                     exception_on_overflow=False,
                 )
-                # Only send audio if mic is not muted
+                if self._stream_closing:
+                    return
                 if not self._mic_muted:
                     await self._out_queue.put(("audio", data))
             except asyncio.CancelledError:
+                return
+            except OSError:
                 return
             except Exception as e:
                 logger.error(f"Audio listen error: {e}")
@@ -610,6 +624,9 @@ class GeminiLiveSession:
                     )
             except asyncio.CancelledError:
                 return
+            except ConnectionClosed:
+                logger.warning("Send loop: WebSocket closed, stopping")
+                return
             except Exception as e:
                 logger.error(f"Send realtime error: {e}")
                 raise
@@ -618,11 +635,14 @@ class GeminiLiveSession:
         while True:
             try:
                 audio_data = await self._audio_in_queue.get()
-                # process_output_audio handles boost/distortion AND music fade
+                if self._stream_closing:
+                    return
                 audio_data = self.audio.process_output_audio(audio_data)
-                if audio_data:  # Only write if not completely muted
+                if audio_data:
                     await asyncio.to_thread(output_stream.write, audio_data)
             except asyncio.CancelledError:
+                return
+            except OSError:
                 return
             except Exception as e:
                 logger.error(f"Audio play error: {e}")
@@ -791,7 +811,7 @@ class GeminiLiveSession:
 
                     if response.tool_call:
                         self._tool_call_pending = True
-                        # Interrupt TTS -- model stops speaking during tool execution
+                        # Interrupt TTS -- model will regenerate after tool response
                         if self._tts:
                             self._tts.interrupt()
                         # Finalize user message immediately - model has processed input
