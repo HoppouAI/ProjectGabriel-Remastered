@@ -260,6 +260,14 @@ class Config:
         return self.get("memory", "prompt_memory_count", default=10)
 
     @property
+    def tts_provider(self):
+        return self.get("tts", "provider", default="gemini")
+
+    @property
+    def tts_qwen3_enabled(self):
+        return self.tts_provider == "qwen3"
+
+    @property
     def emotion_enabled(self):
         return self.get("emotions", "enabled", default=True)
 

@@ -133,12 +133,13 @@ def _broadcast_console(log_type: str, content: str, extra: dict = None):
 
 
 class GeminiLiveSession:
-    def __init__(self, config, audio_mgr, osc, tracker, personality_mgr):
+    def __init__(self, config, audio_mgr, osc, tracker, personality_mgr, tts_provider=None):
         self.config = config
         self.audio = audio_mgr
         self.osc = osc
         self.personality = personality_mgr
         self.tool_handler = ToolHandler(audio_mgr, osc, tracker, personality_mgr, config)
+        self._tts = tts_provider  # QwenTTSProvider or None
         self._speaking = False
         self._thinking_shown = False
         self._transcript_buffer = ""
@@ -386,6 +387,8 @@ class GeminiLiveSession:
                             self._now_playing_loop(),
                             self._idle_check_loop(),
                         ]
+                        if self._tts:
+                            tasks.append(self._tts_audio_loop())
                         if self.config.vision_enabled:
                             tasks.append(self._capture_screen_loop())
                             logger.info(f"Screen capture enabled (monitor {self.config.vision_monitor})")
@@ -625,6 +628,19 @@ class GeminiLiveSession:
                 logger.error(f"Audio play error: {e}")
                 raise
 
+    async def _tts_audio_loop(self):
+        """Pull audio from external TTS provider and feed into the audio playback queue."""
+        while True:
+            try:
+                pcm = await self._tts.get_audio()
+                if pcm and not self._tts._interrupted:
+                    await self._audio_in_queue.put(pcm)
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.error(f"TTS audio loop error: {e}")
+                await asyncio.sleep(0.05)
+
     def _capture_screen_frame(self):
         try:
             with mss.mss() as sct:
@@ -701,8 +717,9 @@ class GeminiLiveSession:
                                     self._emotion_system.start_speaking()
                                 # Track last audio time for idle detection
                                 self._last_audio_time = time.time()
-                                # Audio processing (boost + music fade) happens in _play_audio_loop
-                                await self._audio_in_queue.put(part.inline_data.data)
+                                # When using external TTS, discard Gemini audio
+                                if not self._tts:
+                                    await self._audio_in_queue.put(part.inline_data.data)
 
                     # Handle input transcription (user speech) - cumulative stream
                     if (
@@ -734,6 +751,9 @@ class GeminiLiveSession:
                             self._update_chatbox()
                             # Also stream to console in real-time
                             _broadcast_console("response", transcription.text, {"streaming": True})
+                            # Feed text to external TTS provider for synthesis
+                            if self._tts:
+                                self._tts.feed_text(transcription.text)
 
                     if response.server_content and response.server_content.turn_complete:
                         self._speaking = False
@@ -745,6 +765,9 @@ class GeminiLiveSession:
                         if self._transcript_buffer.strip():
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
+                        # Flush remaining text to TTS provider
+                        if self._tts:
+                            self._tts.turn_complete()
                         # Delay user finalization to catch late transcription events
                         self._schedule_user_finalize()
 
@@ -757,6 +780,9 @@ class GeminiLiveSession:
                         if self._transcript_buffer.strip():
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
+                        # Interrupt external TTS provider
+                        if self._tts:
+                            self._tts.interrupt()
                         while not self._audio_in_queue.empty():
                             try:
                                 self._audio_in_queue.get_nowait()
@@ -765,6 +791,9 @@ class GeminiLiveSession:
 
                     if response.tool_call:
                         self._tool_call_pending = True
+                        # Interrupt TTS -- model stops speaking during tool execution
+                        if self._tts:
+                            self._tts.interrupt()
                         # Finalize user message immediately - model has processed input
                         self._conv_logger.finalize_user_message()
                         if self._pending_finalize_task:

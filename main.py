@@ -83,7 +83,16 @@ async def main():
         face_tracker.preload()
 
     personality = PersonalityManager()
-    session = GeminiLiveSession(config, audio, osc, tracker, personality)
+
+    # External TTS provider (optional - when tts.provider != "gemini")
+    tts_provider = None
+    if config.tts_qwen3_enabled:
+        from src.tts import QwenTTSProvider
+        tts_provider = QwenTTSProvider(config)
+        tts_provider.start()
+        logger.info("Using Qwen3 TTS provider (Gemini audio will be discarded)")
+
+    session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
 
     # Wire face tracker speaking callback and start
     if face_tracker:
@@ -118,6 +127,8 @@ async def main():
             continue
     
     # Cleanup only happens on KeyboardInterrupt
+    if tts_provider:
+        tts_provider.stop()
     if face_tracker:
         face_tracker.stop()
     if tracker:

@@ -79,6 +79,50 @@ gemini:
     # Tokens to keep after compression (null = trigger_tokens / 2)
     target_tokens: 25000
 
+# ══════════════════════════════════════════════════════════
+# TTS Provider
+# ══════════════════════════════════════════════════════════
+# Choose which voice to use for AI speech output.
+# "gemini" = use Gemini Live's native audio (default)
+# "qwen3"  = discard Gemini audio, use Qwen3 TTS server instead
+#            (uses output transcription text -> Qwen3 streaming TTS)
+tts:
+  provider: "gemini"
+
+  # Qwen3 TTS server settings (only used when provider is "qwen3")
+  qwen3:
+    # URL of your Qwen3 TTS server
+    base_url: "http://localhost:7860"
+
+    # TTS mode: "voice_clone", "custom", or "voice_design"
+    mode: "voice_clone"
+
+    # Language for synthesis
+    language: "English"
+
+    # ── Voice Clone settings ──
+    # Use a preset reference voice (from server's preset list)
+    ref_preset: ""
+    # OR provide a local reference audio file + transcript
+    ref_audio: ""
+    ref_text: ""
+    # x-vector only (faster) vs full clone (more accurate)
+    xvec_only: true
+
+    # ── Custom Voice settings ──
+    # Speaker name (for "custom" mode, requires CustomVoice model)
+    speaker: ""
+
+    # ── Voice Design / Custom instruct ──
+    # Text description of desired voice (for "voice_design" or "custom" mode)
+    instruct: ""
+
+    # ── Generation parameters ──
+    chunk_size: 8                # Streaming chunk size (tokens per chunk)
+    temperature: 0.9
+    top_k: 50
+    repetition_penalty: 1.05
+
 audio:
   # Audio device indices - null uses system default
   # Run `python -c "import pyaudio; p=pyaudio.PyAudio(); [print(i, p.get_device_info_by_index(i)['name']) for i in range(p.get_device_count())]"` to list devices
