@@ -215,6 +215,10 @@ class Config:
         return self.get("vrchat", "osc_send_port", default=9000)
 
     @property
+    def osc_receive_port(self):
+        return self.get("vrchat", "osc_receive_port", default=9001)
+
+    @property
     def chatbox_page_delay(self):
         return self.get("vrchat", "chatbox_page_delay", default=3.0)
 
@@ -229,6 +233,10 @@ class Config:
     @property
     def face_tracker_enabled(self):
         return self.get("face_tracker", "enabled", default=False)
+
+    @property
+    def wanderer_enabled(self):
+        return self.get("wanderer", "enabled", default=False)
 
     @property
     def vision_debug(self):

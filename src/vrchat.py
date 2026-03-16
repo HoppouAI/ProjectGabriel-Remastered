@@ -4,6 +4,8 @@ import logging
 import threading
 import queue
 from pythonosc import udp_client
+from pythonosc.dispatcher import Dispatcher
+from pythonosc.osc_server import ThreadingOSCUDPServer
 from pynput.keyboard import Key, Controller as KeyboardController
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,44 @@ class VRChatOSC:
         self._chatbox_queue = queue.Queue()
         self._chatbox_thread = threading.Thread(target=self._chatbox_worker, daemon=True)
         self._chatbox_thread.start()
+
+        # Avatar velocity from VRChat OSC output (read by wanderer for stuck detection)
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
+        self.velocity_z = 0.0
+        self.grounded = True
+
+        # Start OSC listener for avatar parameters
+        self._start_osc_listener(config)
+
+    def _start_osc_listener(self, config):
+        """Start background OSC server to receive avatar parameters from VRChat."""
+        receive_port = getattr(config, "osc_receive_port", 9001)
+        dispatcher = Dispatcher()
+        dispatcher.map("/avatar/parameters/VelocityZ", self._on_velocity_z)
+        dispatcher.map("/avatar/parameters/VelocityX", self._on_velocity_x)
+        dispatcher.map("/avatar/parameters/VelocityY", self._on_velocity_y)
+        dispatcher.map("/avatar/parameters/Grounded", self._on_grounded)
+
+        try:
+            server = ThreadingOSCUDPServer(("127.0.0.1", receive_port), dispatcher)
+            thread = threading.Thread(target=server.serve_forever, daemon=True, name="osc-listener")
+            thread.start()
+            logger.info(f"OSC listener started on port {receive_port}")
+        except OSError as e:
+            logger.warning(f"OSC listener failed to start on port {receive_port}: {e}")
+
+    def _on_velocity_z(self, address, value):
+        self.velocity_z = float(value)
+
+    def _on_velocity_x(self, address, value):
+        self.velocity_x = float(value)
+
+    def _on_velocity_y(self, address, value):
+        self.velocity_y = float(value)
+
+    def _on_grounded(self, address, value):
+        self.grounded = bool(value)
 
     def _chatbox_worker(self):
         """Background thread that sends chatbox messages respecting rate limit."""

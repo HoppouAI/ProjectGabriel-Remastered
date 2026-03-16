@@ -85,6 +85,13 @@ async def main():
         face_tracker = FaceTracker(config, osc)
         face_tracker.preload()
 
+    # Wanderer for autonomous exploration (lazy import to skip heavy deps when disabled)
+    wanderer = None
+    if config.wanderer_enabled:
+        from src.wanderer import Wanderer
+        wanderer = Wanderer(config, osc)
+        wanderer.preload()
+
     personality = PersonalityManager()
 
     # External TTS provider (optional - when tts.provider != "gemini")
@@ -106,6 +113,13 @@ async def main():
         logger.info("Using Chirp 3 HD TTS provider (Gemini audio will be discarded)")
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
+
+    # Wire wanderer into tool handler
+    if wanderer:
+        session.tool_handler.wanderer = wanderer
+        if face_tracker:
+            wanderer._face_tracker_ref = face_tracker
+        wanderer._emotion_system_ref = get_emotion_system()
 
     # Wire face tracker speaking callback and start
     if face_tracker:

@@ -19,3 +19,4 @@ httpx
 soundfile
 stream2sentence
 google-cloud-texttospeech
+transformers

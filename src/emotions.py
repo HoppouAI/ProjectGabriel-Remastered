@@ -73,6 +73,9 @@ class EmotionSystem:
         
         # Track manual animation state (dances, etc.)
         self._manual_animation_active = False
+        
+        # Wandering suppresses idle
+        self._wandering = False
 
     def set_osc_client(self, osc_client):
         """Set the OSC client after initialization."""
@@ -102,10 +105,16 @@ class EmotionSystem:
         """Check if idle animation should start. Call periodically from a loop."""
         if not self.enabled or not self._idle_enabled or not self._idle_animation_name:
             return
-        if self._idle_active or self._is_speaking or self._manual_animation_active:
+        if self._idle_active or self._is_speaking or self._manual_animation_active or self._wandering:
             return
         if time.time() - self._last_activity_time >= self._idle_timeout:
             self._start_idle_animation()
+
+    def set_wandering(self, active: bool):
+        """Suppress idle animation while wandering."""
+        self._wandering = active
+        if active and self._idle_active:
+            self._stop_idle_animation()
 
     def _start_idle_animation(self):
         """Start the idle animation."""

@@ -177,6 +177,7 @@ vrchat:
   # VRChat OSC settings
   osc_ip: "127.0.0.1"
   osc_send_port: 9000
+  osc_receive_port: 9001  # Port to receive avatar parameters from VRChat (velocity, grounded, etc.)
 
   # Seconds to display each chatbox page before advancing
   chatbox_page_delay: 3.0
@@ -203,6 +204,12 @@ face_tracker:
   # Face tracking - smoothly looks at faces using yolov8n-face model
   # When AI is speaking: locks onto the closest face
   # When idle: randomly glances at visible faces every 5-10 seconds
+  enabled: false
+
+wanderer:
+  # Autonomous wandering mode using Intel DPT-Large depth estimation
+  # AI can toggle this to freely explore VRChat maps while avoiding walls
+  # Requires: pip install transformers (for DPT model)
   enabled: false
 
 vision:

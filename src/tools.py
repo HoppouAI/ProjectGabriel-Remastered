@@ -9,8 +9,10 @@ logger = logging.getLogger(__name__)
 
 def get_tool_declarations(config=None):
     tracker_enabled = True
+    wanderer_enabled = True
     if config is not None:
         tracker_enabled = getattr(config, "tracker_enabled", True)
+        wanderer_enabled = getattr(config, "wanderer_enabled", False)
 
     # Base function declarations - NO UNDERSCORES to avoid 1011 errors with Gemini Live
     function_decls = [
@@ -312,6 +314,20 @@ def get_tool_declarations(config=None):
             ),
         ])
 
+    if wanderer_enabled:
+        function_decls.extend([
+            types.FunctionDeclaration(
+                name="startWander",
+                description="Start autonomously wandering around the VRChat map. Uses depth perception to avoid walls and obstacles. Will walk, turn, look around, and jump on its own.\n**Invocation Condition:** Call when asked to wander, explore, walk around, or roam freely.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="stopWander",
+                description="Stop autonomous wandering and halt all movement.\n**Invocation Condition:** Call when asked to stop wandering or exploring.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+        ])
+
     return [
         types.Tool(google_search=types.GoogleSearch()),
         types.Tool(function_declarations=function_decls),
@@ -323,6 +339,7 @@ class ToolHandler:
         self.audio = audio_mgr
         self.osc = osc
         self.tracker = tracker
+        self.wanderer = None
         self.personality = personality_mgr
         self.config = config
         self.session = None
@@ -454,6 +471,17 @@ class ToolHandler:
             if self.tracker is None:
                 return {"result": "error", "message": "Tracker is disabled in config"}
             return self.tracker.setfollowdistance(args["value"])
+        elif name == "startWander":
+            if self.wanderer is None:
+                return {"result": "error", "message": "Wanderer is disabled in config"}
+            # Stop following if active
+            if self.tracker and self.tracker.active:
+                self.tracker.stopfollow()
+            return self.wanderer.start()
+        elif name == "stopWander":
+            if self.wanderer is None:
+                return {"result": "error", "message": "Wanderer is disabled in config"}
+            return self.wanderer.stop()
         elif name == "listPersonalities":
             result = self.personality.list_personalities()
             result["result"] = "ok"
