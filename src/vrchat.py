@@ -214,6 +214,41 @@ class VRChatOSC:
         self.client.send_message("/input/LookHorizontal", 0.0)
         logger.info(f"Looked {direction} for {duration}s (speed={speed})")
 
+    def look_vertical(self, direction: str, duration: float, speed: str = "normal"):
+        """Smooth look up or down, same EMA ramp as horizontal look."""
+        speed_map = {"slow": 0.6, "normal": 0.8, "fast": 1.0}
+        target = speed_map.get(speed, 0.6)
+        if direction == "down":
+            target = -target
+
+        step_interval = 1.0 / 30
+        alpha = 0.4
+        max_rate = 0.12
+        current = 0.0
+
+        elapsed = 0.0
+        while elapsed < duration:
+            new_val = current * (1 - alpha) + target * alpha
+            delta = new_val - current
+            if abs(delta) > max_rate:
+                new_val = current + max_rate * (1 if delta > 0 else -1)
+            current = max(-1.0, min(1.0, new_val))
+            self.client.send_message("/input/LookVertical", float(current))
+            time.sleep(step_interval)
+            elapsed += step_interval
+
+        while abs(current) > 0.01:
+            new_val = current * (1 - alpha)
+            delta = new_val - current
+            if abs(delta) > max_rate:
+                new_val = current + max_rate * (1 if delta > 0 else -1)
+            current = max(-1.0, min(1.0, new_val))
+            self.client.send_message("/input/LookVertical", float(current))
+            time.sleep(step_interval)
+
+        self.client.send_message("/input/LookVertical", 0.0)
+        logger.info(f"Looked {direction} for {duration}s (speed={speed})")
+
     def grab(self):
         """Grab and hold the item highlighted in front of you. Stays held until drop() is called."""
         self.client.send_message("/input/GrabRight", 1)

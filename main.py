@@ -99,6 +99,11 @@ async def main():
         tts_provider = HoppouTTSProvider(config)
         tts_provider.start()
         logger.info("Using Hoppou TTS provider (Gemini audio will be discarded)")
+    elif config.tts_chirp3_hd_enabled:
+        from src.tts import Chirp3HDTTSProvider
+        tts_provider = Chirp3HDTTSProvider(config)
+        tts_provider.start()
+        logger.info("Using Chirp 3 HD TTS provider (Gemini audio will be discarded)")
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
 

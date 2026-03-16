@@ -27,12 +27,14 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="playSoundboard",
-                description="Play a MyInstants soundboard clip by ID or name. Automatically searches MyInstants if not cached locally.\n**Invocation Condition:** Call directly when a sound clip would enhance the conversation. Do not search first. Do not ask for confirmation.",
+                description="Play a MyInstants soundboard clip by ID or name. Automatically searches MyInstants if not cached locally.\n**Invocation Condition:** Call directly when a sound clip would enhance the conversation. Do not search first. Do not ask for confirmation. Use repeat+delay to play it multiple times in a single call instead of calling this function repeatedly.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
                         "soundId": {"type": "STRING", "description": "The ID of the soundboard clip to play from search results"},
                         "boost": {"type": "INTEGER", "description": "Bass boost/distortion level 0-10. 0=normal, higher=louder and more distorted like a blown-out mic. Great for funny earrape moments."},
+                        "repeat": {"type": "INTEGER", "description": "Number of times to play the sound. Default 1. Max 25."},
+                        "delay": {"type": "NUMBER", "description": "Delay in seconds between each repeat. Default 1.0. Min 0.1, max 10."},
                     },
                     "required": ["soundId"],
                 },
@@ -41,6 +43,18 @@ def get_tool_declarations(config=None):
                 name="stopSoundboard",
                 description="Stop all currently playing MyInstants soundboard clips immediately.\n**Invocation Condition:** Call when asked to stop a clip or when it is disruptive.",
                 parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="playRandomSoundboard",
+                description="Play random sound effects from previously searched MyInstants clips. Each repeat plays a different random sound.\n**Invocation Condition:** Call when asked for random sounds, surprise sounds, or sound chaos/spam.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "boost": {"type": "INTEGER", "description": "Bass boost/distortion level 0-10. Default 0."},
+                        "repeat": {"type": "INTEGER", "description": "Number of random sounds to play. Default 1. Max 25."},
+                        "delay": {"type": "NUMBER", "description": "Delay in seconds between each sound. Default 1.0. Min 0.1, max 10."},
+                    },
+                },
             ),
             types.FunctionDeclaration(
                 name="listMusic",
@@ -189,6 +203,19 @@ def get_tool_declarations(config=None):
                     "required": ["direction", "duration"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="vrchatLookVertical",
+                description="Smoothly tilt the avatar's view up or down in VRChat. Same smooth EMA turning as horizontal look.\n**Invocation Condition:** Call when asked to look up, look down, tilt head up/down, or check something above/below.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "direction": {"type": "STRING", "description": "Direction to look: 'up' or 'down'"},
+                        "duration": {"type": "NUMBER", "description": "How long to look in seconds (0.1 to 10). Small values for slight tilts, larger for full up/down."},
+                        "speed": {"type": "STRING", "description": "Tilt speed: 'slow' (gentle), 'normal' (default), 'fast' (quick snap)"},
+                    },
+                    "required": ["direction", "duration"],
+                },
+            ),
             # Memory system (unified action-based) - NO BOOLEAN/ARRAY types to avoid 1008
             types.FunctionDeclaration(
                 name="memory",
@@ -221,8 +248,28 @@ def get_tool_declarations(config=None):
                     },
                     "required": ["query"],
                 },
+            ),            types.FunctionDeclaration(
+                name="switchTTSProvider",
+                description="Switch the text-to-speech voice mid-session. Changes take effect immediately on the next spoken response. NEVER mention provider names, technology names, or internal voice IDs to the user. Just say you switched your voice.\n**Invocation Condition:** Call when asked to change voice, switch TTS, or use a different voice. Use listTTSProviders first to see what is available.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "provider": {"type": "STRING", "description": "Provider ID to switch to (e.g. 'gemini', 'chirp3_hd', 'hoppou', 'qwen3')"},
+                        "voice": {"type": "STRING", "description": "A custom voice name OR a built-in voice name for the provider. Optional -- uses config default if omitted. NOT supported for 'gemini' provider."},
+                    },
+                    "required": ["provider"],
+                },
             ),
-        ]
+            types.FunctionDeclaration(
+                name="listTTSProviders",
+                description="List available voice providers and the currently active one. Internal use only -- NEVER reveal provider names or IDs to the user.\n**Invocation Condition:** Call when you need to know what providers are available before switching.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="listVoices",
+                description="List custom voices available for switching. Each voice has a display name and description. When telling the user about voices, use ONLY the display_name, never the internal ID or provider name.\n**Invocation Condition:** Call when asked what voices are available, or before switching to a custom voice.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),        ]
     
     # Add emotion function declarations if enabled
     if config:
@@ -279,6 +326,7 @@ class ToolHandler:
         self.personality = personality_mgr
         self.config = config
         self.session = None
+        self.live_session = None
 
     async def handle(self, function_call) -> types.FunctionResponse:
         name = function_call.name
@@ -354,10 +402,21 @@ class ToolHandler:
         if name == "searchSoundboard":
             return await self._search_sfx(args["query"])
         elif name == "playSoundboard":
-            return await self._play_sfx(args["soundId"], boost=int(args.get("boost", 0)))
+            return await self._play_sfx(
+                args["soundId"],
+                boost=int(args.get("boost", 0)),
+                repeat=int(args.get("repeat", 1)),
+                delay=float(args.get("delay", 1.0)),
+            )
         elif name == "stopSoundboard":
             self.audio.stop_sfx()
             return {"result": "ok"}
+        elif name == "playRandomSoundboard":
+            return await self._play_random_sfx(
+                boost=int(args.get("boost", 0)),
+                repeat=int(args.get("repeat", 1)),
+                delay=float(args.get("delay", 1.0)),
+            )
         elif name == "listMusic":
             return {"result": "ok", "files": self.audio.list_music()}
         elif name == "playMusic":
@@ -443,6 +502,18 @@ class ToolHandler:
             speed = args.get("speed", "normal")
             await asyncio.to_thread(self.osc.look, direction, duration, speed)
             return {"result": "ok"}
+        elif name == "vrchatLookVertical":
+            direction = args.get("direction", "up")
+            duration = min(max(float(args.get("duration", 0.5)), 0.1), 10.0)
+            speed = args.get("speed", "normal")
+            await asyncio.to_thread(self.osc.look_vertical, direction, duration, speed)
+            return {"result": "ok"}
+        elif name == "switchTTSProvider":
+            return await self._switch_tts(args.get("provider", ""), args.get("voice"))
+        elif name == "listTTSProviders":
+            return self._list_tts_providers()
+        elif name == "listVoices":
+            return self._list_voices()
         # Default fallback - always return something
         return {"result": "error", "message": f"unknown function: {name}"}
 
@@ -456,9 +527,11 @@ class ToolHandler:
         logger.info(f"searchSoundboard: found {len(results)} results")
         return {"result": "ok", "sounds": results}
 
-    async def _play_sfx(self, sound_id, boost=0):
+    async def _play_sfx(self, sound_id, boost=0, repeat=1, delay=1.0):
         from src.myinstants import get_sound_url, download_sound, search_sounds
-        logger.info(f"playSoundboard: playing ID '{sound_id}' with boost={boost}")
+        repeat = min(max(int(repeat), 1), 25)
+        delay = min(max(float(delay), 0.1), 10.0)
+        logger.info(f"playSoundboard: playing ID '{sound_id}' with boost={boost}, repeat={repeat}, delay={delay}")
         entry = get_sound_url(sound_id)
         if not entry:
             # Auto-search MyInstants if not found locally
@@ -476,9 +549,35 @@ class ToolHandler:
         if not filepath:
             logger.warning(f"playSoundboard: download failed for '{entry['title']}'")
             return {"result": "error", "message": "download failed"}
-        logger.info(f"playSoundboard: playing '{entry['title']}' from {filepath} (boost={boost})")
+        logger.info(f"playSoundboard: playing '{entry['title']}' from {filepath} (boost={boost}, repeat={repeat})")
         self.audio.play_sfx_file(filepath, boost=boost)
-        return {"result": "ok", "name": entry["title"], "boost": boost}
+        for i in range(1, repeat):
+            await asyncio.sleep(delay)
+            self.audio.play_sfx_file(filepath, boost=boost)
+        return {"result": "ok", "name": entry["title"], "boost": boost, "repeat": repeat}
+
+    async def _play_random_sfx(self, boost=0, repeat=1, delay=1.0):
+        from src.myinstants import get_random_sounds, download_sound
+        repeat = min(max(int(repeat), 1), 25)
+        delay = min(max(float(delay), 0.1), 10.0)
+        picks = get_random_sounds(repeat)
+        if not picks:
+            return {"result": "error", "message": "No sounds cached yet. Use searchSoundboard or playSoundboard first to build up the sound library."}
+        played = []
+        for i, pick in enumerate(picks):
+            if pick.get("_local"):
+                filepath = pick["mp3"]
+            else:
+                filepath = await download_sound(pick["mp3"])
+            if not filepath:
+                logger.warning(f"playRandomSoundboard: download failed for '{pick['title']}'")
+                continue
+            logger.info(f"playRandomSoundboard: [{i+1}/{repeat}] playing '{pick['title']}' (boost={boost})")
+            self.audio.play_sfx_file(filepath, boost=boost)
+            played.append(pick["title"])
+            if i < len(picks) - 1:
+                await asyncio.sleep(delay)
+        return {"result": "ok", "played": played, "count": len(played), "boost": boost}
 
     async def _vrchat_move(self, direction: str, duration: float, speed: str = "normal"):
         """Move in a direction for a specified duration with speed control."""
@@ -497,3 +596,68 @@ class ToolHandler:
         self.osc.stop_all_movement()
         
         return {"result": "ok", "direction": direction, "duration": duration, "speed": speed}
+
+    async def _switch_tts(self, provider_name, voice=None):
+        provider_name = provider_name.strip().lower()
+        allowed = [p.strip().lower() for p in (self.config.tts_switchable_providers if self.config else ["gemini"])]
+        if provider_name not in allowed:
+            return {"result": "error", "message": f"Provider '{provider_name}' not allowed. Allowed: {allowed}"}
+        if not self.live_session:
+            return {"result": "error", "message": "No active session"}
+
+        # Resolve custom voice from voices.yml if provided
+        voice_override = None
+        if voice and self.config:
+            voice_def = self.config.get_voice(voice)
+            if voice_def and provider_name in voice_def:
+                voice_override = voice_def[provider_name]
+                logger.info(f"switchTTSProvider: using custom voice '{voice}' for {provider_name}")
+
+        new_provider = None
+        if provider_name == "gemini":
+            if voice:
+                return {"result": "error", "message": "Cannot change Gemini voice mid-session. Gemini voice requires a full session restart."}
+        elif provider_name == "qwen3":
+            from src.tts import QwenTTSProvider
+            new_provider = QwenTTSProvider(self.config, voice_override=voice_override)
+        elif provider_name == "hoppou":
+            from src.tts import HoppouTTSProvider
+            if not voice_override and voice:
+                voice_override = {"voice": voice}
+            new_provider = HoppouTTSProvider(self.config, voice_override=voice_override)
+        elif provider_name == "chirp3_hd":
+            from src.tts import Chirp3HDTTSProvider
+            if not voice_override and voice:
+                voice_override = {"voice": voice}
+            new_provider = Chirp3HDTTSProvider(self.config, voice_override=voice_override)
+        else:
+            return {"result": "error", "message": f"Unknown provider: {provider_name}"}
+
+        self.live_session.switch_tts_provider(new_provider)
+        result = {"result": "ok", "provider": provider_name}
+        if voice:
+            result["voice"] = voice
+        logger.info(f"switchTTSProvider: switched to '{provider_name}'" + (f" voice='{voice}'" if voice else ""))
+        return result
+
+    def _list_tts_providers(self):
+        allowed = self.config.tts_switchable_providers if self.config else ["gemini"]
+        current_tts = self.live_session._tts if self.live_session else None
+        if current_tts is None:
+            current = "gemini"
+        else:
+            name = type(current_tts).__name__
+            mapping = {"QwenTTSProvider": "qwen3", "HoppouTTSProvider": "hoppou", "Chirp3HDTTSProvider": "chirp3_hd"}
+            current = mapping.get(name, name)
+        return {"result": "ok", "providers": allowed, "current": current}
+
+    def _list_voices(self):
+        voices = {}
+        if self.config:
+            for vname, vdef in self.config.list_voices().items():
+                voices[vname] = {
+                    "display_name": vdef.get("display_name", vname),
+                    "description": vdef.get("description", ""),
+                    "providers": [p for p in ("qwen3", "hoppou", "chirp3_hd") if p in vdef],
+                }
+        return {"result": "ok", "voices": voices}

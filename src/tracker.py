@@ -28,8 +28,8 @@ TARGET_FPS = 30
 DEFAULT_CFG = {
     "confidence_threshold": 0.40,
     "iou_threshold": 0.45,
-    "target_area": 0.07,
-    "sprint_area": 0.025,
+    "target_area": 0.04,
+    "sprint_area": 0.015,
     "deadzone": 0.07,
     "smoothing_alpha": 0.40,
     "turn_gain": 1.8,
@@ -40,9 +40,11 @@ DEFAULT_CFG = {
     "reacquire_threshold": 1.0,
     "max_detections": 10,
     "forward_scale_min": 0.5,
-    "forward_scale_max": 1.0,
+    "forward_scale_max": 0.7,
     "strafe_threshold": 0.25,
     "strafe_scale": 0.6,
+    "too_close_area": 0.072,
+    "backup_scale": 0.5,
 }
 
 
@@ -571,14 +573,19 @@ class PlayerTracker:
         raw_look_h = max(-1.0, min(1.0, dx * gain))
         raw_look_v = -dy * 0.4
 
-        # Forward control based on bounding-box area vs target area
+        # Forward/backward control based on bounding-box area vs target area
         sprint_area = cfg["sprint_area"]
+        too_close_area = cfg.get("too_close_area", target_area * 1.8)
+        backup_scale = cfg.get("backup_scale", 0.5)
         if target["area"] < target_area:
             deficit = (target_area - target["area"]) / target_area
             raw_forward = cfg["forward_scale_min"] + deficit * (
                 cfg["forward_scale_max"] - cfg["forward_scale_min"]
             )
             raw_forward = min(raw_forward, cfg["forward_scale_max"])
+        elif target["area"] > too_close_area:
+            excess = (target["area"] - too_close_area) / too_close_area
+            raw_forward = -min(excess * backup_scale, backup_scale)
         else:
             raw_forward = 0.0
 
@@ -645,6 +652,7 @@ class PlayerTracker:
             "target_id": self._locked_id,
             "target_area": self._current_target_area,
             "osc_look_h": self._smoothed_look_h,
+            "osc_look_v": self._smoothed_look_v,
             "osc_forward": self._smoothed_forward,
             "osc_strafe": 0.0,
             "sprinting": self._sprinting,
@@ -666,12 +674,18 @@ class PlayerTracker:
 
         # Clamp final outputs to [-1, 1]
         look_h = max(-1.0, min(1.0, self._smoothed_look_h))
+        look_v = max(-1.0, min(1.0, self._smoothed_look_v))
         forward = max(-1.0, min(1.0, self._smoothed_forward))
 
         # ── Turn axis (proportional, smooth in Desktop) ──
         if abs(look_h) < dz:
             look_h = 0.0
         client.send_message("/input/LookHorizontal", float(look_h))
+
+        # ── Vertical look axis ──
+        if abs(look_v) < dz:
+            look_v = 0.0
+        client.send_message("/input/LookVertical", float(look_v))
 
         # ── Forward / backward axis ──
         client.send_message("/input/Vertical", float(forward))
@@ -692,6 +706,7 @@ class PlayerTracker:
             return
         client = self.osc.client
         client.send_message("/input/LookHorizontal", 0.0)
+        client.send_message("/input/LookVertical", 0.0)
         client.send_message("/input/Vertical", 0.0)
         client.send_message("/input/Horizontal", 0.0)
         client.send_message("/input/Run", 0)

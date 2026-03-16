@@ -410,6 +410,7 @@ class FaceTracker:
         min_out = cfg["min_output"]
 
         look_h = max(-1.0, min(1.0, self._smoothed_look_h))
+        look_v = max(-1.0, min(1.0, self._smoothed_look_v))
 
         # Apply deadzone
         if abs(look_h) < dz:
@@ -418,10 +419,15 @@ class FaceTracker:
             # Boost to minimum so VRChat actually registers the turn
             look_h = min_out if look_h > 0 else -min_out
 
+        if abs(look_v) < dz:
+            look_v = 0.0
+
         client.send_message("/input/LookHorizontal", float(look_h))
+        client.send_message("/input/LookVertical", float(look_v))
 
     def _zero_osc(self):
-        """Reset look axis to zero."""
+        """Reset look axes to zero."""
         if not self.osc:
             return
         self.osc.client.send_message("/input/LookHorizontal", 0.0)
+        self.osc.client.send_message("/input/LookVertical", 0.0)

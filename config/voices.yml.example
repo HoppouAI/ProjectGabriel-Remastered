@@ -1,0 +1,49 @@
+# Custom voice definitions for TTS providers.
+# Each voice has a unique name and provider-specific settings.
+# These can be switched at runtime via the switchTTSProvider tool.
+#
+# Supported providers per voice:
+#   qwen3     - Voice clone from an audio file (ref_audio + ref_text)
+#   hoppou    - Predefined voice name on Hoppou AI
+#   chirp3_hd - Google Cloud Chirp 3 HD voice name + language
+#
+# A single voice can define settings for multiple providers.
+# When switching, the tool picks the matching provider section.
+
+voices:
+  # Example: a custom cloned voice usable with both Qwen3 and Hoppou
+  example_voice:
+    display_name: "Example Voice"
+    description: "An example custom voice"
+    qwen3:
+      mode: "voice_clone"        # "voice_clone", "custom", or "voice_design"
+      ref_audio: "voices/example.wav"
+      ref_text: "This is a sample of my voice for cloning."
+      xvec_only: true
+      # For "custom" mode:
+      # speaker: "speaker_name"
+      # For "voice_design" mode:
+      # instruct: "A warm female voice with a slight accent"
+    hoppou:
+      voice: "alba"              # Hoppou voice preset name
+    chirp3_hd:
+      voice: "Kore"              # Chirp 3 HD voice name
+      language_code: "en-US"
+
+  # Example: Chirp 3 HD only voice
+  # japanese_narrator:
+  #   display_name: "Japanese Narrator"
+  #   description: "A Japanese Chirp 3 HD voice"
+  #   chirp3_hd:
+  #     voice: "Aoede"
+  #     language_code: "ja-JP"
+
+  # Example: Qwen3 voice clone only
+  # my_clone:
+  #   display_name: "My Voice Clone"
+  #   description: "Clone of my own voice"
+  #   qwen3:
+  #     mode: "voice_clone"
+  #     ref_audio: "voices/my_voice.wav"
+  #     ref_text: "Hello, this is a sample of my voice."
+  #     xvec_only: false

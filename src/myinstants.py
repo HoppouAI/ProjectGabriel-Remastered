@@ -145,3 +145,13 @@ async def download_sound(url: str) -> str | None:
     except Exception as e:
         logger.error(f"Sound download failed: {e}")
         return None
+
+
+def get_random_sounds(count: int = 1) -> list[dict]:
+    """Pick random sounds from the known sounds cache. Returns list of {id, title, mp3}."""
+    import random
+    if not _known_sounds:
+        return []
+    ids = list(_known_sounds.keys())
+    picks = random.choices(ids, k=min(count, len(ids)))
+    return [{"id": sid, "title": _known_sounds[sid]["title"], "mp3": _known_sounds[sid]["mp3"]} for sid in picks]

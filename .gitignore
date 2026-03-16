@@ -205,6 +205,7 @@ config/prompts/appends.yml
 config/prompts/prompts.yml
 config/prompts/personalities.yml
 config/prompts/Backup/
+config/voices.yml
 /sfx/music/srt
 /voices
 /dev

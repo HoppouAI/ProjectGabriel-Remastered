@@ -139,7 +139,8 @@ class GeminiLiveSession:
         self.osc = osc
         self.personality = personality_mgr
         self.tool_handler = ToolHandler(audio_mgr, osc, tracker, personality_mgr, config)
-        self._tts = tts_provider  # QwenTTSProvider or None
+        self._tts = tts_provider  # External TTS provider or None
+        self._tts_audio_task: asyncio.Task | None = None  # Managed separately for hot-swap
         self._speaking = False
         self._thinking_shown = False
         self._transcript_buffer = ""
@@ -153,6 +154,7 @@ class GeminiLiveSession:
         self._mic_muted = False
         self._session = None
         self._stream_closing = False  # Flag to stop audio I/O before stream close
+        self._chatbox_error_shown = False  # Track if we've shown an error to VRChat chatbox
         self._last_audio_time = 0  # Track when last audio was received
         self._idle_timeout = 15.0  # Stop talking animations after 15s idle
         self._pending_finalize_task = None
@@ -176,6 +178,18 @@ class GeminiLiveSession:
         """Request a reconnect on next iteration."""
         self._reconnect_requested = True
         logger.info("Reconnect requested via control panel")
+
+    def _notify_chatbox_error(self):
+        """Show a one-time error message in VRChat chatbox when connection drops."""
+        if not self._chatbox_error_shown and self.osc:
+            self._chatbox_error_shown = True
+            self.osc.send_chatbox("Please wait, there's been a small issue with the AI service...")
+
+    def _notify_chatbox_resolved(self):
+        """Show resolved message in VRChat chatbox after reconnecting."""
+        if self._chatbox_error_shown and self.osc:
+            self._chatbox_error_shown = False
+            self.osc.send_chatbox("Resolved, ready to chat!")
 
     def set_mic_muted(self, muted: bool):
         """Set mic mute state."""
@@ -367,6 +381,7 @@ class GeminiLiveSession:
                 ) as session:
                     logger.info("Connected to Gemini Live")
                     _broadcast_console("info", f"Connected to Gemini Live ({self.config.model})")
+                    self._notify_chatbox_resolved()
                     self._conv_logger = ConversationLogger()
                     self._conv_logger.set_system_instruction(
                         self.config.build_system_instruction(self.personality)
@@ -374,6 +389,7 @@ class GeminiLiveSession:
                     self._session = session
                     self._handle_fail_count = 0
                     self.tool_handler.session = session
+                    self.tool_handler.live_session = self
                     self._out_queue = asyncio.Queue(maxsize=5)
                     self._audio_in_queue = asyncio.Queue()
                     self._stream_closing = False
@@ -389,8 +405,8 @@ class GeminiLiveSession:
                             self._now_playing_loop(),
                             self._idle_check_loop(),
                         ]
-                        if self._tts:
-                            tasks.append(self._tts_audio_loop())
+                        # Always start TTS audio loop (supports hot-swap)
+                        tasks.append(self._tts_audio_loop())
                         if self.config.vision_enabled:
                             tasks.append(self._capture_screen_loop())
                             logger.info(f"Screen capture enabled (monitor {self.config.vision_monitor})")
@@ -450,6 +466,7 @@ class GeminiLiveSession:
                 if any(code in err_str for code in ("1006", "1007", "1008", "1009", "1011", "1012", "1013", "1014")):
                     logger.warning(f"WebSocket close ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
+                    self._notify_chatbox_error()
                     # 1007 (invalid argument) and 1008 (policy violation) - clear handle after 2 hits
                     if "1007" in err_str or "1008" in err_str:
                         self._handle_fail_count += 1
@@ -478,6 +495,7 @@ class GeminiLiveSession:
 
                 logger.error(f"API error: {e}")
                 _broadcast_console("error", f"API error: {err_str[:100]}")
+                self._notify_chatbox_error()
                 await asyncio.sleep(2)
                 continue
 
@@ -486,6 +504,7 @@ class GeminiLiveSession:
                 reason = getattr(e, 'reason', '') or ''
                 logger.warning(f"WebSocket closed (code={code}, reason={reason[:80]}), reconnecting...")
                 _broadcast_console("error", f"WebSocket closed: {code} {reason[:60]}")
+                self._notify_chatbox_error()
                 # 1007/1008 - clear handle after 2 consecutive failures
                 if code in (1007, 1008):
                     self._handle_fail_count += 1
@@ -506,6 +525,7 @@ class GeminiLiveSession:
                 # Network-level errors - keep handle, just retry
                 logger.warning(f"Network error: {e}, reconnecting in 3s...")
                 _broadcast_console("error", f"Network error: {str(e)[:80]}")
+                self._notify_chatbox_error()
                 await asyncio.sleep(3)
                 continue
 
@@ -527,6 +547,7 @@ class GeminiLiveSession:
                 if any(code in err_str for code in ("1006", "1007", "1008", "1009", "1011", "1012", "1013", "1014")):
                     logger.warning(f"WebSocket error ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
+                    self._notify_chatbox_error()
                     if "1007" in err_str or "1008" in err_str:
                         self._handle_fail_count += 1
                         has_handle = "with handle" if self._session_handle else "no handle"
@@ -558,6 +579,7 @@ class GeminiLiveSession:
 
                 logger.error(f"Session error: {type(e).__name__}: {e}")
                 _broadcast_console("error", f"Session error: {err_str[:100]}")
+                self._notify_chatbox_error()
                 await asyncio.sleep(2)
                 continue
 
@@ -656,17 +678,44 @@ class GeminiLiveSession:
                 raise
 
     async def _tts_audio_loop(self):
-        """Pull audio from external TTS provider and feed into the audio playback queue."""
+        """Pull audio from external TTS provider and feed into the audio playback queue.
+        
+        Runs continuously to support hot-swapping TTS providers mid-session.
+        When self._tts is None (gemini mode), this loop simply idles.
+        """
         while True:
             try:
+                if not self._tts:
+                    await asyncio.sleep(0.1)
+                    continue
                 pcm = await self._tts.get_audio()
-                if pcm and not self._tts._interrupted:
+                if pcm and self._tts and not self._tts._interrupted:
                     await self._audio_in_queue.put(pcm)
             except asyncio.CancelledError:
                 return
             except Exception as e:
                 logger.error(f"TTS audio loop error: {e}")
                 await asyncio.sleep(0.05)
+
+    def switch_tts_provider(self, new_provider):
+        """Hot-swap the TTS provider mid-session.
+        
+        Stops the old provider, sets the new one (or None for gemini), and starts it.
+        Called from ToolHandler.
+        """
+        old = self._tts
+        if old:
+            try:
+                old.interrupt()
+                old.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping old TTS provider: {e}")
+        self._tts = new_provider
+        if new_provider:
+            new_provider.start()
+            logger.info(f"Switched to TTS provider: {type(new_provider).__name__}")
+        else:
+            logger.info("Switched to Gemini native audio")
 
     def _capture_screen_frame(self):
         try:

@@ -130,6 +130,7 @@
     **Invocation Condition for vrchatDrop:** Call when asked to drop or let go.
     **Invocation Condition for vrchatUse:** Call when asked to use or interact with something.
     **Invocation Condition for vrchatLook:** Call when asked to look or turn left/right.
+    **Invocation Condition for vrchatLookVertical:** Call when asked to look up or down.
 
 - name: "tool_usage_personality"
   enabled: true
@@ -140,6 +141,19 @@
     are available.
     **Invocation Condition for getCurrentPersonality:** Call when asked what mode you are in.
 
+- name: "tool_usage_voice_switching"
+  enabled: true
+  content: >
+    VOICE SWITCHING TOOLS:
+    **Invocation Condition for switchTTSProvider:** Call when asked to change your voice
+    or use a different speaking style. After switching, just say you changed your voice.
+    Do NOT mention provider names, technology, or internal IDs.
+    **Invocation Condition for listTTSProviders:** Call when you need to know what voice
+    providers are available. Results are for YOUR internal use only.
+    **Invocation Condition for listVoices:** Call when someone asks what voices or
+    impressions you can do. Tell them about voices using only their display_name and
+    description. Never expose internal IDs or provider names.
+
 # ═══════════════════════════════════════════════════════════
 # 3. GUARDRAILS
 # ═══════════════════════════════════════════════════════════
@@ -149,6 +163,9 @@
   content: >
     TOOL GUARDRAILS: Only call tools that exist in your function declarations. If someone
     asks you to do something and no tool exists for it, say you cannot do that.
+    NEVER reveal internal tool names, provider IDs (gemini, chirp3_hd, qwen3, hoppou),
+    technology names, or API details to users. When switching voices, just say you changed
+    your voice. When listing voices, use only display names and descriptions.
 
 # ═══════════════════════════════════════════════════════════
 # 4. DYNAMIC CONTEXT

@@ -19,6 +19,7 @@ class Config:
         self._key_index = 0
         self._prompts = self._load_prompts()
         self._appends = self._load_appends()
+        self._voices = self._load_voices()
 
     def _load_prompts(self) -> dict:
         prompts_file = PROMPTS_DIR / "prompts.yml"
@@ -33,6 +34,20 @@ class Config:
             with open(appends_file, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f) or []
         return []
+
+    def _load_voices(self) -> dict:
+        voices_file = Path("config/voices.yml")
+        if voices_file.exists():
+            with open(voices_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            return data.get("voices", {})
+        return {}
+
+    def get_voice(self, voice_name: str) -> dict | None:
+        return self._voices.get(voice_name)
+
+    def list_voices(self) -> dict:
+        return self._voices
 
     def get(self, *keys, default=None):
         val = self._data
@@ -270,6 +285,14 @@ class Config:
     @property
     def tts_hoppou_enabled(self):
         return self.tts_provider == "hoppou"
+
+    @property
+    def tts_chirp3_hd_enabled(self):
+        return self.tts_provider == "chirp3_hd"
+
+    @property
+    def tts_switchable_providers(self):
+        return self.get("tts", "switchable_providers", default=["gemini"])
 
     @property
     def emotion_enabled(self):

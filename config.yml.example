@@ -83,13 +83,16 @@ gemini:
 # TTS Provider
 # ══════════════════════════════════════════════════════════
 # Choose which voice to use for AI speech output.
-# "gemini" = use Gemini Live's native audio (default)
-# "qwen3"  = discard Gemini audio, use Qwen3 TTS server instead
-#            (uses output transcription text -> Qwen3 streaming TTS)
-# "hoppou" = discard Gemini audio, use Hoppou AI cloud TTS
-#            (OpenAI-compatible API, ~200ms latency, get key at https://hoppou.ai/api-portal/)
+# "gemini"    = use Gemini Live's native audio (default)
+# "qwen3"     = discard Gemini audio, use Qwen3 TTS server instead
+# "hoppou"    = discard Gemini audio, use Hoppou AI cloud TTS
+# "chirp3_hd" = discard Gemini audio, use Google Cloud Chirp 3: HD streaming TTS
 tts:
   provider: "gemini"
+
+  # Providers the AI can switch to at runtime via the switchTTSProvider tool.
+  # Must be a list of provider names: "gemini", "qwen3", "hoppou", "chirp3_hd"
+  switchable_providers: ["gemini"]
 
   # Qwen3 TTS server settings (only used when provider is "qwen3")
   qwen3:
@@ -135,6 +138,29 @@ tts:
     voice: "alba"
     # Model name
     model: "tts-1"
+
+  # Google Cloud Chirp 3: HD TTS settings (only used when provider is "chirp3_hd")
+  # Uses the streaming API for low-latency synthesis with Google's latest HD voices.
+  # Requires google-cloud-texttospeech package.
+  chirp3_hd:
+    # API key for Google Cloud TTS (get from https://console.cloud.google.com/apis/credentials)
+    # Leave empty to use Application Default Credentials (ADC) instead
+    api_key: ""
+    # Backup keys for automatic rotation on rate limit (429) errors
+    # Free tier: ~500k chars/month. When exhausted, rotates to next key automatically.
+    backup_keys: []
+    #  - "BACKUP_CLOUD_KEY_1"
+    #  - "BACKUP_CLOUD_KEY_2"
+    # Voice name -- see https://docs.cloud.google.com/text-to-speech/docs/chirp3-hd
+    # Available: Achernar, Achird, Algenib, Algieba, Alnilam, Aoede, Autonoe,
+    #   Callirrhoe, Charon, Despina, Enceladus, Erinome, Fenrir, Gacrux, Iapetus,
+    #   Kore, Laomedeia, Leda, Orus, Puck, Pulcherrima, Rasalgethi, Sadachbia,
+    #   Sadaltager, Schedar, Sulafat, Umbriel, Vindemiatrix, Zephyr, Zubenelgenubi
+    voice: "Kore"
+    # Language code (e.g. en-US, ja-JP, de-DE, fr-FR)
+    language_code: "en-US"
+    # Speaking rate (0.25 to 2.0, 1.0 = normal)
+    speaking_rate: 1.0
 
 audio:
   # Audio device indices - null uses system default
