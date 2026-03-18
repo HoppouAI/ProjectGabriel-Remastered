@@ -8,7 +8,7 @@ from glob import glob
 
 logger = logging.getLogger(__name__)
 
-VRCHAT_LOG_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "Low" / "VRChat" / "VRChat"
+VRCHAT_LOG_DIR = Path(os.environ.get("LOCALAPPDATA", "")).parent / "LocalLow" / "VRChat" / "VRChat"
 
 _JOIN_PATTERN = re.compile(
     r"\[Behaviour\] OnPlayerJoined\s+(.+?)\s+\((usr_[0-9a-f\-]+)\)"
