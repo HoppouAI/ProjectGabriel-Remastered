@@ -43,5 +43,6 @@ anime_girl:
 #   name: "Display Name"
 #   description: "Brief description shown to users"
 #   enabled: true
+#   avatar_id: "avtr_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # Optional: auto-switch to this avatar
 #   prompt: >
 #     Describe the personality's behavior, speech patterns, and traits here.

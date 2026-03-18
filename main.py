@@ -114,6 +114,36 @@ async def main():
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
 
+    # Instance monitor for player list (VRChat log parsing)
+    from src.instance_monitor import InstanceMonitor
+    instance_monitor = InstanceMonitor()
+    instance_monitor.start()
+    session.tool_handler.instance_monitor = instance_monitor
+
+    # VRChat API for avatar switching (background login)
+    vrchat_api = None
+    if config.vrchat_api_username:
+        from src.vrchatapi import VRChatAPI
+        vrchat_api = VRChatAPI(config)
+        session.tool_handler.vrchat_api = vrchat_api
+
+        async def _bg_login():
+            try:
+                ok = await vrchat_api.ensure_logged_in()
+                if ok:
+                    logger.info("VRChat API authenticated successfully")
+                    if not VRChatAPI.friends_cache_fresh():
+                        logger.info("Friends cache is stale (>4h) or missing, fetching...")
+                        await vrchat_api.fetch_and_cache_friends()
+                    else:
+                        logger.info("Friends cache is fresh, skipping fetch")
+                else:
+                    logger.warning("VRChat API login failed -- avatar switching may not work")
+            except Exception as e:
+                logger.error(f"VRChat API background login error: {e}")
+
+        asyncio.create_task(_bg_login())
+
     # Wire wanderer into tool handler and session
     if wanderer:
         session.tool_handler.wanderer = wanderer

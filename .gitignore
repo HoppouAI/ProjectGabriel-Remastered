@@ -184,6 +184,10 @@ cython_debug/
 config.yml
 session_handle.txt
 data/conversations/
+data/avatars.json
+data/vrchat_cookies.json
+data/vrchat_friends.json
+data/vrcx_id.txt
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

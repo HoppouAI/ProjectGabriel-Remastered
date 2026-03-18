@@ -299,6 +299,18 @@ class Config:
         return self.tts_provider == "chirp3_hd"
 
     @property
+    def vrchat_api_username(self):
+        return self.get("vrchat_api", "username", default="")
+
+    @property
+    def vrchat_api_password(self):
+        return self.get("vrchat_api", "password", default="")
+
+    @property
+    def vrchat_api_allow_bio_edit(self):
+        return self.get("vrchat_api", "allow_bio_edit", default=False)
+
+    @property
     def tts_switchable_providers(self):
         return self.get("tts", "switchable_providers", default=["gemini"])
 

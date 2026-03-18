@@ -182,6 +182,26 @@ vrchat:
   # Seconds to display each chatbox page before advancing
   chatbox_page_delay: 3.0
 
+# ══════════════════════════════════════════════════════════
+# VRChat API (for avatar switching)
+# ══════════════════════════════════════════════════════════
+# Required for searchAvatars and switchAvatar tools.
+# Credentials are used to authenticate with the VRChat API.
+# Session cookies are persisted to data/vrchat_cookies.json.
+vrchat_api:
+  # VRChat account username (or email)
+  username: ""
+  # VRChat account password
+  password: ""
+  # TOTP secret for automatic 2FA (optional)
+  # This is the secret key from your authenticator app setup (NOT the 6-digit code).
+  # If set, 2FA is handled automatically. Requires: pip install pyotp
+  # Leave empty to skip auto-2FA (you'll need to manually provide codes).
+  totp_secret: ""
+  # Allow the model to edit your VRChat profile bio via updateStatus tool.
+  # When false (default), only status and statusDescription can be changed.
+  allow_bio_edit: false
+
 music:
   # Folder containing local music files (.mp3, .wav, .ogg, .flac)
   music_dir: "sfx/music"

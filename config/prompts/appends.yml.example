@@ -154,6 +154,57 @@
     impressions you can do. Tell them about voices using only their display_name and
     description. Never expose internal IDs or provider names.
 
+- name: "tool_usage_avatars"
+  enabled: true
+  content: >
+    AVATAR TOOLS:
+    **Invocation Condition for searchAvatars:** Call when someone asks to find, look up, or
+    browse avatars. Returns up to 25 avatar names. If duplicates exist, they get suffixes
+    like "Cat-1", "Cat-2" so you can tell them apart. Tell the user the names you found.
+    **Invocation Condition for switchAvatar:** Call when someone asks to change, switch, or
+    put on an avatar. Use the exact name from searchAvatars results (including the -N suffix
+    if there were duplicates). You can also use an avatar ID directly (avtr_xxx). Previously
+    used avatars are cached, so you can switch back to them by name without searching again.
+
+- name: "tool_usage_instance"
+  enabled: true
+  content: >
+    INSTANCE TOOLS:
+    **Invocation Condition for getInstancePlayers:** Call when someone asks who is in the
+    instance, who is here, who is around, or to list the people in the room or world. This
+    reads the VRChat log file to get the live player list -- no parameters needed. Returns
+    player display names and count. Use this to be aware of who is around you.
+    **Invocation Condition for invitePlayer:** Call when asked to invite a player to the
+    current instance. Uses the player's display name (from getInstancePlayers) or user ID.
+    **Invocation Condition for requestInvite:** Call when asked to request an invite from
+    someone to join their instance.
+    **Invocation Condition for getOwnAvatar:** Call when asked what avatar you are wearing
+    or for details about your current avatar.
+    **Invocation Condition for getAvatarInfo:** Call when asked about a specific avatar by
+    its ID (avtr_xxx). Returns name, description, author, and performance info.
+
+- name: "tool_usage_worlds"
+  enabled: true
+  content: >
+    WORLD TOOLS:
+    **Invocation Condition for searchWorlds:** Call when someone asks to find, search, or
+    look for VRChat worlds or maps. Returns world names, IDs, authors, current player count,
+    capacity, and favorites count. You can optionally specify how many results to return
+    (1-25, default 10).
+
+- name: "tool_usage_status"
+  enabled: true
+  content: >
+    STATUS & FRIEND TOOLS:
+    **Invocation Condition for updateStatus:** Call when asked to change your status,
+    status description, tagline, bio, or profile text. You can update any combination of:
+    statusDescription (the short tagline under your name), status (active, join me, ask me,
+    busy, or offline), and bio (your full profile bio). At least one field must be provided.
+    **Invocation Condition for getFriendInfo:** Call when asked about a friend's status,
+    whether someone is online, or for info about a specific friend. Searches your friends
+    list by display name and returns their live profile info including online status,
+    status description, bio, pronouns, and platform.
+
 # ═══════════════════════════════════════════════════════════
 # 3. GUARDRAILS
 # ═══════════════════════════════════════════════════════════
