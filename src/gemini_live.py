@@ -15,6 +15,7 @@ import mss
 from PIL import Image
 from src.tools import get_tool_declarations, ToolHandler
 from src.emotions import init_emotion_system, get_emotion_system
+from src.idle_chatbox import IdleChatbox
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,9 @@ class GeminiLiveSession:
             self._emotion_system = init_emotion_system(config, osc)
             self._emotion_system.start()
             logger.info("Emotion system initialized")
+
+        # Initialize idle chatbox banner
+        self._idle_chatbox = IdleChatbox(osc, config)
 
     def request_reconnect(self):
         """Request a reconnect on next iteration."""
@@ -415,6 +419,7 @@ class GeminiLiveSession:
                     finally:
                         self._session = None
                         self._stream_closing = True
+                        self._idle_chatbox.stop()
                         # Drain audio queue and wait for in-flight writes
                         while not self._audio_in_queue.empty():
                             try:
@@ -608,6 +613,14 @@ class GeminiLiveSession:
             # Check if idle animation should start
             if self._emotion_system:
                 self._emotion_system.check_idle()
+            # Start idle chatbox when idle and no music playing
+            music_playing = self.audio.get_music_progress() is not None
+            if not self._speaking and not music_playing:
+                emo = self._emotion_system
+                if (emo and emo._idle_active) or not emo:
+                    self._idle_chatbox.start()
+            elif music_playing:
+                self._idle_chatbox.stop()
 
     async def _listen_audio_loop(self, input_stream):
         while True:
@@ -782,12 +795,14 @@ class GeminiLiveSession:
                                 # Show "Thinking..." in VRChat chatbox (only once per thinking phase)
                                 if not self._thinking_shown:
                                     self._thinking_shown = True
+                                    self._idle_chatbox.stop()
                                     self.osc.set_typing(True)
                                     self.osc.send_chatbox("Thinking...")
                             elif part.inline_data:
                                 self._thinking_shown = False
                                 if not self._speaking:
                                     self._speaking = True
+                                    self._idle_chatbox.stop()
                                     self.osc.set_typing(True)
                                 # Try to start talking animations (idempotent, handles manual animation blocking)
                                 if self._emotion_system:
@@ -967,9 +982,18 @@ class GeminiLiveSession:
             await self.osc.display_pages(pages, self.config.chatbox_page_delay)
         self.osc.set_typing(False)
 
+    @staticmethod
+    def _normalize_song_name(name: str) -> str:
+        """Clean up a filename-based song name for display."""
+        import re
+        name = name.replace("_", " ").replace("-", " ")
+        name = re.sub(r"\s+", " ", name).strip()
+        name = name.title()
+        return name
+
     def _format_now_playing(self, progress_info: dict) -> str:
         """Format Now Playing display for chatbox."""
-        name = progress_info["song_name"]
+        name = self._normalize_song_name(progress_info["song_name"])
         position = progress_info["position"]
         duration = progress_info["duration"]
         progress = progress_info["progress"]
@@ -980,9 +1004,9 @@ class GeminiLiveSession:
         time_str = f"{pos_min}:{pos_sec:02d} / {dur_min}:{dur_sec:02d}"
         
         # Create progress bar
-        bar_width = 12
+        bar_width = 14
         filled = int(progress * bar_width)
-        bar = "|" + "─" * filled + "•" + "─" * (bar_width - filled - 1) + "|"
+        bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
         
         # Get current lyric
         lyric = self.audio.get_current_lyric()

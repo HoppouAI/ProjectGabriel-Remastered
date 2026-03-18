@@ -182,6 +182,25 @@ vrchat:
   # Seconds to display each chatbox page before advancing
   chatbox_page_delay: 3.0
 
+  # Idle chatbox banner -- shown in VRChat chatbox when the AI is idle.
+  # Displays a customizable banner with up to 3 lines of text, dividers,
+  # active session time, and current clock. Respects the 144-char chatbox limit.
+  idle_chatbox:
+    enabled: false
+    # Header text at the top of the banner
+    banner: "Gabriel AI"
+    # Character used for divider lines
+    divider: "\u2500"
+    # Number of times the divider character is repeated
+    divider_length: 20
+    # Up to 3 lines of text between dividers (empty strings are skipped)
+    lines:
+      - "VRChat AI Assistant"
+      - "Listening for voice"
+      - ""
+    # How often (seconds) to refresh the banner (updates clock/active time)
+    update_interval: 30
+
 # ══════════════════════════════════════════════════════════
 # VRChat API (for avatar switching)
 # ══════════════════════════════════════════════════════════
