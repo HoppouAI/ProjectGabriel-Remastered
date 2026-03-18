@@ -145,7 +145,7 @@ Keys are defined in `config.yml` (primary + backup list). On 429/quota errors, `
 ## Development Notes
 
 - Keep comments minimal to save context window
-- Don't use em dashes in the code
+- Don't use em dashes in the code or commits
 - Config changes go in `config.yml` -- add matching properties to `Config` class
 - All async code uses `asyncio` -- blocking calls wrapped with `asyncio.to_thread()`
 - PyAudio requires system-level dependencies (PortAudio)
