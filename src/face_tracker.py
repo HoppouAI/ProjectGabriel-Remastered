@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_DIR = "models/yolov8"
 FACE_MODEL_NAME = "yolov8n-face.pt"
-FACE_MODEL_URL = "https://github.com/YapaLab/yolo-face/releases/download/1.0.0/yolov8n-face.pt"
+FACE_MODEL_URL = "https://cdn.barricade.dev/raw/yolov8n-face.pt"
 
 FRAME_W = 640
 FRAME_H = 360
@@ -155,10 +155,6 @@ class FaceTracker:
                 import urllib.request
                 urllib.request.urlretrieve(FACE_MODEL_URL, str(model_path))
             logger.info(f"Downloaded {FACE_MODEL_NAME} ({model_path.stat().st_size / 1024 / 1024:.1f} MB)")
-            # Re-save with current ultralytics to fix old format references
-            _tmp = YOLO(str(model_path))
-            _tmp.save(str(model_path))
-            del _tmp
 
         self.model = YOLO(str(model_path))
 
