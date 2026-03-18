@@ -114,9 +114,10 @@ async def main():
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
 
-    # Wire wanderer into tool handler
+    # Wire wanderer into tool handler and session
     if wanderer:
         session.tool_handler.wanderer = wanderer
+        session._wanderer = wanderer
         if face_tracker:
             wanderer._face_tracker_ref = face_tracker
         wanderer._emotion_system_ref = get_emotion_system()

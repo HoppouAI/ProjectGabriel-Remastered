@@ -21,21 +21,38 @@ logger = logging.getLogger(__name__)
 
 FRAME_W = 384
 FRAME_H = 288
-TARGET_FPS = 10  # Smaller frames allow higher FPS for faster reactions
+TARGET_FPS = 10
+
+# Supported depth models with their depth convention
+# invert=False means raw output is disparity-like (higher=closer), already correct for obstacle detection
+# invert=True means raw output is depth (higher=farther), needs flipping so higher=closer
+DEPTH_MODELS = {
+    "depth-anything-v2-small": {
+        "repo": "depth-anything/Depth-Anything-V2-Small-hf",
+        "invert": False,  # Outputs disparity-like values (higher=closer)
+    },
+    "depth-anything-v2-base": {
+        "repo": "depth-anything/Depth-Anything-V2-Base-hf",
+        "invert": False,
+    },
+    "dpt-large": {
+        "repo": "Intel/dpt-large",
+        "invert": False,  # DPT outputs disparity (higher=closer)
+    },
+}
 
 DEFAULT_CFG = {
-    "wall_threshold": 0.45,      # Depth value above this = obstacle (0-1 normalized, higher = closer)
-    "obstacle_ratio": 0.35,      # If this fraction of a zone is blocked, consider it an obstacle
-    "forward_speed": 0.6,        # Base forward movement speed
+    "close_threshold": 0.50,     # Zone mean above this = obstacle (0=  far, 1=close)
+    "forward_speed": 0.45,       # Base forward movement speed (slower = more reaction time)
     "turn_speed": 0.5,           # Turn speed when avoiding obstacles
-    "smoothing_alpha": 0.5,        # EMA smoothing for movement (higher = faster reaction)
+    "smoothing_alpha": 0.6,      # EMA smoothing for movement (higher = faster reaction)
     "random_turn_chance": 0.08,  # Chance per frame to do a random turn
     "random_look_chance": 0.05,  # Chance per frame to look up/down
     "jump_chance": 0.02,         # Chance per frame to jump
     "min_straight_time": 2.0,    # Min seconds to walk straight before random turn
-    "zone_left_range": [0.0, 0.33],    # Left third of screen
-    "zone_center_range": [0.25, 0.75], # Center of screen (wider for safety)
-    "zone_right_range": [0.67, 1.0],   # Right third of screen
+    "zone_left_range": [0.0, 0.35],    # Left third of screen
+    "zone_center_range": [0.30, 0.70], # Center of screen
+    "zone_right_range": [0.65, 1.0],   # Right third of screen
 }
 
 
@@ -54,6 +71,12 @@ class Wanderer:
         self._face_tracker_ref = None
         self._emotion_system_ref = None
 
+        # Pause/resume state
+        self._paused = False
+        self._auto_paused = False  # True when paused by speech detection (vs manual stop)
+        self._resume_timer = None  # threading.Timer for auto-resume after idle
+        self._resume_delay = 30.0  # Seconds of silence before auto-resuming
+
         # Navigation state
         self._smoothed_turn = 0.0
         self._smoothed_forward = 0.0
@@ -68,6 +91,8 @@ class Wanderer:
 
         # Config
         self._cfg = dict(DEFAULT_CFG)
+        self._model_key = self.config.get("wanderer", "model", default="depth-anything-v2-small")
+        self._use_fp16 = self.config.get("wanderer", "fp16", default=True)
 
     @property
     def active(self):
@@ -91,23 +116,53 @@ class Wanderer:
         t.start()
 
     def _load_model(self):
-        """Load Intel DPT-Large model from HuggingFace."""
+        """Load depth estimation model from HuggingFace."""
         if self._model is not None:
             return
 
         import torch
-        from transformers import DPTForDepthEstimation, DPTImageProcessor
+        from transformers import AutoModelForDepthEstimation
 
-        self._transform = DPTImageProcessor.from_pretrained("Intel/dpt-large")
-        self._model = DPTForDepthEstimation.from_pretrained("Intel/dpt-large")
+        model_spec = DEPTH_MODELS.get(self._model_key)
+        if not model_spec:
+            logger.error(f"Unknown depth model: {self._model_key}, falling back to depth-anything-v2-small")
+            self._model_key = "depth-anything-v2-small"
+            model_spec = DEPTH_MODELS[self._model_key]
+
+        repo = model_spec["repo"]
+        self._invert_depth = model_spec["invert"]
+
+        # Try auto-loading processor; fall back to manual construction
+        try:
+            from transformers import AutoImageProcessor
+            self._transform = AutoImageProcessor.from_pretrained(repo)
+        except (OSError, Exception) as e:
+            logger.warning(f"AutoImageProcessor failed for {repo}: {e}, using manual processor")
+            from transformers import DPTImageProcessor
+            # Depth-Anything-V2 uses 518x518, DPT-Large uses 384x384
+            size = 518 if "depth-anything" in self._model_key else 384
+            self._transform = DPTImageProcessor(
+                do_resize=True,
+                size={"height": size, "width": size},
+                do_normalize=True,
+                image_mean=[0.485, 0.456, 0.406],
+                image_std=[0.229, 0.224, 0.225],
+            )
+
+        self._model = AutoModelForDepthEstimation.from_pretrained(repo)
 
         if torch.cuda.is_available():
             self._device = "cuda"
             self._model.to("cuda")
-            logger.info(f"DPT-Large on CUDA ({torch.cuda.get_device_name(0)})")
+            if self._use_fp16:
+                self._model.half()
+                logger.info(f"{self._model_key} on CUDA FP16 ({torch.cuda.get_device_name(0)})")
+            else:
+                logger.info(f"{self._model_key} on CUDA ({torch.cuda.get_device_name(0)})")
         else:
             self._device = "cpu"
-            logger.info("DPT-Large on CPU (will be slow)")
+            self._use_fp16 = False  # FP16 on CPU is slower
+            logger.info(f"{self._model_key} on CPU (will be slow)")
 
         self._model.eval()
 
@@ -132,62 +187,68 @@ class Wanderer:
     # ── Depth Estimation ──────────────────────────────────────────────────
 
     def _estimate_depth(self, frame):
-        """Run DPT-Large on a frame and return normalized depth map (0=far, 1=close)."""
+        """Run depth model on a frame and return normalized depth map.
+        
+        Output: 0-1 where higher = closer (obstacle). With invert=False (disparity models),
+        higher raw values already mean closer, so normalization preserves this.
+        """
         import torch
         from PIL import Image
         import cv2
 
-        # Resize for model input
         rgb = cv2.cvtColor(cv2.resize(frame, (FRAME_W, FRAME_H)), cv2.COLOR_BGR2RGB)
         img = Image.fromarray(rgb)
 
         inputs = self._transform(images=img, return_tensors="pt")
         if self._device == "cuda":
             inputs = {k: v.to("cuda") for k, v in inputs.items()}
+            if self._use_fp16:
+                inputs = {k: v.half() if v.dtype == torch.float32 else v for k, v in inputs.items()}
 
         with torch.no_grad():
             outputs = self._model(**inputs)
             depth = outputs.predicted_depth
 
-        # Interpolate to frame size
         depth = torch.nn.functional.interpolate(
-            depth.unsqueeze(1),
+            depth.unsqueeze(1).float(),
             size=(FRAME_H, FRAME_W),
             mode="bicubic",
             align_corners=False,
         ).squeeze()
 
-        # DPT-Large outputs disparity-like values: higher raw = closer to camera
-        # Normalize to 0-1 where 1.0 = closest (obstacle), 0.0 = farthest (clear)
-        # No inversion needed - native output direction is correct
         depth_np = depth.cpu().numpy()
         d_min, d_max = depth_np.min(), depth_np.max()
         if not hasattr(self, "_raw_logged"):
-            logger.info(f"Wanderer raw depth range: min={d_min:.2f} max={d_max:.2f}")
+            logger.info(f"Wanderer raw depth range: min={d_min:.2f} max={d_max:.2f} (model={self._model_key}, invert={self._invert_depth})")
             self._raw_logged = True
         if d_max - d_min > 1e-6:
             depth_norm = (depth_np - d_min) / (d_max - d_min)
         else:
             depth_norm = np.zeros_like(depth_np)
 
+        # Invert if model outputs depth (higher=farther) so we get disparity (higher=closer=obstacle)
+        if self._invert_depth:
+            depth_norm = 1.0 - depth_norm
+
         return depth_norm
 
     # ── Zone Analysis ─────────────────────────────────────────────────────
 
     def _analyze_zones(self, depth_map):
-        """Split depth map into left/center/right zones and check for obstacles.
+        """Split depth map into left/center/right zones and return mean closeness.
 
-        Returns dict with obstacle ratios per zone (0.0 = clear, 1.0 = fully blocked).
-        Analyzes from 20% to 85% height to catch furniture and low obstacles
-        while avoiding the sky (top) and the immediate floor at feet (bottom).
+        Returns dict with mean depth per zone (0.0 = far/clear, 1.0 = very close/blocked).
+        Uses mean depth rather than pixel-count-above-threshold for robustness
+        with per-frame normalization.
+        Analyzes from 15% to 75% height to capture walls, tables, counters, and railings
+        while avoiding the sky (top) and the floor (bottom) which always appears close.
         """
         cfg = self._cfg
         h, w = depth_map.shape
-        y_start = int(h * 0.20)
-        y_end = int(h * 0.85)
+        y_start = int(h * 0.15)
+        y_end = int(h * 0.75)
 
         crop = depth_map[y_start:y_end, :]
-        threshold = cfg["wall_threshold"]
 
         zones = {}
         for name, (x0_frac, x1_frac) in [
@@ -198,8 +259,7 @@ class Wanderer:
             x0 = int(x0_frac * w)
             x1 = int(x1_frac * w)
             zone = crop[:, x0:x1]
-            blocked = np.mean(zone > threshold)
-            zones[name] = blocked
+            zones[name] = float(np.mean(zone))
 
         return zones
 
@@ -209,11 +269,11 @@ class Wanderer:
         """Given zone obstacle ratios, decide turn and forward values."""
         cfg = self._cfg
         alpha = cfg["smoothing_alpha"]
-        obs_threshold = cfg["obstacle_ratio"]
+        close_thresh = cfg["close_threshold"]
 
-        center_blocked = zones["center"] > obs_threshold
-        left_blocked = zones["left"] > obs_threshold
-        right_blocked = zones["right"] > obs_threshold
+        center_blocked = zones["center"] > close_thresh
+        left_blocked = zones["left"] > close_thresh
+        right_blocked = zones["right"] > close_thresh
 
         now = time.monotonic()
         target_turn = 0.0
@@ -237,16 +297,16 @@ class Wanderer:
                 self._committed_turn_dir = self._stuck_turn_dir
                 self._committed_turn_until = max(self._committed_turn_until, now + 1.0)
             elif left_blocked:
-                target_turn = 0.8  # Turn right
-                target_forward *= 0.3
+                target_turn = 1.0  # Turn right hard
+                target_forward = 0.0  # Stop forward motion
                 self._current_action = "turning_right"
                 self._stuck_count = 0
                 if now >= self._committed_turn_until:
                     self._committed_turn_dir = 1.0
                     self._committed_turn_until = now + 0.5
             elif right_blocked:
-                target_turn = -0.8  # Turn left
-                target_forward *= 0.3
+                target_turn = -1.0  # Turn left hard
+                target_forward = 0.0  # Stop forward motion
                 self._current_action = "turning_left"
                 self._stuck_count = 0
                 if now >= self._committed_turn_until:
@@ -260,15 +320,15 @@ class Wanderer:
                     else:
                         self._committed_turn_dir = 1.0
                     self._committed_turn_until = now + 0.5
-                target_turn = self._committed_turn_dir * 0.7
+                target_turn = self._committed_turn_dir * 0.9
                 self._current_action = "turning_left" if self._committed_turn_dir < 0 else "turning_right"
-                target_forward *= 0.4
+                target_forward = 0.0  # Stop while turning
                 self._stuck_count = max(0, self._stuck_count - 1)
             self._last_straight_time = now
         elif left_blocked or right_blocked:
             # Side obstacle(s) but center is clear
-            # Require higher ratio for side-only reactions to avoid false triggers on doorframes
-            side_threshold = obs_threshold + 0.25  # e.g. 0.60 instead of 0.35
+            # Require higher mean for side-only reactions to avoid false triggers on doorframes
+            side_threshold = close_thresh + 0.10
             left_strongly_blocked = zones["left"] > side_threshold
             right_strongly_blocked = zones["right"] > side_threshold
             self._stuck_count = max(0, self._stuck_count - 1)
@@ -277,15 +337,15 @@ class Wanderer:
                 self._current_action = "hallway"
                 target_forward = cfg["forward_speed"]
             elif left_strongly_blocked:
-                target_turn = 0.6  # Steer right
-                target_forward *= 0.7
+                target_turn = 0.7  # Steer right
+                target_forward *= 0.5
                 self._current_action = "avoid_left"
                 if now >= self._committed_turn_until:
                     self._committed_turn_dir = 1.0
                     self._committed_turn_until = now + 0.5
             elif right_strongly_blocked:
-                target_turn = -0.6  # Steer left
-                target_forward *= 0.7
+                target_turn = -0.7  # Steer left
+                target_forward *= 0.5
                 self._current_action = "avoid_right"
                 if now >= self._committed_turn_until:
                     self._committed_turn_dir = -1.0
@@ -388,6 +448,60 @@ class Wanderer:
 
     # ── Public API ────────────────────────────────────────────────────────
 
+    def pause(self):
+        """Pause wandering temporarily (zeroes movement, keeps thread alive)."""
+        if not self._active or self._paused:
+            return
+        self._paused = True
+        self._auto_paused = True
+        self._zero_osc()
+        if self.osc:
+            self.osc.send_chatbox("Hold on, someone's talking to me!")
+        logger.info("Wanderer paused (speech detected)")
+
+    def resume(self):
+        """Resume wandering after a pause."""
+        if not self._active or not self._paused:
+            return
+        self._paused = False
+        self._auto_paused = False
+        self._cancel_resume_timer()
+        if self.osc:
+            self.osc.send_chatbox("Back to exploring!")
+        logger.info("Wanderer resumed")
+
+    def on_speech_activity(self):
+        """Called when user speech is detected. Pauses wandering + resets idle timer."""
+        if not self._active:
+            return
+        if not self._paused:
+            self.pause()
+        self._reset_resume_timer()
+
+    def on_ai_speaking(self):
+        """Called when AI starts responding. Keeps the pause active + resets timer."""
+        if not self._active or not self._paused:
+            return
+        self._reset_resume_timer()
+
+    def _reset_resume_timer(self):
+        """Cancel existing timer and start a new one."""
+        self._cancel_resume_timer()
+        self._resume_timer = threading.Timer(self._resume_delay, self._auto_resume)
+        self._resume_timer.daemon = True
+        self._resume_timer.start()
+
+    def _cancel_resume_timer(self):
+        """Cancel any pending resume timer."""
+        if self._resume_timer:
+            self._resume_timer.cancel()
+            self._resume_timer = None
+
+    def _auto_resume(self):
+        """Called by the timer after idle timeout. Resumes wandering."""
+        if self._active and self._paused and self._auto_paused:
+            self.resume()
+
     def start(self):
         """Start wandering."""
         if self._active and self._thread and self._thread.is_alive():
@@ -418,6 +532,9 @@ class Wanderer:
             return {"result": "ok", "message": "not wandering"}
 
         self._active = False
+        self._paused = False
+        self._auto_paused = False
+        self._cancel_resume_timer()
         if self._thread:
             self._thread.join(timeout=5.0)
             self._thread = None
@@ -461,6 +578,11 @@ class Wanderer:
         try:
             while self._active:
                 t0 = time.perf_counter()
+
+                # While paused, keep thread alive but skip navigation
+                if self._paused:
+                    time.sleep(0.2)
+                    continue
 
                 frame = capture_fn()
                 if frame is None:

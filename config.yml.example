@@ -207,10 +207,16 @@ face_tracker:
   enabled: false
 
 wanderer:
-  # Autonomous wandering mode using Intel DPT-Large depth estimation
+  # Autonomous wandering using depth estimation for obstacle avoidance
   # AI can toggle this to freely explore VRChat maps while avoiding walls
-  # Requires: pip install transformers (for DPT model)
   enabled: false
+
+  # Depth model: "depth-anything-v2-small" (fast, ~50ms), "depth-anything-v2-base" (balanced),
+  #              "dpt-large" (heavy, ~450ms)
+  model: "depth-anything-v2-small"
+
+  # Use FP16 on GPU (halves VRAM, ~2x faster, no quality loss)
+  fp16: true
 
 vision:
   # Screen capture for Gemini Live vision

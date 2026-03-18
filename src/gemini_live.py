@@ -158,6 +158,7 @@ class GeminiLiveSession:
         self._last_audio_time = 0  # Track when last audio was received
         self._idle_timeout = 15.0  # Stop talking animations after 15s idle
         self._pending_finalize_task = None
+        self._wanderer = None  # Set externally from main.py
         self._usage_metadata = {
             "prompt_tokens": 0,
             "response_tokens": 0,
@@ -793,6 +794,9 @@ class GeminiLiveSession:
                                     self._emotion_system.start_speaking()
                                 # Track last audio time for idle detection
                                 self._last_audio_time = time.time()
+                                # Keep wanderer paused while AI is speaking
+                                if self._wanderer and self._wanderer._paused:
+                                    self._wanderer.on_ai_speaking()
                                 # When using external TTS, discard Gemini audio
                                 if not self._tts:
                                     await self._audio_in_queue.put(part.inline_data.data)
@@ -808,6 +812,9 @@ class GeminiLiveSession:
                             # User is speaking - mark activity to cancel idle animation
                             if self._emotion_system:
                                 self._emotion_system.mark_activity()
+                            # Pause wanderer when someone speaks
+                            if self._wanderer and self._wanderer.active:
+                                self._wanderer.on_speech_activity()
                             # Input transcription arrives as chunks - accumulate like output
                             self._input_transcript_buffer += input_trans.text
                             # Broadcast chunk to WebUI (it appends via +=)
