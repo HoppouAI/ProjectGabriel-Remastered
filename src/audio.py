@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 import pygame
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,8 @@ class AudioManager:
         self._using_boosted_sound = False  # True if using boosted Sound instead of music
         self._boosted_sound_channel = None  # Channel for boosted playback
         self._lyrics = []  # Parsed SRT entries: [(start_sec, end_sec, text), ...]
+        self._pygame_ready = False
         self._setup_devices()
-        self._setup_pygame()
 
     def _setup_devices(self):
         if self.config.input_device is not None:
@@ -39,7 +40,10 @@ class AudioManager:
             self.output_device = self.pya.get_default_output_device_info()["index"]
 
     def _setup_pygame(self):
+        if self._pygame_ready:
+            return
         pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=2048)
+        self._pygame_ready = True
 
     def open_input_stream(self):
         return self.pya.open(
@@ -62,6 +66,8 @@ class AudioManager:
 
     def is_music_playing(self) -> bool:
         """Check if music is currently playing."""
+        if not self._pygame_ready:
+            return False
         return pygame.mixer.music.get_busy() or pygame.mixer.get_busy()
 
     def get_voice_volume_multiplier(self) -> float:
@@ -142,6 +148,7 @@ class AudioManager:
         return sorted(files)
 
     def play_music(self, filename: str, volume: int = 50) -> bool:
+        self._setup_pygame()
         filepath = os.path.join(self.config.music_dir, filename)
         if not os.path.exists(filepath):
             return False
@@ -196,6 +203,7 @@ class AudioManager:
         
         # Fallback: try pygame.mixer.Sound for shorter files
         try:
+            self._setup_pygame()
             sound = pygame.mixer.Sound(filepath)
             return sound.get_length()
         except Exception:
@@ -283,6 +291,8 @@ class AudioManager:
         }
 
     def stop_music(self):
+        if not self._pygame_ready:
+            return
         pygame.mixer.music.stop()
         pygame.mixer.stop()
         self._music_start_time = None
@@ -351,6 +361,7 @@ class AudioManager:
             return True
 
     def play_sfx_file(self, filepath: str, boost: int = 0) -> bool:
+        self._setup_pygame()
         try:
             sound = pygame.mixer.Sound(filepath)
             if boost > 0:
@@ -380,9 +391,12 @@ class AudioManager:
 
     def stop_sfx(self):
         """Stop all currently playing sound effects."""
+        if not self._pygame_ready:
+            return
         pygame.mixer.stop()
         logger.info("All SFX playback stopped")
 
     def cleanup(self):
-        pygame.mixer.quit()
+        if self._pygame_ready:
+            pygame.mixer.quit()
         self.pya.terminate()

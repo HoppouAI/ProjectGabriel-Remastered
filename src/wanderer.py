@@ -134,7 +134,7 @@ class Wanderer:
         # Try auto-loading processor; fall back to manual construction
         try:
             from transformers import AutoImageProcessor
-            self._transform = AutoImageProcessor.from_pretrained(repo)
+            self._transform = AutoImageProcessor.from_pretrained(repo, use_fast=True)
         except (OSError, Exception) as e:
             logger.warning(f"AutoImageProcessor failed for {repo}: {e}, using manual processor")
             from transformers import DPTImageProcessor
