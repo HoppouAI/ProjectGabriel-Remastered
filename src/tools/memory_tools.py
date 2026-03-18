@@ -12,7 +12,7 @@ class MemoryTools(BaseTool):
         return [
             types.FunctionDeclaration(
                 name="memory",
-                description="Persistent memory system. Actions: save, read, update, delete, list, search, stats, pin, promote. Memory types: long_term (permanent), short_term (7 days), quick_note (6 hours).\n**Invocation Condition:** Call with action=save when you learn something worth remembering. Call with action=search before asking someone a question you might already know. Always include actual usernames, never generic terms like 'User'.",
+                description="YOUR persistent memory system. These are YOUR memories -- things YOU learned, people YOU met, experiences YOU had. Actions: save, read, update, delete, list, search, stats, pin, promote. Memory types: long_term (permanent), short_term (7 days), quick_note (6 hours).\n**Invocation Condition:** Call with action=save when you learn something worth remembering. Call with action=search before asking someone a question you might already know. Always include actual usernames, never generic terms like 'User'. When telling the user about saved memories, say 'I saved/remember' not 'saved for you'.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
