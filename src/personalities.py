@@ -52,12 +52,16 @@ class PersonalityManager:
         })
         self.current = personality_id
         prompt = p.get("prompt", "")
+        avatar_id = p.get("avatar_id", "")
         logger.info(f"Switched to personality: {personality_id}")
-        return {
+        result = {
             "result": "ok",
             "name": p.get("name", personality_id),
             "personality_prompt": f"PERSONALITY SWITCH: You are now {p.get('name', personality_id)}. {prompt}",
         }
+        if avatar_id:
+            result["avatar_id"] = avatar_id
+        return result
 
     def get_current(self):
         if self.current and self.current in self.personalities:

@@ -34,6 +34,9 @@ class EmotionSystem:
         self._current_talking_index = 0
         self._talking_switch_interval = 5.0  # Switch talking animation every 5 seconds
         
+        # Crouch/crawl suppression -- talking anims would cancel these poses
+        self._crouching = False
+        
         # Load configuration
         self._load_config()
 
@@ -149,6 +152,11 @@ class EmotionSystem:
         # Don't start talking animations if a manual animation is playing
         if self._manual_animation_active:
             logger.debug("Manual animation active, skipping talking animations")
+            return
+        
+        # Don't start talking animations while crouching/crawling
+        if self._crouching:
+            logger.debug("Crouching/crawling active, skipping talking animations")
             return
         
         self._is_speaking = True
