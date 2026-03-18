@@ -38,7 +38,7 @@ class VRChatAPITools(BaseTool):
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "includeIds": {"type": "BOOLEAN", "description": "If true, also return user IDs alongside names. Default false."},
+                        "includeIds": {"type": "STRING", "description": "Set to 'true' to also return user IDs alongside names. Default false."},
                     },
                 },
             ),
@@ -128,7 +128,7 @@ class VRChatAPITools(BaseTool):
         elif name == "switchAvatar":
             return await self._switch_avatar(args["nameOrId"])
         elif name == "getInstancePlayers":
-            return self._get_instance_players(args.get("includeIds", False))
+            return self._get_instance_players(str(args.get("includeIds", "false")).lower() == "true")
         elif name == "invitePlayer":
             return await self._invite_player(args["player"])
         elif name == "requestInvite":
