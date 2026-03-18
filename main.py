@@ -157,6 +157,8 @@ async def main():
         face_tracker.set_speaking_callback(lambda: session._speaking)
         if tracker:
             face_tracker.set_player_tracker(tracker)
+        if wanderer:
+            face_tracker.set_wanderer(wanderer)
         face_tracker.start()
 
     logger.info("ProjectGabriel starting...")

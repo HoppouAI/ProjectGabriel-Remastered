@@ -49,6 +49,7 @@ class FaceTracker:
         # External state reference - set by main.py / gemini_live
         self._speaking_ref = None  # callable that returns True when AI is speaking
         self._player_tracker_ref = None  # reference to PlayerTracker to check if following
+        self._wanderer_ref = None  # reference to Wanderer to check if wandering
 
         # Tracking state
         self._locked_id = None
@@ -81,6 +82,10 @@ class FaceTracker:
         """Set reference to PlayerTracker so face tracker yields when following."""
         self._player_tracker_ref = tracker
 
+    def set_wanderer(self, wanderer):
+        """Set reference to Wanderer so face tracker yields while wandering."""
+        self._wanderer_ref = wanderer
+
     def _is_speaking(self):
         if self._speaking_ref is not None:
             return self._speaking_ref()
@@ -89,6 +94,11 @@ class FaceTracker:
     def _player_tracker_active(self):
         if self._player_tracker_ref is not None:
             return self._player_tracker_ref.active
+        return False
+
+    def _wanderer_active(self):
+        if self._wanderer_ref is not None:
+            return self._wanderer_ref._active and not self._wanderer_ref._paused
         return False
 
     def _load_config(self):
@@ -248,8 +258,8 @@ class FaceTracker:
             while self._active:
                 t0 = time.perf_counter()
 
-                # Pause detection when player tracker is following
-                if self._player_tracker_active():
+                # Pause detection when player tracker is following or wanderer is active
+                if self._player_tracker_active() or self._wanderer_active():
                     self._zero_osc()
                     time.sleep(0.5)
                     continue
@@ -396,12 +406,12 @@ class FaceTracker:
         self._smoothed_look_v = new_look_v
 
     def _send_osc(self):
-        """Send smoothed look values to VRChat. Yields when player tracker is following."""
+        """Send smoothed look values to VRChat. Yields when player tracker or wanderer is active."""
         if not self.osc:
             return
 
-        # Don't fight the player tracker for LookHorizontal
-        if self._player_tracker_active():
+        # Don't fight the player tracker or wanderer for LookHorizontal
+        if self._player_tracker_active() or self._wanderer_active():
             return
 
         client = self.osc.client
