@@ -155,6 +155,10 @@ class FaceTracker:
                 import urllib.request
                 urllib.request.urlretrieve(FACE_MODEL_URL, str(model_path))
             logger.info(f"Downloaded {FACE_MODEL_NAME} ({model_path.stat().st_size / 1024 / 1024:.1f} MB)")
+            # Re-save with current ultralytics to fix old format references
+            _tmp = YOLO(str(model_path))
+            _tmp.save(str(model_path))
+            del _tmp
 
         self.model = YOLO(str(model_path))
 
