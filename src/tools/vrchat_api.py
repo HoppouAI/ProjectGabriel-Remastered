@@ -34,7 +34,7 @@ class VRChatAPITools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="getInstancePlayers",
-                description="Get a list of all players currently in the same VRChat instance. Returns each player's display name. Useful for knowing who is around you.\n**Invocation Condition:** Call when asked who is in the instance, who is here, who is around, or to list the people in the room/world.",
+                description="Get a list of all players currently in the same VRChat instance as you. Returns each player's display name. Useful for knowing who is around you.\n**Invocation Condition:** Call when asked who is in the instance, who is here, who is around, or to list the people in the room/world.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -44,7 +44,7 @@ class VRChatAPITools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="invitePlayer",
-                description="Invite a player to your current VRChat instance. Use the exact display name from getInstancePlayers or a user ID.\n**Invocation Condition:** Call when asked to invite someone to the instance or world.",
+                description="Invite a player to your current VRChat instance. Use the exact display name from getInstancePlayers or a user ID.\n**Invocation Condition:** Call when asked to invite someone to your instance or world.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -94,7 +94,7 @@ class VRChatAPITools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="updateStatus",
-                description="Update your VRChat profile status description, online status, and/or bio. At least one field must be provided. statusDescription has a 32 character max limit.\n**Invocation Condition:** Call when asked to change your status, status description, bio, or profile text.",
+                description="Update YOUR OWN VRChat profile status description, online status, and/or bio. These are YOUR profile settings. At least one field must be provided. statusDescription has a 32 character max limit.\n**Invocation Condition:** Call when asked to change your status, status description, bio, or profile text.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -106,12 +106,12 @@ class VRChatAPITools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="getCurrentStatus",
-                description="Get your current VRChat profile status, status description, and bio.\n**Invocation Condition:** Call when asked what your current status is, what your bio says, or to check your profile.",
+                description="Get YOUR OWN current VRChat profile status, status description, and bio.\n**Invocation Condition:** Call when asked what your current status is, what your bio says, or to check your own profile.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="getFriendInfo",
-                description="Look up a friend by name and get their current profile info including online status, status description, bio, pronouns, and platform. Searches your friends list by display name.\n**Invocation Condition:** Call when asked about a friend's status, whether they are online, or for info about a specific friend.",
+                description="Look up one of YOUR friends by name. This searches YOUR OWN friends list (not the user's) and returns their live profile info including online status, status description, bio, pronouns, and platform.\n**Invocation Condition:** Call when asked about a friend's status, whether someone is online, or for info about a specific friend. These are YOUR friends.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
