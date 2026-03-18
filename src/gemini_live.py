@@ -610,11 +610,15 @@ class GeminiLiveSession:
                     if self._emotion_system:
                         self._emotion_system.stop_speaking()
                     self.osc.set_typing(False)
-            # Check if idle animation should start
-            if self._emotion_system:
-                self._emotion_system.check_idle()
-            # Start idle chatbox when idle and no music playing
+            # Check music state once per iteration
             music_playing = self.audio.get_music_progress() is not None
+            # Don't trigger idle during music playback
+            if self._emotion_system:
+                if music_playing:
+                    self._emotion_system.mark_activity()
+                else:
+                    self._emotion_system.check_idle()
+            # Start idle chatbox when idle and no music playing
             if not self._speaking and not music_playing:
                 emo = self._emotion_system
                 if (emo and emo._idle_active) or not emo:
