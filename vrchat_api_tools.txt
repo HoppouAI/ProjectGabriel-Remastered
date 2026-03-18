@@ -1,0 +1,14 @@
+VRChat API Tools
+================
+
+searchAvatars
+switchAvatar
+getInstancePlayers
+invitePlayer
+requestInvite
+getOwnAvatar
+getAvatarInfo
+searchWorlds 
+updateStatus 
+getCurrentStatus 
+getFriendInfo
