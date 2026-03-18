@@ -19,14 +19,22 @@ src/
   gemini_live.py         -- Gemini Live session (send/receive audio, tool dispatch, transcription, thinking)
   audio.py               -- PyAudio I/O, voice boost/distortion, pygame music/SFX playback
   vrchat.py              -- VRChat OSC client (chatbox, voice, movement, grab/drop/use, smooth look)
+  vrchatapi.py           -- VRChat REST API client (auth, avatar switch, friends, status, invites)
   tools.py               -- Function declarations for Gemini + ToolHandler dispatcher
   tracker.py             -- YOLOv8 person detection + OSC movement control (bettercam)
-  face_tracker.py         -- YOLOv8-face face detection + smooth face-tracking via OSC (mss)
+  face_tracker.py        -- YOLOv8-face face detection + smooth face-tracking via OSC (mss)
   personalities.py       -- Personality switching system (list/switch/get via tools)
+  avatars.py             -- VRCX avatar search API integration
+  instance_monitor.py    -- VRChat instance join/leave monitoring via API polling
+  wanderer.py            -- Random autonomous wandering behavior via OSC movement
+  idle_chatbox.py        -- Idle chatbox banner display in VRChat chatbox
+  tts.py                 -- Google Cloud TTS integration for voice synthesis
   myinstants.py          -- MyInstants.com sound search & download
   memory.py              -- Persistent memory system (MongoDB Atlas / SQLite)
   emotions.py            -- Avatar emotion/animation system via OSC
 config/
+  voices.yml             -- Voice configuration (gitignored, see .example)
+  voices.yml.example     -- Template voice config
   prompts/
     prompts.yml          -- Named system prompts (gitignored, see .example)
     appends.yml          -- Auto-appended context (gitignored, see .example)
@@ -37,6 +45,7 @@ config.yml.example       -- Template config with placeholder values
 webui/                   -- Dashboard + memory manager HTML/JS/CSS
 models/yolov8/           -- YOLOv8n model (auto-downloaded) + config.json
 sfx/music/               -- Local music files for playback
+data/conversations/      -- Auto-saved conversation transcripts (JSON)
 ```
 
 ## SDK Rules
@@ -92,7 +101,7 @@ Keys are defined in `config.yml` (primary + backup list). On 429/quota errors, `
 ### Face Tracking
 - Model: `yolov8n-face.pt` auto-downloaded from GitHub (akanametov/yolo-face)
 - Two modes: Speaking (locks on closest face), Idle (random glances every 5-10s)
-- Smooth EMA turning at 30 FPS, yields to player tracker when active
+- Smooth EMA turning at 30 FPS, yields to player tracker and wanderer when active
 - Screen capture via `mss` (avoids bettercam conflict with person tracker)
 - Lazy-imported -- when `face_tracker.enabled: false`, module and deps not loaded
 - Toggled via `face_tracker.enabled` in config
@@ -107,6 +116,25 @@ Keys are defined in `config.yml` (primary + backup list). On 429/quota errors, `
 - Configurable via `gemini.thinking.budget` and `gemini.thinking.include_thoughts`
 - Thought summaries displayed in WebUI console and VRChat chatbox ("Thinking...")
 - `types.ThinkingConfig` wired in `gemini_live.py :: _build_config()`
+
+### VRChat API
+- REST API client in `src/vrchatapi.py` -- base URL `https://api.vrchat.cloud/api/1`
+- Basic auth with cookie persistence (`data/vrchat_cookies.json`), auto-TOTP 2FA via pyotp
+- Tools: `switchAvatar`, `searchAvatars` (VRCX API), `getOwnAvatar`, `getAvatarInfo`, `updateStatus`, `getCurrentStatus`, `getFriendInfo`, `searchWorlds`, `inviteSelfToInstance`
+- statusDescription has a 32-char max limit (API rejects longer values)
+- Friends list cached locally, refreshed periodically
+
+### Idle Chatbox
+- `src/idle_chatbox.py` -- customizable banner shown in VRChat chatbox when AI is idle
+- Displays banner text, dividers, up to 3 configurable lines, active session time, and clock
+- Starts when AI enters idle state, stops on thinking/speaking/reconnect
+- Suppressed when music is playing to avoid overwriting the now-playing display
+- Config under `vrchat.idle_chatbox` (enabled, banner, divider, divider_length, lines, update_interval)
+
+### Wanderer
+- `src/wanderer.py` -- random autonomous wandering behavior via OSC movement
+- When active, face tracker yields control to avoid conflicts
+- Toggled via tools, supports pause/resume
 
 ### WebUI
 - FastAPI control server on port 8766
@@ -123,3 +151,4 @@ Keys are defined in `config.yml` (primary + backup list). On 429/quota errors, `
 - PyAudio requires system-level dependencies (PortAudio)
 - For VRChat: user needs a virtual audio cable to route AI output to VRChat mic input
 - Sensitive files (config.yml, prompt YMLs) are gitignored -- only .example files tracked
+- Commit every meaningful change as a separate, logical commit -- group related changes per feature, keep commits realistic and focused
