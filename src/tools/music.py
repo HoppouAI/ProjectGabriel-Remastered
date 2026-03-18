@@ -12,7 +12,7 @@ class MusicTools(BaseTool):
         return [
             types.FunctionDeclaration(
                 name="listMusic",
-                description="List all available local music files that can be played.\n**Invocation Condition:** Call when asked what songs are available, or after a playMusic failure to get the correct filename.",
+                description="List all available local music files that can be played. You MUST read the song names out loud to the user after calling this -- they cannot see the tool response.\n**Invocation Condition:** Call when asked what songs are available, or after a playMusic failure to get the correct filename.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
