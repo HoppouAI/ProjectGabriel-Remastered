@@ -271,7 +271,113 @@ def get_tool_declarations(config=None):
                 name="listVoices",
                 description="List custom voices available for switching. Each voice has a display name and description. When telling the user about voices, use ONLY the display_name, never the internal ID or provider name.\n**Invocation Condition:** Call when asked what voices are available, or before switching to a custom voice.",
                 parameters={"type": "OBJECT", "properties": {}},
-            ),        ]
+            ),
+            types.FunctionDeclaration(
+                name="searchAvatars",
+                description="Search for VRChat avatars by name. Returns up to 25 avatar names. Use switchAvatar with the exact name to switch.\n**Invocation Condition:** Call when asked to find, search, or look for avatars.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "Avatar name or keyword to search for"},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="switchAvatar",
+                description="Switch to a VRChat avatar by name or ID. Checks the local cache first, then searches online if needed. Use the exact name from searchAvatars results.\n**Invocation Condition:** Call when asked to change avatar, switch avatar, or put on a specific avatar.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "nameOrId": {"type": "STRING", "description": "Avatar name (from search results or cache) or avatar ID (avtr_xxx)"},
+                    },
+                    "required": ["nameOrId"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="getInstancePlayers",
+                description="Get a list of all players currently in the same VRChat instance. Returns each player's display name. Useful for knowing who is around you.\n**Invocation Condition:** Call when asked who is in the instance, who is here, who is around, or to list the people in the room/world.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "includeIds": {"type": "BOOLEAN", "description": "If true, also return user IDs alongside names. Default false."},
+                    },
+                },
+            ),
+            types.FunctionDeclaration(
+                name="invitePlayer",
+                description="Invite a player to your current VRChat instance. Use the exact display name from getInstancePlayers or a user ID.\n**Invocation Condition:** Call when asked to invite someone to the instance or world.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "player": {"type": "STRING", "description": "Player display name or user ID (usr_xxx) to invite"},
+                    },
+                    "required": ["player"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="requestInvite",
+                description="Request an invite from a player to join their instance.\n**Invocation Condition:** Call when asked to request an invite from someone.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "player": {"type": "STRING", "description": "Player display name or user ID (usr_xxx) to request invite from"},
+                    },
+                    "required": ["player"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="getOwnAvatar",
+                description="Get information about your currently equipped VRChat avatar. Returns name, description, author, and performance ratings.\n**Invocation Condition:** Call when asked what avatar you are wearing, what your current avatar is, or for details about your avatar.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="getAvatarInfo",
+                description="Get information about a VRChat avatar by its ID. Returns name, description, author, and performance ratings.\n**Invocation Condition:** Call when asked about a specific avatar's details using its ID.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "avatarId": {"type": "STRING", "description": "Avatar ID (avtr_xxx) to look up"},
+                    },
+                    "required": ["avatarId"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="searchWorlds",
+                description="Search for VRChat worlds by name or keyword. Returns world names, IDs, author, capacity, player count, and favorites.\n**Invocation Condition:** Call when asked to find, search, or look for VRChat worlds or maps.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "World name or keyword to search for"},
+                        "count": {"type": "INTEGER", "description": "Max results to return (1-25, default 10)"},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="updateStatus",
+                description="Update your VRChat profile status description, online status, and/or bio. At least one field must be provided.\n**Invocation Condition:** Call when asked to change your status, status description, bio, or profile text.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "statusDescription": {"type": "STRING", "description": "The short status description shown on your profile (the tagline under your name)"},
+                        "status": {"type": "STRING", "description": "Online status: 'active', 'join me', 'ask me', 'busy', or 'offline'"},
+                        "bio": {"type": "STRING", "description": "Your profile bio text"},
+                    },
+                },
+            ),
+            types.FunctionDeclaration(
+                name="getFriendInfo",
+                description="Look up a friend by name and get their current profile info including online status, status description, bio, pronouns, and platform. Searches your friends list by display name.\n**Invocation Condition:** Call when asked about a friend's status, whether they are online, or for info about a specific friend.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Friend's display name to look up"},
+                    },
+                    "required": ["name"],
+                },
+            ),
+        ]
     
     # Add emotion function declarations if enabled
     if config:
@@ -344,6 +450,9 @@ class ToolHandler:
         self.config = config
         self.session = None
         self.live_session = None
+        self.vrchat_api = None
+        self._current_avatar_id = None
+        self.instance_monitor = None
 
     async def handle(self, function_call) -> types.FunctionResponse:
         name = function_call.name
@@ -488,24 +597,40 @@ class ToolHandler:
             return result
         elif name == "switchPersonality":
             result = self.personality.switch(args["personalityId"])
-            if "personality_prompt" in result and self.session:
-                await self.session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[types.Part.from_text(text=result["personality_prompt"])],
-                    ),
-                    turn_complete=True,
-                )
-            return {k: v for k, v in result.items() if k != "personality_prompt"}
+            # Auto-switch avatar if personality has one configured
+            avatar_id = result.get("avatar_id")
+            if avatar_id and avatar_id != self._current_avatar_id:
+                try:
+                    api = self._get_vrchat_api()
+                    av_result = await api.select_avatar(avatar_id)
+                    if av_result.get("result") == "ok" or av_result.get("avatar_id"):
+                        self._current_avatar_id = avatar_id
+                        logger.info(f"Auto-switched avatar to {avatar_id} for personality '{args['personalityId']}'")
+                    else:
+                        logger.warning(f"Failed to auto-switch avatar: {av_result.get('error', 'unknown')}")
+                except Exception as e:
+                    logger.warning(f"Avatar auto-switch failed: {e}")
+            response = {k: v for k, v in result.items() if k != "avatar_id"}
+            return response
         elif name == "getCurrentPersonality":
             result = self.personality.get_current()
             result["result"] = "ok"
             return result
         elif name == "vrchatCrouch":
             self.osc.toggle_crouch()
+            emo = get_emotion_system()
+            if emo:
+                emo._crouching = not emo._crouching
+                if emo._crouching and emo._is_speaking:
+                    emo.stop_speaking()
             return {"result": "ok"}
         elif name == "vrchatCrawl":
             self.osc.toggle_crawl()
+            emo = get_emotion_system()
+            if emo:
+                emo._crouching = not emo._crouching
+                if emo._crouching and emo._is_speaking:
+                    emo.stop_speaking()
             return {"result": "ok"}
         elif name == "vrchatMove":
             return await self._vrchat_move(args["direction"], args["duration"], args.get("speed", "normal"))
@@ -528,13 +653,13 @@ class ToolHandler:
             direction = args.get("direction", "right")
             duration = min(max(float(args.get("duration", 0.5)), 0.1), 10.0)
             speed = args.get("speed", "normal")
-            await asyncio.to_thread(self.osc.look, direction, duration, speed)
+            asyncio.get_event_loop().run_in_executor(None, self.osc.look, direction, duration, speed)
             return {"result": "ok"}
         elif name == "vrchatLookVertical":
             direction = args.get("direction", "up")
             duration = min(max(float(args.get("duration", 0.5)), 0.1), 10.0)
             speed = args.get("speed", "normal")
-            await asyncio.to_thread(self.osc.look_vertical, direction, duration, speed)
+            asyncio.get_event_loop().run_in_executor(None, self.osc.look_vertical, direction, duration, speed)
             return {"result": "ok"}
         elif name == "switchTTSProvider":
             return await self._switch_tts(args.get("provider", ""), args.get("voice"))
@@ -542,6 +667,26 @@ class ToolHandler:
             return self._list_tts_providers()
         elif name == "listVoices":
             return self._list_voices()
+        elif name == "searchAvatars":
+            return await self._search_avatars(args["query"])
+        elif name == "switchAvatar":
+            return await self._switch_avatar(args["nameOrId"])
+        elif name == "getInstancePlayers":
+            return self._get_instance_players(args.get("includeIds", False))
+        elif name == "invitePlayer":
+            return await self._invite_player(args["player"])
+        elif name == "requestInvite":
+            return await self._request_invite(args["player"])
+        elif name == "getOwnAvatar":
+            return await self._get_own_avatar()
+        elif name == "getAvatarInfo":
+            return await self._get_avatar_info(args["avatarId"])
+        elif name == "searchWorlds":
+            return await self._search_worlds(args["query"], int(args.get("count", 10)))
+        elif name == "updateStatus":
+            return await self._update_status(args.get("statusDescription"), args.get("status"), args.get("bio"))
+        elif name == "getFriendInfo":
+            return await self._get_friend_info(args["name"])
         # Default fallback - always return something
         return {"result": "error", "message": f"unknown function: {name}"}
 
@@ -579,9 +724,12 @@ class ToolHandler:
             return {"result": "error", "message": "download failed"}
         logger.info(f"playSoundboard: playing '{entry['title']}' from {filepath} (boost={boost}, repeat={repeat})")
         self.audio.play_sfx_file(filepath, boost=boost)
-        for i in range(1, repeat):
-            await asyncio.sleep(delay)
-            self.audio.play_sfx_file(filepath, boost=boost)
+        if repeat > 1:
+            async def _repeat_sfx():
+                for i in range(1, repeat):
+                    await asyncio.sleep(delay)
+                    self.audio.play_sfx_file(filepath, boost=boost)
+            asyncio.create_task(_repeat_sfx())
         return {"result": "ok", "name": entry["title"], "boost": boost, "repeat": repeat}
 
     async def _play_random_sfx(self, boost=0, repeat=1, delay=1.0):
@@ -591,21 +739,34 @@ class ToolHandler:
         picks = get_random_sounds(repeat)
         if not picks:
             return {"result": "error", "message": "No sounds cached yet. Use searchSoundboard or playSoundboard first to build up the sound library."}
-        played = []
-        for i, pick in enumerate(picks):
-            if pick.get("_local"):
-                filepath = pick["mp3"]
-            else:
-                filepath = await download_sound(pick["mp3"])
-            if not filepath:
-                logger.warning(f"playRandomSoundboard: download failed for '{pick['title']}'")
-                continue
-            logger.info(f"playRandomSoundboard: [{i+1}/{repeat}] playing '{pick['title']}' (boost={boost})")
-            self.audio.play_sfx_file(filepath, boost=boost)
-            played.append(pick["title"])
-            if i < len(picks) - 1:
-                await asyncio.sleep(delay)
-        return {"result": "ok", "played": played, "count": len(played), "boost": boost}
+        # Play first sound immediately, schedule the rest in background
+        first = picks[0]
+        if first.get("_local"):
+            filepath = first["mp3"]
+        else:
+            filepath = await download_sound(first["mp3"])
+        if not filepath:
+            return {"result": "error", "message": f"Download failed for '{first['title']}'"}
+        logger.info(f"playRandomSoundboard: [1/{repeat}] playing '{first['title']}' (boost={boost})")
+        self.audio.play_sfx_file(filepath, boost=boost)
+        played_names = [first["title"]]
+        if len(picks) > 1:
+            remaining = picks[1:]
+            async def _play_remaining():
+                for i, pick in enumerate(remaining):
+                    await asyncio.sleep(delay)
+                    if pick.get("_local"):
+                        fp = pick["mp3"]
+                    else:
+                        fp = await download_sound(pick["mp3"])
+                    if not fp:
+                        logger.warning(f"playRandomSoundboard: download failed for '{pick['title']}'")
+                        continue
+                    logger.info(f"playRandomSoundboard: [{i+2}/{repeat}] playing '{pick['title']}' (boost={boost})")
+                    self.audio.play_sfx_file(fp, boost=boost)
+            asyncio.create_task(_play_remaining())
+            played_names.extend(p["title"] for p in remaining)
+        return {"result": "ok", "played": played_names, "count": len(played_names), "boost": boost}
 
     async def _vrchat_move(self, direction: str, duration: float, speed: str = "normal"):
         """Move in a direction for a specified duration with speed control."""
@@ -619,9 +780,11 @@ class ToolHandler:
         # Start movement with speed
         self.osc.start_move(direction, speed)
         
-        # Wait for duration then stop
-        await asyncio.sleep(duration)
-        self.osc.stop_all_movement()
+        # Schedule stop in background so tool response returns immediately
+        async def _stop_after():
+            await asyncio.sleep(duration)
+            self.osc.stop_all_movement()
+        asyncio.create_task(_stop_after())
         
         return {"result": "ok", "direction": direction, "duration": duration, "speed": speed}
 
@@ -689,3 +852,175 @@ class ToolHandler:
                     "providers": [p for p in ("qwen3", "hoppou", "chirp3_hd") if p in vdef],
                 }
         return {"result": "ok", "voices": voices}
+
+    def _get_vrchat_api(self):
+        if self.vrchat_api is None:
+            from src.vrchatapi import VRChatAPI
+            self.vrchat_api = VRChatAPI(self.config)
+        return self.vrchat_api
+
+    async def _search_avatars(self, query):
+        from src.avatars import search_avatars
+        results = await search_avatars(query, max_results=25)
+        if not results:
+            return {"result": "error", "message": f"No avatars found for '{query}'"}
+        names = [av["name"] for av in results]
+        return {"result": "ok", "count": len(results), "avatars": names}
+
+    async def _switch_avatar(self, name_or_id):
+        from src.avatars import switch_avatar
+        api = self._get_vrchat_api()
+        result = await switch_avatar(api, name_or_id)
+        if result.get("result") == "ok":
+            self._current_avatar_id = result.get("avatar_id")
+        return result
+
+    def _get_instance_players(self, include_ids=False):
+        if not self.instance_monitor:
+            return {"result": "error", "message": "Instance monitor not available"}
+        players = self.instance_monitor.get_players()
+        location = self.instance_monitor.current_location
+        if not players:
+            if not location:
+                return {"result": "ok", "message": "Not currently in a VRChat instance", "players": [], "count": 0}
+            return {"result": "ok", "message": "No players detected yet", "location": location, "players": [], "count": 0}
+        if include_ids:
+            player_list = [{"name": p["name"], "id": p["id"]} for p in players]
+        else:
+            player_list = [p["name"] for p in players]
+        return {"result": "ok", "location": location, "count": len(player_list), "players": player_list}
+
+    def _resolve_player_id(self, player):
+        """Resolve player name to user ID using instance monitor then friends cache."""
+        if player.startswith("usr_"):
+            return player
+        player_lower = player.lower()
+        if self.instance_monitor:
+            for p in self.instance_monitor.get_players():
+                if p["name"].lower() == player_lower:
+                    return p["id"]
+        from src.vrchatapi import VRChatAPI
+        for f in VRChatAPI.load_cached_friends():
+            if f.get("displayName", "").lower() == player_lower:
+                return f["id"]
+        return None
+
+    async def _invite_player(self, player):
+        api = self._get_vrchat_api()
+        user_id = self._resolve_player_id(player)
+        if not user_id:
+            return {"result": "error", "message": f"Could not find player '{player}' -- use getInstancePlayers first or provide a user ID (usr_xxx)"}
+        location = self.instance_monitor.current_location if self.instance_monitor else ""
+        if not location:
+            user_data = await api.get_current_user()
+            if isinstance(user_data, dict):
+                location = user_data.get("location", "") or ""
+        if not location or location in ("", "offline", "private"):
+            return {"result": "error", "message": "Not currently in a VRChat instance"}
+        result = await api.invite_user(user_id, location)
+        return result
+
+    async def _request_invite(self, player):
+        api = self._get_vrchat_api()
+        user_id = self._resolve_player_id(player)
+        if not user_id:
+            return {"result": "error", "message": f"Could not find player '{player}' -- use getInstancePlayers first or provide a user ID (usr_xxx)"}
+        result = await api.request_invite(user_id)
+        return result
+
+    async def _get_own_avatar(self):
+        api = self._get_vrchat_api()
+        data = await api.get_own_avatar()
+        if "error" in data:
+            return data
+        return {
+            "result": "ok",
+            "name": data.get("name", ""),
+            "description": data.get("description", ""),
+            "author": data.get("authorName", ""),
+            "id": data.get("id", ""),
+            "performance": data.get("performance", {}),
+        }
+
+    async def _get_avatar_info(self, avatar_id):
+        api = self._get_vrchat_api()
+        data = await api.get_avatar(avatar_id)
+        if "error" in data:
+            return data
+        return {
+            "result": "ok",
+            "name": data.get("name", ""),
+            "description": data.get("description", ""),
+            "author": data.get("authorName", ""),
+            "id": data.get("id", ""),
+            "performance": data.get("performance", {}),
+        }
+
+    async def _search_worlds(self, query, count=10):
+        api = self._get_vrchat_api()
+        n = max(1, min(count, 25))
+        data = await api.search_worlds(query, n=n)
+        if isinstance(data, dict) and "error" in data:
+            return data
+        if not data:
+            return {"result": "error", "message": f"No worlds found for '{query}'"}
+        worlds = []
+        for w in data:
+            worlds.append({
+                "name": w.get("name", ""),
+                "id": w.get("id", ""),
+                "author": w.get("authorName", ""),
+                "players": w.get("occupants", 0),
+                "capacity": w.get("capacity", 0),
+                "favorites": w.get("favorites", 0),
+            })
+        return {"result": "ok", "count": len(worlds), "worlds": worlds}
+
+    async def _update_status(self, status_description=None, status=None, bio=None):
+        if bio is not None and self.config and not self.config.vrchat_api_allow_bio_edit:
+            return {"result": "error", "message": "Bio editing is disabled."}
+        api = self._get_vrchat_api()
+        result = await api.update_status(
+            status_description=status_description,
+            status=status,
+            bio=bio,
+        )
+        return result
+
+    async def _get_friend_info(self, name):
+        from src.vrchatapi import VRChatAPI
+        name_lower = name.lower()
+        # Search friends cache for matching name
+        friends = VRChatAPI.load_cached_friends()
+        match = None
+        for f in friends:
+            if f.get("displayName", "").lower() == name_lower:
+                match = f
+                break
+        if not match:
+            # Partial match
+            matches = [f for f in friends if name_lower in f.get("displayName", "").lower()]
+            if len(matches) == 1:
+                match = matches[0]
+            elif len(matches) > 1:
+                names = [f["displayName"] for f in matches[:10]]
+                return {"result": "error", "message": f"Multiple friends match '{name}': {', '.join(names)}"}
+            else:
+                return {"result": "error", "message": f"No friend named '{name}' found in friends list"}
+        # Fetch live profile from API
+        api = self._get_vrchat_api()
+        data = await api.get_user(match["id"])
+        if isinstance(data, dict) and "error" in data:
+            return data
+        return {
+            "result": "ok",
+            "displayName": data.get("displayName", ""),
+            "status": data.get("status", ""),
+            "statusDescription": data.get("statusDescription", ""),
+            "state": data.get("state", "offline"),
+            "bio": data.get("bio", ""),
+            "pronouns": data.get("pronouns", ""),
+            "last_platform": data.get("last_platform", ""),
+            "last_login": data.get("last_login", ""),
+            "isFriend": data.get("isFriend", False),
+        }
