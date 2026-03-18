@@ -47,7 +47,6 @@ DEFAULT_CFG = {
     "turn_speed": 0.5,           # Turn speed when avoiding obstacles
     "smoothing_alpha": 0.6,      # EMA smoothing for movement (higher = faster reaction)
     "random_turn_chance": 0.08,  # Chance per frame to do a random turn
-    "random_look_chance": 0.05,  # Chance per frame to look up/down
     "jump_chance": 0.02,         # Chance per frame to jump
     "min_straight_time": 2.0,    # Min seconds to walk straight before random turn
     "zone_left_range": [0.0, 0.35],    # Left third of screen
@@ -365,10 +364,6 @@ class Wanderer:
                 target_turn = random.choice([-1, 1]) * random.uniform(0.5, 0.8)
                 self._last_straight_time = now
                 self._current_action = "random_turn"
-
-            # Random look up/down
-            if random.random() < cfg["random_look_chance"]:
-                target_look_v = random.uniform(-0.2, 0.2)
 
         # Anti-oscillation: if we've committed to a turn direction, maintain it
         # This prevents left-right-left flickering in doorways and narrow passages
