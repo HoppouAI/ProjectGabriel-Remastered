@@ -1,6 +1,5 @@
 import logging
 from google.genai import types
-from src.memory import handle_memory_function_call, recall_memories
 from src.emotions import handle_emotion_function_call
 
 logger = logging.getLogger(__name__)
@@ -37,47 +36,6 @@ class ToolHandler:
     async def handle(self, function_call) -> types.FunctionResponse:
         name = function_call.name
         args = dict(function_call.args) if function_call.args else {}
-
-        # Memory function returns FunctionResponse directly
-        if name == "memory":
-            try:
-                return await handle_memory_function_call(function_call)
-            except Exception as e:
-                logger.error(f"Memory tool failed: {e}")
-                return types.FunctionResponse(
-                    id=function_call.id,
-                    name=name,
-                    response={"result": "error", "message": str(e)},
-                )
-
-        # Memory recall sub-agent
-        if name == "recallMemories":
-            try:
-                if self.osc:
-                    self.osc.send_chatbox("Thinking about the past...")
-                api_key = self.config.api_key if self.config else ""
-                personality_prompt = ""
-                if self.personality:
-                    current = self.personality.get_current()
-                    personality_prompt = current.get("prompt", "")
-                result = await recall_memories(
-                    query=args.get("query", ""),
-                    context=args.get("context", ""),
-                    api_key=api_key,
-                    personality_prompt=personality_prompt,
-                )
-                return types.FunctionResponse(
-                    id=function_call.id,
-                    name=name,
-                    response=result,
-                )
-            except Exception as e:
-                logger.error(f"Recall agent failed: {e}")
-                return types.FunctionResponse(
-                    id=function_call.id,
-                    name=name,
-                    response={"result": "error", "message": str(e)},
-                )
 
         # Emotion functions return FunctionResponse directly
         if name in ("emotion", "stopAnimation"):
