@@ -356,15 +356,20 @@ def get_tool_declarations(config=None):
             ),
             types.FunctionDeclaration(
                 name="updateStatus",
-                description="Update your VRChat profile status description, online status, and/or bio. At least one field must be provided.\n**Invocation Condition:** Call when asked to change your status, status description, bio, or profile text.",
+                description="Update your VRChat profile status description, online status, and/or bio. At least one field must be provided. statusDescription has a 32 character max limit.\n**Invocation Condition:** Call when asked to change your status, status description, bio, or profile text.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "statusDescription": {"type": "STRING", "description": "The short status description shown on your profile (the tagline under your name)"},
+                        "statusDescription": {"type": "STRING", "description": "The short status description (max 32 chars) shown under your name"},
                         "status": {"type": "STRING", "description": "Online status: 'active', 'join me', 'ask me', 'busy', or 'offline'"},
                         "bio": {"type": "STRING", "description": "Your profile bio text"},
                     },
                 },
+            ),
+            types.FunctionDeclaration(
+                name="getCurrentStatus",
+                description="Get your current VRChat profile status, status description, and bio.\n**Invocation Condition:** Call when asked what your current status is, what your bio says, or to check your profile.",
+                parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="getFriendInfo",
@@ -376,6 +381,11 @@ def get_tool_declarations(config=None):
                     },
                     "required": ["name"],
                 },
+            ),
+            types.FunctionDeclaration(
+                name="getSystemSpecs",
+                description="Get the host system's hardware specs: CPU, GPU, RAM (total and current usage), and storage drives.\n**Invocation Condition:** Call when asked about your computer specs, hardware, system info, or what you are running on.",
+                parameters={"type": "OBJECT", "properties": {}},
             ),
         ]
     
@@ -685,8 +695,12 @@ class ToolHandler:
             return await self._search_worlds(args["query"], int(args.get("count", 10)))
         elif name == "updateStatus":
             return await self._update_status(args.get("statusDescription"), args.get("status"), args.get("bio"))
+        elif name == "getCurrentStatus":
+            return await self._get_current_status()
         elif name == "getFriendInfo":
             return await self._get_friend_info(args["name"])
+        elif name == "getSystemSpecs":
+            return self._get_system_specs()
         # Default fallback - always return something
         return {"result": "error", "message": f"unknown function: {name}"}
 
@@ -979,6 +993,8 @@ class ToolHandler:
     async def _update_status(self, status_description=None, status=None, bio=None):
         if bio is not None and self.config and not self.config.vrchat_api_allow_bio_edit:
             return {"result": "error", "message": "Bio editing is disabled."}
+        if status_description is not None:
+            status_description = status_description[:32]
         api = self._get_vrchat_api()
         result = await api.update_status(
             status_description=status_description,
@@ -986,6 +1002,18 @@ class ToolHandler:
             bio=bio,
         )
         return result
+
+    async def _get_current_status(self):
+        api = self._get_vrchat_api()
+        data = await api.get_current_user()
+        if isinstance(data, dict) and "error" in data:
+            return data
+        return {
+            "result": "ok",
+            "status": data.get("status", ""),
+            "statusDescription": data.get("statusDescription", ""),
+            "bio": data.get("bio", ""),
+        }
 
     async def _get_friend_info(self, name):
         from src.vrchatapi import VRChatAPI
@@ -1024,3 +1052,49 @@ class ToolHandler:
             "last_login": data.get("last_login", ""),
             "isFriend": data.get("isFriend", False),
         }
+
+    def _get_system_specs(self):
+        import platform
+        import psutil
+        specs = {}
+        # CPU name from Windows registry
+        cpu_name = platform.processor() or "Unknown"
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+            cpu_name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+            cpu_name = cpu_name.strip()
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+        specs["cpu"] = cpu_name
+        mem = psutil.virtual_memory()
+        specs["ram_total_gb"] = round(mem.total / (1024 ** 3), 1)
+        specs["ram_used_gb"] = round(mem.used / (1024 ** 3), 1)
+        specs["ram_percent"] = mem.percent
+        # GPU name via PowerShell
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"],
+                capture_output=True, text=True, timeout=10,
+            )
+            gpu_lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+            specs["gpu"] = gpu_lines if gpu_lines else ["Unknown"]
+        except Exception:
+            specs["gpu"] = ["Unknown"]
+        drives = []
+        for part in psutil.disk_partitions(all=False):
+            try:
+                usage = psutil.disk_usage(part.mountpoint)
+                drives.append({
+                    "mount": part.mountpoint,
+                    "total_gb": round(usage.total / (1024 ** 3), 1),
+                    "free_gb": round(usage.free / (1024 ** 3), 1),
+                })
+            except Exception:
+                pass
+        specs["storage"] = drives
+        specs["result"] = "ok"
+        return specs
