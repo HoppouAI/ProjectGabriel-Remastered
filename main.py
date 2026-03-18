@@ -1,5 +1,9 @@
 import asyncio
 import logging
+from src.cli import setup_logging, print_startup_info
+
+setup_logging()
+logger = logging.getLogger("gabriel")
 
 # Import tracker FIRST — its module-level code pre-initialises bettercam
 # via DXGI Desktop Duplication BEFORE any CUDA library loads.
@@ -14,12 +18,6 @@ from src.personalities import PersonalityManager
 from src.gemini_live import GeminiLiveSession
 from src.emotions import get_emotion_system
 from src.memory import memory_system
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger("gabriel")
 
 # Suppress the known CPython 3.12 Windows ProactorEventLoop assertion error
 # This fires during pipe transport cleanup and is harmless
@@ -68,6 +66,8 @@ async def main():
     loop.set_exception_handler(_suppress_proactor_write_assert)
 
     config = Config()
+    print_startup_info(config)
+
     audio = AudioManager(config)
     osc = VRChatOSC(config)
     tracker = PlayerTracker(config, osc) if config.tracker_enabled else None
@@ -160,11 +160,6 @@ async def main():
         if wanderer:
             face_tracker.set_wanderer(wanderer)
         face_tracker.start()
-
-    logger.info("ProjectGabriel starting...")
-    logger.info(f"Model: {config.model}")
-    logger.info(f"Music dir: {config.music_dir}")
-    logger.info(f"OSC → {config.osc_ip}:{config.osc_port}")
 
     # Start control panel as async task in same event loop
     control_server = setup_control_server(session, audio, personality, memory_system, get_emotion_system)

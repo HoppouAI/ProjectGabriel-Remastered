@@ -21,3 +21,4 @@ stream2sentence
 google-cloud-texttospeech
 transformers
 psutil
+colorama
