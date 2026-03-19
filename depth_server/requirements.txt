@@ -1,5 +1,6 @@
 fastapi>=0.115
 uvicorn[standard]
+python-multipart
 torch
 transformers>=4.40
 pillow
