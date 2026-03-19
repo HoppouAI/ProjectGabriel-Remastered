@@ -48,7 +48,8 @@ DEFAULT_CFG = {
     "smoothing_alpha": 0.6,      # EMA smoothing for movement (higher = faster reaction)
     "random_turn_chance": 0.08,  # Chance per frame to do a random turn
     "jump_chance": 0.02,         # Chance per frame to jump
-    "min_straight_time": 2.0,    # Min seconds to walk straight before random turn
+    "min_straight_time": 3.0,    # Min seconds to walk straight before random turn
+    "max_straight_time": 10.0,   # Force a random turn after this many seconds of straight walking
     "zone_left_range": [0.0, 0.35],    # Left third of screen
     "zone_center_range": [0.30, 0.70], # Center of screen
     "zone_right_range": [0.65, 1.0],   # Right third of screen
@@ -394,15 +395,27 @@ class Wanderer:
             self._last_straight_time = now
         else:
             # Path is clear - walk forward with occasional random behavior
-            self._current_action = "walking"
             self._stuck_count = 0
 
-            # Random turn for exploration
-            straight_duration = now - self._last_straight_time
-            if straight_duration > cfg["min_straight_time"] and random.random() < cfg["random_turn_chance"]:
-                target_turn = random.choice([-1, 1]) * random.uniform(0.5, 0.8)
-                self._last_straight_time = now
+            # Sustain committed random turn
+            if now < self._committed_turn_until and self._current_action != "walking":
+                target_turn = self._committed_turn_dir * random.uniform(0.5, 0.7)
                 self._current_action = "random_turn"
+            else:
+                self._current_action = "walking"
+                # Random turn for exploration
+                straight_duration = now - self._last_straight_time
+                force_turn = straight_duration > cfg["max_straight_time"]
+                if force_turn or (straight_duration > cfg["min_straight_time"] and random.random() < cfg["random_turn_chance"]):
+                    turn_dir = random.choice([-1.0, 1.0])
+                    turn_mag = random.uniform(0.5, 0.8)
+                    turn_duration = random.uniform(1.0, 2.5)
+                    target_turn = turn_dir * turn_mag
+                    self._committed_turn_dir = turn_dir
+                    self._committed_turn_until = now + turn_duration
+                    self._smoothed_turn = target_turn
+                    self._last_straight_time = now
+                    self._current_action = "random_turn"
 
         # Anti-oscillation: if we've committed to a turn direction, maintain it
         # This prevents left-right-left flickering in doorways and narrow passages
@@ -435,8 +448,8 @@ class Wanderer:
         else:
             self._moving_stuck_frames = 0
 
-        # EMA smoothing (skipped for turn when actively avoiding obstacles)
-        avoiding = self._current_action in ("stuck", "velocity_stuck", "turning_left", "turning_right", "avoid_left", "avoid_right")
+        # EMA smoothing (skipped for turn when actively avoiding obstacles or committed turns)
+        avoiding = self._current_action in ("stuck", "velocity_stuck", "turning_left", "turning_right", "avoid_left", "avoid_right", "random_turn")
         if avoiding:
             self._smoothed_turn = target_turn  # Instant turn for obstacle avoidance
         else:
