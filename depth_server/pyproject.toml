@@ -7,14 +7,20 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]",
     "python-multipart",
+    "torch",
     "transformers>=4.40",
     "pillow",
     "numpy",
     "opencv-python-headless",
 ]
 
-[tool.uv]
-# PyTorch with CUDA must be installed separately:
-#   uv pip install torch --index-url https://download.pytorch.org/whl/cu121
-# Or for CPU only:
-#   uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+# PyTorch must come from the official index, not PyPI.
+# Change cu128 to match your CUDA version (cu121, cu124, cu126, cu128).
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
