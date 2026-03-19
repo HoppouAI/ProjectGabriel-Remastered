@@ -235,6 +235,12 @@ async def overlay_config():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
+@app.get("/overlay/music")
+async def overlay_music():
+    html_path = STATIC_DIR / "overlay_music.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
 @app.get("/api/state")
 async def get_state():
     return get_full_state()
@@ -688,16 +694,16 @@ def start_music_broadcast():
         _music_broadcast_task = asyncio.ensure_future(_music_broadcast_loop())
 
 
+@app.on_event("startup")
+async def _on_startup():
+    start_music_broadcast()
+
+
 # --- Run ---
 
 def run_control_server(host: str = "0.0.0.0", port: int = 8766):
     print("Gabriel Control Panel")
     print(f"Open http://localhost:{port} in your browser")
-
-    @app.on_event("startup")
-    async def _startup():
-        start_music_broadcast()
-
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 

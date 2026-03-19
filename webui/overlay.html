@@ -121,95 +121,9 @@
     75%  { content: '...'; }
     100% { content: ''; }
   }
-
-  /* Music Now Playing */
-  #music-container {
-    position: var(--music-position, fixed);
-    bottom: var(--music-bottom, auto);
-    top: var(--music-top, 20px);
-    left: var(--music-left, auto);
-    right: var(--music-right, 20px);
-    max-width: var(--music-max-width, 360px);
-    width: 100%;
-    padding: var(--music-padding, 14px 18px);
-    border-radius: var(--music-border-radius, 12px);
-    background: var(--music-bg, rgba(0, 0, 0, 0.75));
-    border: var(--music-border, none);
-    backdrop-filter: var(--music-backdrop, blur(12px));
-    opacity: 0;
-    transform: translateY(-10px);
-    transition: opacity 0.5s ease, transform 0.5s ease;
-    pointer-events: none;
-    display: none;
-    z-index: 10;
-  }
-  #music-container.visible {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  #music-icon {
-    display: inline-block;
-    margin-right: 6px;
-    font-size: var(--music-title-size, 14px);
-    animation: music-pulse 1.5s ease-in-out infinite;
-  }
-  @keyframes music-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-  #music-title {
-    font-family: var(--font, 'Segoe UI', sans-serif);
-    font-size: var(--music-title-size, 14px);
-    font-weight: 600;
-    color: var(--music-title-color, rgba(255, 255, 255, 0.9));
-    margin-bottom: 6px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  #music-progress-bar {
-    width: 100%;
-    height: var(--music-bar-height, 3px);
-    background: var(--music-bar-bg, rgba(255, 255, 255, 0.15));
-    border-radius: 3px;
-    overflow: hidden;
-    margin-bottom: 4px;
-  }
-  #music-progress-fill {
-    height: 100%;
-    width: 0%;
-    background: var(--music-bar-color, rgba(255, 255, 255, 0.7));
-    border-radius: 3px;
-    transition: width 1.2s linear;
-  }
-  #music-time {
-    font-family: var(--font, 'Segoe UI', sans-serif);
-    font-size: var(--music-time-size, 11px);
-    color: var(--music-time-color, rgba(255, 255, 255, 0.4));
-    display: flex;
-    justify-content: space-between;
-  }
-  #music-lyric {
-    font-family: var(--font, 'Segoe UI', sans-serif);
-    font-size: var(--music-lyric-size, 13px);
-    color: var(--music-lyric-color, rgba(255, 255, 255, 0.7));
-    margin-top: 8px;
-    text-align: center;
-    font-style: italic;
-    min-height: 1.3em;
-    transition: opacity 0.3s ease;
-  }
 </style>
 </head>
 <body>
-  <!-- Music Now Playing -->
-  <div id="music-container">
-    <div id="music-title"><span id="music-icon">&#9835;</span> <span id="music-name"></span></div>
-    <div id="music-progress-bar"><div id="music-progress-fill"></div></div>
-    <div id="music-time"><span id="music-elapsed">0:00</span><span id="music-duration">0:00</span></div>
-    <div id="music-lyric"></div>
-  </div>
-
   <div style="display: flex; flex-direction: column; align-items: var(--justify, center); width: 100%; max-width: var(--max-width, 800px);">
     <!-- User speech (above AI response) -->
     <div id="user-container">
@@ -270,26 +184,6 @@
     'userTextShadow':   '--user-text-shadow',
     'userLabelSize':    '--user-label-size',
     'userLabelColor':   '--user-label-color',
-    'musicBg':          '--music-bg',
-    'musicBorder':      '--music-border',
-    'musicBorderRadius':'--music-border-radius',
-    'musicPadding':     '--music-padding',
-    'musicBackdrop':    '--music-backdrop',
-    'musicMaxWidth':    '--music-max-width',
-    'musicTitleSize':   '--music-title-size',
-    'musicTitleColor':  '--music-title-color',
-    'musicBarHeight':   '--music-bar-height',
-    'musicBarColor':    '--music-bar-color',
-    'musicBarBg':       '--music-bar-bg',
-    'musicTimeSize':    '--music-time-size',
-    'musicTimeColor':   '--music-time-color',
-    'musicLyricSize':   '--music-lyric-size',
-    'musicLyricColor':  '--music-lyric-color',
-    'musicPosition':    '--music-position',
-    'musicTop':         '--music-top',
-    'musicBottom':      '--music-bottom',
-    'musicLeft':        '--music-left',
-    'musicRight':       '--music-right',
   };
 
   params.forEach(function(value, key) {
@@ -332,37 +226,6 @@
   var fadeTimer = null;
   var userFadeTimer = null;
   var showUserTranscription = showUser === 'true' || showUser === '1';
-
-  // Music display
-  var showMusic = params.get('showMusic');
-  var showMusicDisplay = showMusic !== '0' && showMusic !== 'false';  // shown by default
-  var musicContainer = document.getElementById('music-container');
-  var musicNameEl = document.getElementById('music-name');
-  var musicFill = document.getElementById('music-progress-fill');
-  var musicElapsed = document.getElementById('music-elapsed');
-  var musicDuration = document.getElementById('music-duration');
-  var musicLyric = document.getElementById('music-lyric');
-  var musicFadeTimer = null;
-
-  if (showMusicDisplay) {
-    musicContainer.style.display = 'block';
-  }
-
-  function formatTime(sec) {
-    var m = Math.floor(sec / 60);
-    var s = Math.floor(sec % 60);
-    return m + ':' + (s < 10 ? '0' : '') + s;
-  }
-
-  function showMusicContainer() {
-    if (!showMusicDisplay) return;
-    if (musicFadeTimer) { clearTimeout(musicFadeTimer); musicFadeTimer = null; }
-    musicContainer.classList.add('visible');
-  }
-
-  function hideMusicContainer() {
-    musicContainer.classList.remove('visible');
-  }
 
   if (showUserTranscription) {
     userContainer.style.display = 'block';
@@ -472,25 +335,6 @@
       if (logType === 'user_turn_complete') {
         userBuffer = '';
         scheduleUserFadeOut();
-      }
-
-      // Music update
-      if (logType === 'music_update' && showMusicDisplay) {
-        if (extra.playing) {
-          musicNameEl.textContent = extra.song_name || 'Unknown';
-          musicFill.style.width = ((extra.progress || 0) * 100) + '%';
-          musicElapsed.textContent = formatTime(extra.position || 0);
-          musicDuration.textContent = formatTime(extra.duration || 0);
-          if (extra.lyric) {
-            musicLyric.textContent = extra.lyric;
-            musicLyric.style.opacity = '1';
-          } else {
-            musicLyric.style.opacity = '0';
-          }
-          showMusicContainer();
-        } else {
-          hideMusicContainer();
-        }
       }
     };
 

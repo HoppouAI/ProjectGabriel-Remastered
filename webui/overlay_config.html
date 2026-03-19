@@ -62,7 +62,7 @@ body {
   border-right: 1px solid var(--border);
   overflow-y: auto;
   padding: 1rem 1.15rem;
-  padding-bottom: 130px;
+  padding-bottom: 190px;
 }
 
 .preview-area {
@@ -669,15 +669,6 @@ body {
         </div>
         <div id="musicFields">
           <div class="field">
-            <label>Position</label>
-            <select id="opt-musicPos">
-              <option value="top-right">Top Right</option>
-              <option value="top-left">Top Left</option>
-              <option value="bottom-right">Bottom Right</option>
-              <option value="bottom-left">Bottom Left</option>
-            </select>
-          </div>
-          <div class="field">
             <label>Max Width</label>
             <input type="range" id="opt-musicMaxWidth-range" min="200" max="600" value="360" step="10">
             <span class="range-val" id="opt-musicMaxWidth-val">360px</span>
@@ -768,11 +759,17 @@ body {
 </div>
 
 <div class="url-box">
-  <div class="url-label">OBS Browser Source URL</div>
+  <div class="url-label">Text Overlay URL</div>
   <div class="url-row">
     <input type="text" id="generatedUrl" readonly>
-    <button class="btn btn-primary" onclick="copyUrl()">Copy</button>
-    <button class="btn btn-ghost" onclick="openPreview()">Open</button>
+    <button class="btn btn-primary" onclick="copyUrl('generatedUrl')">Copy</button>
+    <button class="btn btn-ghost" onclick="openUrl('generatedUrl')">Open</button>
+  </div>
+  <div class="url-label" style="margin-top:0.45rem;">Music Overlay URL</div>
+  <div class="url-row">
+    <input type="text" id="musicUrl" readonly>
+    <button class="btn btn-primary" onclick="copyUrl('musicUrl')">Copy</button>
+    <button class="btn btn-ghost" onclick="openUrl('musicUrl')">Open</button>
   </div>
 </div>
 
@@ -847,7 +844,7 @@ body {
     'opt-showUser': false, 'opt-userLabel': '', 'opt-userColor-picker': '#ffffff', 'opt-userColor': '',
     'opt-userFontSize-range': '24', 'opt-userBg-color': '#ffffff', 'opt-userBg-opacity': '10',
     'opt-userFadeOut-range': '5',
-    'opt-showMusic': true, 'opt-musicPos': 'top-right', 'opt-musicMaxWidth-range': '360',
+    'opt-showMusic': true, 'opt-musicMaxWidth-range': '360',
     'opt-musicBg-color': '#000000', 'opt-musicBg-opacity': '75', 'opt-musicRadius-range': '12',
     'opt-musicTitleColor-picker': '#ffffff', 'opt-musicTitleColor': '',
     'opt-musicTitleSize-range': '14', 'opt-musicBarColor-picker': '#ffffff', 'opt-musicBarColor': '',
@@ -1113,11 +1110,6 @@ body {
     var mc = document.getElementById('prevMusicContainer');
     mc.style.display = showMusic ? 'block' : 'none';
     if (showMusic) {
-      var musicPos = document.getElementById('opt-musicPos').value;
-      mc.style.top = musicPos.startsWith('top') ? '20px' : 'auto';
-      mc.style.bottom = musicPos.startsWith('bottom') ? '20px' : 'auto';
-      mc.style.left = musicPos.endsWith('left') ? '20px' : 'auto';
-      mc.style.right = musicPos.endsWith('right') ? '20px' : 'auto';
       mc.style.maxWidth = document.getElementById('opt-musicMaxWidth-range').value + 'px';
       var mBgC = document.getElementById('opt-musicBg-color').value;
       var mBgO = document.getElementById('opt-musicBg-opacity').value;
@@ -1276,49 +1268,53 @@ body {
       if (ufo !== '5') params.set('userFadeOut', parseInt(ufo) * 1000);
     }
 
-    // Music
-    if (!document.getElementById('opt-showMusic').checked) {
-      params.set('showMusic', 'false');
-    } else {
-      var mPos = document.getElementById('opt-musicPos').value;
-      if (mPos !== 'top-right') {
-        // Map position to CSS variables
-        var posMap = {
-          'top-left':     { musicTop: '20px', musicRight: 'auto', musicLeft: '20px' },
-          'bottom-right': { musicTop: 'auto', musicBottom: '20px' },
-          'bottom-left':  { musicTop: 'auto', musicBottom: '20px', musicRight: 'auto', musicLeft: '20px' },
-        };
-        var pm = posMap[mPos];
-        if (pm) Object.keys(pm).forEach(function(k) { params.set(k, pm[k]); });
-      }
-      var mmw = document.getElementById('opt-musicMaxWidth-range').value;
-      if (mmw !== '360') params.set('musicMaxWidth', mmw + 'px');
-      var mbgC = document.getElementById('opt-musicBg-color').value;
-      var mbgO = document.getElementById('opt-musicBg-opacity').value;
-      if (mbgC !== '#000000' || mbgO !== '75') params.set('musicBg', hexToRgba(mbgC, mbgO));
-      var mbr = document.getElementById('opt-musicRadius-range').value;
-      if (mbr !== '12') params.set('musicBorderRadius', mbr + 'px');
-      var mtc = document.getElementById('opt-musicTitleColor').value.trim();
-      if (mtc) params.set('musicTitleColor', mtc);
-      var mts = document.getElementById('opt-musicTitleSize-range').value;
-      if (mts !== '14') params.set('musicTitleSize', mts + 'px');
-      var mbc = document.getElementById('opt-musicBarColor').value.trim();
-      if (mbc) params.set('musicBarColor', mbc);
-      var mbh = document.getElementById('opt-musicBarHeight-range').value;
-      if (mbh !== '3') params.set('musicBarHeight', mbh + 'px');
-      var mlc = document.getElementById('opt-musicLyricColor').value.trim();
-      if (mlc) params.set('musicLyricColor', mlc);
-      var mls = document.getElementById('opt-musicLyricSize-range').value;
-      if (mls !== '13') params.set('musicLyricSize', mls + 'px');
-    }
-
     var qs = params.toString();
     document.getElementById('generatedUrl').value = base + (qs ? '?' + qs : '');
+
+    // Music overlay URL (separate browser source)
+    var musicBase = window.location.origin + '/overlay/music';
+    var mp = new URLSearchParams();
+
+    if (document.getElementById('opt-showMusic').checked) {
+      var googleFont = document.getElementById('opt-googleFont').value.trim();
+      if (googleFont) mp.set('googleFont', googleFont);
+
+      var mmw = document.getElementById('opt-musicMaxWidth-range').value;
+      if (mmw !== '360') mp.set('maxWidth', mmw + 'px');
+
+      var mbgC = document.getElementById('opt-musicBg-color').value;
+      var mbgO = document.getElementById('opt-musicBg-opacity').value;
+      if (mbgC !== '#000000' || mbgO !== '75') mp.set('bg', hexToRgba(mbgC, mbgO));
+
+      var mbr = document.getElementById('opt-musicRadius-range').value;
+      if (mbr !== '12') mp.set('borderRadius', mbr + 'px');
+
+      var mtc = document.getElementById('opt-musicTitleColor').value.trim();
+      if (mtc) mp.set('titleColor', mtc);
+
+      var mts = document.getElementById('opt-musicTitleSize-range').value;
+      if (mts !== '14') mp.set('titleSize', mts + 'px');
+
+      var mbc = document.getElementById('opt-musicBarColor').value.trim();
+      if (mbc) mp.set('barColor', mbc);
+
+      var mbh = document.getElementById('opt-musicBarHeight-range').value;
+      if (mbh !== '3') mp.set('barHeight', mbh + 'px');
+
+      var mlc = document.getElementById('opt-musicLyricColor').value.trim();
+      if (mlc) mp.set('lyricColor', mlc);
+
+      var mls = document.getElementById('opt-musicLyricSize-range').value;
+      if (mls !== '13') mp.set('lyricSize', mls + 'px');
+    }
+
+    var mqs = mp.toString();
+    document.getElementById('musicUrl').value = musicBase + (mqs ? '?' + mqs : '');
   }
 
   // Copy
-  window.copyUrl = function() {
-    var input = document.getElementById('generatedUrl');
+  window.copyUrl = function(id) {
+    var input = document.getElementById(id);
     navigator.clipboard.writeText(input.value).then(function() {
       var t = document.getElementById('toast');
       t.classList.add('show');
@@ -1327,8 +1323,8 @@ body {
   };
 
   // Open
-  window.openPreview = function() {
-    var url = document.getElementById('generatedUrl').value;
+  window.openUrl = function(id) {
+    var url = document.getElementById(id).value;
     if (url) window.open(url, '_blank');
   };
 
