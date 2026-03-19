@@ -46,10 +46,10 @@ DEFAULT_CFG = {
     "forward_speed": 0.55,       # Base forward movement speed (slower = more reaction time)
     "turn_speed": 0.5,           # Turn speed when avoiding obstacles
     "smoothing_alpha": 0.6,      # EMA smoothing for movement (higher = faster reaction)
-    "random_turn_chance": 0.08,  # Chance per frame to do a random turn
+    "random_turn_chance": 0.03,  # Chance per frame to do a random turn
     "jump_chance": 0.02,         # Chance per frame to jump
-    "min_straight_time": 3.0,    # Min seconds to walk straight before random turn
-    "max_straight_time": 10.0,   # Force a random turn after this many seconds of straight walking
+    "min_straight_time": 15.0,   # Min seconds to walk straight before random turn
+    "max_straight_time": 30.0,   # Force a random turn after this many seconds of straight walking
     "zone_left_range": [0.0, 0.35],    # Left third of screen
     "zone_center_range": [0.30, 0.70], # Center of screen
     "zone_right_range": [0.65, 1.0],   # Right third of screen
@@ -409,7 +409,7 @@ class Wanderer:
                 if force_turn or (straight_duration > cfg["min_straight_time"] and random.random() < cfg["random_turn_chance"]):
                     turn_dir = random.choice([-1.0, 1.0])
                     turn_mag = random.uniform(0.5, 0.8)
-                    turn_duration = random.uniform(1.0, 2.5)
+                    turn_duration = random.uniform(0.5, 1.0)
                     target_turn = turn_dir * turn_mag
                     self._committed_turn_dir = turn_dir
                     self._committed_turn_until = now + turn_duration
