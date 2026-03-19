@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 SESSION_HANDLE_FILE = Path("session_handle.txt")
 SESSION_EXPIRY_HOURS = 2
+IDLE_ENGAGEMENT_SECONDS = 3600  # 1 hour
 CONVERSATION_DIR = Path("data/conversations")
 
 
@@ -147,7 +148,9 @@ class GeminiLiveSession:
         self._transcript_buffer = ""
         self._input_transcript_buffer = ""  # Buffer for user speech
         self._session_handle = None
+        self._session_handle_created = None
         self._handle_fail_count = 0
+        self._rate_limit_backoff = 0
         self._tool_call_pending = False
         self._out_queue = asyncio.Queue(maxsize=5)
         self._audio_in_queue = asyncio.Queue()
@@ -158,6 +161,8 @@ class GeminiLiveSession:
         self._chatbox_error_shown = False  # Track if we've shown an error to VRChat chatbox
         self._last_audio_time = 0  # Track when last audio was received
         self._idle_timeout = 15.0  # Stop talking animations after 15s idle
+        self._last_interaction_time = time.time()  # Track last user/AI interaction for engagement
+        self._idle_engagement_sent = False  # Only send one engagement prompt per idle period
         self._pending_finalize_task = None
         self._wanderer = None  # Set externally from main.py
         self._usage_metadata = {
@@ -337,6 +342,7 @@ class GeminiLiveSession:
             created = datetime.fromisoformat(data["created"])
             if datetime.now() - created < timedelta(hours=SESSION_EXPIRY_HOURS):
                 self._session_handle = data["handle"]
+                self._session_handle_created = created
                 logger.info(f"Loaded session handle (created {created.strftime('%H:%M:%S')})")
             else:
                 logger.info("Session handle expired, will create new session")
@@ -347,22 +353,35 @@ class GeminiLiveSession:
 
     def _save_session_handle(self, handle: str):
         self._session_handle = handle
+        self._session_handle_created = datetime.now()
         self._handle_fail_count = 0
-        data = {"handle": handle, "created": datetime.now().isoformat()}
+        data = {"handle": handle, "created": self._session_handle_created.isoformat()}
         SESSION_HANDLE_FILE.write_text(json.dumps(data), encoding="utf-8")
         logger.info("Saved new session handle")
 
     def _clear_session_handle(self):
         self._session_handle = None
+        self._session_handle_created = None
         self._handle_fail_count = 0
         if SESSION_HANDLE_FILE.exists():
             SESSION_HANDLE_FILE.unlink()
             logger.info("Cleared session handle")
 
+    def _is_session_handle_expired(self):
+        if not self._session_handle or not self._session_handle_created:
+            return False
+        return datetime.now() - self._session_handle_created >= timedelta(hours=SESSION_EXPIRY_HOURS)
+
     async def run(self):
-        self._alpha_fallback_failed = False  # Track if v1alpha features failed
+        self._alpha_fallback_failed = False
+        self._rate_limit_backoff = 0
         while True:
             self._reconnect_requested = False
+            # Check for expired session handle before each connection attempt
+            if self._is_session_handle_expired():
+                logger.info("Session handle expired (2h), starting fresh session")
+                _broadcast_console("info", "Session handle expired, starting fresh session")
+                self._clear_session_handle()
             try:
                 use_alpha = self._needs_alpha_api() and not self._alpha_fallback_failed
                 if use_alpha:
@@ -393,6 +412,9 @@ class GeminiLiveSession:
                     )
                     self._session = session
                     self._handle_fail_count = 0
+                    self._rate_limit_backoff = 0
+                    self._last_interaction_time = time.time()
+                    self._idle_engagement_sent = False
                     self.tool_handler.session = session
                     self.tool_handler.live_session = self
                     self._out_queue = asyncio.Queue(maxsize=5)
@@ -447,17 +469,27 @@ class GeminiLiveSession:
                 err_str = str(e)
                 err_lower = err_str.lower()
 
-                # Rate limiting - rotate key
+                # Rate limiting - check expired handle first, then rotate key
                 if "429" in err_lower or "quota" in err_lower or "rate" in err_lower:
+                    if self._session_handle and self._is_session_handle_expired():
+                        logger.warning("Rate limited with expired session handle, clearing handle")
+                        _broadcast_console("info", "Expired session handle causing rate limit, clearing")
+                        self._clear_session_handle()
+                        self._rate_limit_backoff = 0
+                        await asyncio.sleep(1)
+                        continue
                     old_key = self.config.api_key
                     new_key = self.config.rotate_key()
                     if new_key != old_key:
                         logger.warning("Rate limited - switched API key")
                         _broadcast_console("info", "Rate limited - switched API key")
+                        self._rate_limit_backoff = 0
                     else:
-                        logger.warning("Rate limited - waiting 5s before retry")
-                        _broadcast_console("info", "Rate limited - waiting 5s")
-                        await asyncio.sleep(5)
+                        self._rate_limit_backoff = min(self._rate_limit_backoff + 1, 5)
+                        wait = 5 * (2 ** self._rate_limit_backoff)  # 10, 20, 40, 80, 160, 160s
+                        logger.warning(f"Rate limited - waiting {wait}s before retry")
+                        _broadcast_console("info", f"Rate limited - waiting {wait}s")
+                        await asyncio.sleep(wait)
                     continue
 
                 # v1alpha features not supported - fall back
@@ -600,7 +632,7 @@ class GeminiLiveSession:
     async def _idle_check_loop(self):
         """Monitor for idle state, stop talking animations, and trigger idle animation."""
         while True:
-            await asyncio.sleep(1)  # Check every second
+            await asyncio.sleep(1)
             if self._speaking and self._last_audio_time > 0:
                 idle_time = time.time() - self._last_audio_time
                 if idle_time >= self._idle_timeout:
@@ -625,6 +657,21 @@ class GeminiLiveSession:
                     self._idle_chatbox.start()
             elif music_playing:
                 self._idle_chatbox.stop()
+            # Idle engagement - prompt model to speak after long silence
+            if (
+                not self._idle_engagement_sent
+                and not self._speaking
+                and not music_playing
+                and time.time() - self._last_interaction_time >= IDLE_ENGAGEMENT_SECONDS
+            ):
+                self._idle_engagement_sent = True
+                logger.info(f"Idle for {IDLE_ENGAGEMENT_SECONDS}s, sending engagement prompt")
+                _broadcast_console("info", "Sending idle engagement prompt")
+                await self.send_text(
+                    "[System: You have been idle for a while. "
+                    "Try to engage nearby people in conversation - "
+                    "say something interesting, ask a question, or make an observation to get someone to talk to you.]"
+                )
 
     async def _listen_audio_loop(self, input_stream):
         while True:
@@ -813,6 +860,8 @@ class GeminiLiveSession:
                                     self._emotion_system.start_speaking()
                                 # Track last audio time for idle detection
                                 self._last_audio_time = time.time()
+                                self._last_interaction_time = time.time()
+                                self._idle_engagement_sent = False
                                 # Keep wanderer paused while AI is speaking
                                 if self._wanderer and self._wanderer._paused:
                                     self._wanderer.on_ai_speaking()
@@ -829,6 +878,8 @@ class GeminiLiveSession:
                         input_trans = response.server_content.input_transcription
                         if hasattr(input_trans, "text") and input_trans.text:
                             # User is speaking - mark activity to cancel idle animation
+                            self._last_interaction_time = time.time()
+                            self._idle_engagement_sent = False
                             if self._emotion_system:
                                 self._emotion_system.mark_activity()
                             # Pause wanderer when someone speaks
