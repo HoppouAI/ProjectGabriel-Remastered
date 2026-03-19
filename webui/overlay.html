@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gabriel OBS Overlay</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: transparent;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: var(--align, flex-end);
+    justify-content: var(--justify, center);
+    padding: var(--body-padding, 20px);
+  }
+
+  #container {
+    max-width: var(--max-width, 800px);
+    width: 100%;
+    padding: var(--padding, 16px 24px);
+    border-radius: var(--border-radius, 12px);
+    background: var(--bg, rgba(0, 0, 0, 0.7));
+    border: var(--border, none);
+    backdrop-filter: var(--backdrop, blur(8px));
+    opacity: 0;
+    transform: var(--anim-from, translateY(20px));
+    transition: opacity var(--fade-duration, 0.4s) ease, transform var(--fade-duration, 0.4s) ease;
+    pointer-events: none;
+  }
+
+  #container.visible {
+    opacity: 1;
+    transform: translateY(0) translateX(0) scale(1);
+  }
+
+  #label {
+    font-family: var(--label-font, var(--font, 'Segoe UI', sans-serif));
+    font-size: var(--label-size, 14px);
+    font-weight: var(--label-weight, 600);
+    color: var(--label-color, rgba(255, 255, 255, 0.6));
+    margin-bottom: var(--label-gap, 4px);
+    display: var(--label-display, block);
+    -webkit-text-stroke: var(--label-stroke, none);
+    text-shadow: var(--label-shadow, none);
+  }
+
+  #text {
+    font-family: var(--font, 'Segoe UI', sans-serif);
+    font-size: var(--font-size, 24px);
+    font-weight: var(--font-weight, 400);
+    color: var(--color, #ffffff);
+    line-height: var(--line-height, 1.4);
+    text-align: var(--text-align, left);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    -webkit-text-stroke: var(--text-stroke, none);
+    text-shadow: var(--text-shadow, none);
+    letter-spacing: var(--letter-spacing, normal);
+  }
+
+  /* User transcription (optional second container) */
+  #user-container {
+    max-width: var(--max-width, 800px);
+    width: 100%;
+    padding: var(--user-padding, var(--padding, 12px 20px));
+    border-radius: var(--user-border-radius, var(--border-radius, 12px));
+    background: var(--user-bg, rgba(255, 255, 255, 0.1));
+    border: var(--user-border, none);
+    backdrop-filter: var(--user-backdrop, var(--backdrop, blur(8px)));
+    margin-bottom: 8px;
+    opacity: 0;
+    transform: var(--anim-from, translateY(20px));
+    transition: opacity var(--fade-duration, 0.4s) ease, transform var(--fade-duration, 0.4s) ease;
+    pointer-events: none;
+    display: none;
+  }
+
+  #user-container.visible {
+    opacity: 1;
+    transform: translateY(0) translateX(0) scale(1);
+  }
+
+  #user-label {
+    font-family: var(--label-font, var(--font, 'Segoe UI', sans-serif));
+    font-size: var(--user-label-size, var(--label-size, 14px));
+    font-weight: var(--label-weight, 600);
+    color: var(--user-label-color, var(--label-color, rgba(255, 255, 255, 0.6)));
+    margin-bottom: var(--label-gap, 4px);
+    display: var(--label-display, block);
+    -webkit-text-stroke: var(--label-stroke, none);
+    text-shadow: var(--label-shadow, none);
+  }
+
+  #user-text {
+    font-family: var(--font, 'Segoe UI', sans-serif);
+    font-size: var(--user-font-size, var(--font-size, 24px));
+    font-weight: var(--user-font-weight, var(--font-weight, 400));
+    color: var(--user-color, var(--color, #ffffff));
+    line-height: var(--line-height, 1.4);
+    text-align: var(--text-align, left);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    -webkit-text-stroke: var(--user-text-stroke, var(--text-stroke, none));
+    text-shadow: var(--user-text-shadow, var(--text-shadow, none));
+    letter-spacing: var(--letter-spacing, normal);
+  }
+
+  /* Typing indicator */
+  .typing-dots::after {
+    content: '';
+    animation: dots 1.5s steps(4, end) infinite;
+  }
+  @keyframes dots {
+    0%   { content: ''; }
+    25%  { content: '.'; }
+    50%  { content: '..'; }
+    75%  { content: '...'; }
+    100% { content: ''; }
+  }
+</style>
+</head>
+<body>
+  <div style="display: flex; flex-direction: column; align-items: var(--justify, center); width: 100%; max-width: var(--max-width, 800px);">
+    <!-- User speech (above AI response) -->
+    <div id="user-container">
+      <div id="user-label">User</div>
+      <div id="user-text"></div>
+    </div>
+    <!-- AI response -->
+    <div id="container">
+      <div id="label">Gabriel</div>
+      <div id="text"></div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  // --- Configuration via URL parameters ---
+  var params = new URLSearchParams(window.location.search);
+  var root = document.documentElement.style;
+
+  // Mapping: param name -> CSS variable name
+  var cssMap = {
+    'font':             '--font',
+    'fontSize':         '--font-size',
+    'fontWeight':       '--font-weight',
+    'color':            '--color',
+    'textStroke':       '--text-stroke',
+    'textShadow':       '--text-shadow',
+    'textAlign':        '--text-align',
+    'lineHeight':       '--line-height',
+    'letterSpacing':    '--letter-spacing',
+    'bg':               '--bg',
+    'border':           '--border',
+    'borderRadius':     '--border-radius',
+    'padding':          '--padding',
+    'bodyPadding':      '--body-padding',
+    'maxWidth':         '--max-width',
+    'backdrop':         '--backdrop',
+    'fadeDuration':     '--fade-duration',
+    'animFrom':         '--anim-from',
+    'align':            '--align',
+    'justify':          '--justify',
+    'labelFont':        '--label-font',
+    'labelSize':        '--label-size',
+    'labelWeight':      '--label-weight',
+    'labelColor':       '--label-color',
+    'labelGap':         '--label-gap',
+    'labelStroke':      '--label-stroke',
+    'labelShadow':      '--label-shadow',
+    'userBg':           '--user-bg',
+    'userBorder':       '--user-border',
+    'userBorderRadius': '--user-border-radius',
+    'userPadding':      '--user-padding',
+    'userBackdrop':     '--user-backdrop',
+    'userColor':        '--user-color',
+    'userFontSize':     '--user-font-size',
+    'userFontWeight':   '--user-font-weight',
+    'userTextStroke':   '--user-text-stroke',
+    'userTextShadow':   '--user-text-shadow',
+    'userLabelSize':    '--user-label-size',
+    'userLabelColor':   '--user-label-color',
+  };
+
+  params.forEach(function(value, key) {
+    if (cssMap[key]) {
+      root.setProperty(cssMap[key], value);
+    }
+  });
+
+  // Special params
+  var label = params.get('label');
+  var userLabel = params.get('userLabel');
+  var hideLabel = params.get('hideLabel');
+  var showUser = params.get('showUser');
+  var fadeOut = parseInt(params.get('fadeOut') || '8000', 10);  // ms before fading out
+  var userFadeOut = parseInt(params.get('userFadeOut') || '5000', 10);
+  var googleFont = params.get('googleFont');
+
+  if (label !== null) document.getElementById('label').textContent = label;
+  if (userLabel !== null) document.getElementById('user-label').textContent = userLabel;
+  if (hideLabel === 'true' || hideLabel === '1') {
+    root.setProperty('--label-display', 'none');
+  }
+
+  // Load Google Font if specified
+  if (googleFont) {
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(googleFont) + ':wght@300;400;500;600;700&display=swap';
+    document.head.appendChild(link);
+    root.setProperty('--font', "'" + googleFont + "', sans-serif");
+  }
+
+  // --- State ---
+  var container = document.getElementById('container');
+  var textEl = document.getElementById('text');
+  var userContainer = document.getElementById('user-container');
+  var userTextEl = document.getElementById('user-text');
+  var responseBuffer = '';
+  var userBuffer = '';
+  var fadeTimer = null;
+  var userFadeTimer = null;
+  var showUserTranscription = showUser === 'true' || showUser === '1';
+
+  if (showUserTranscription) {
+    userContainer.style.display = 'block';
+  }
+
+  function showContainer() {
+    if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
+    container.classList.add('visible');
+  }
+
+  function hideContainer() {
+    container.classList.remove('visible');
+    // Clear text after fade animation completes
+    var dur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fade-duration') || '0.4') * 1000;
+    setTimeout(function() {
+      if (!container.classList.contains('visible')) {
+        textEl.textContent = '';
+        responseBuffer = '';
+      }
+    }, dur + 50);
+  }
+
+  function showUserContainer() {
+    if (!showUserTranscription) return;
+    if (userFadeTimer) { clearTimeout(userFadeTimer); userFadeTimer = null; }
+    userContainer.classList.add('visible');
+  }
+
+  function hideUserContainer() {
+    userContainer.classList.remove('visible');
+    var dur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fade-duration') || '0.4') * 1000;
+    setTimeout(function() {
+      if (!userContainer.classList.contains('visible')) {
+        userTextEl.textContent = '';
+        userBuffer = '';
+      }
+    }, dur + 50);
+  }
+
+  function scheduleFadeOut() {
+    if (fadeTimer) clearTimeout(fadeTimer);
+    if (fadeOut > 0) {
+      fadeTimer = setTimeout(hideContainer, fadeOut);
+    }
+  }
+
+  function scheduleUserFadeOut() {
+    if (userFadeTimer) clearTimeout(userFadeTimer);
+    if (userFadeOut > 0) {
+      userFadeTimer = setTimeout(hideUserContainer, userFadeOut);
+    }
+  }
+
+  // --- WebSocket ---
+  function connect() {
+    var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var wsUrl = protocol + '//' + location.host + '/ws';
+
+    // Allow overriding the WebSocket URL (for when overlay is opened as a local file)
+    var customWs = params.get('ws');
+    if (customWs) wsUrl = customWs;
+
+    var ws = new WebSocket(wsUrl);
+
+    ws.onmessage = function(event) {
+      var msg;
+      try { msg = JSON.parse(event.data); } catch(e) { return; }
+
+      if (msg.type !== 'log' || !msg.data) return;
+
+      var logType = msg.data.type;
+      var content = msg.data.content || '';
+      var extra = msg.data.extra || {};
+
+      // AI response text (streaming)
+      if (logType === 'response') {
+        if (extra.streaming) {
+          responseBuffer += content;
+        } else {
+          responseBuffer = content;
+        }
+        textEl.textContent = responseBuffer;
+        showContainer();
+        // Reset fade timer on each chunk
+        scheduleFadeOut();
+      }
+
+      // User transcription (streaming)
+      if (logType === 'transcription' && showUserTranscription) {
+        if (extra.streaming) {
+          userBuffer += content;
+        } else {
+          userBuffer = content;
+        }
+        userTextEl.textContent = userBuffer;
+        showUserContainer();
+        scheduleUserFadeOut();
+      }
+
+      // Turn completion resets the buffer for next response
+      if (logType === 'turn_complete') {
+        responseBuffer = '';
+        scheduleFadeOut();
+      }
+
+      // User turn complete - reset user buffer
+      if (logType === 'user_turn_complete') {
+        userBuffer = '';
+        scheduleUserFadeOut();
+      }
+    };
+
+    ws.onclose = function() {
+      setTimeout(connect, 3000);
+    };
+
+    ws.onerror = function() {
+      ws.close();
+    };
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>

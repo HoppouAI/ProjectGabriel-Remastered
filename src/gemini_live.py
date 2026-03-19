@@ -231,6 +231,7 @@ class GeminiLiveSession:
             await asyncio.sleep(0.5)
             self._conv_logger.finalize_user_message()
             self._input_transcript_buffer = ""
+            _broadcast_console("user_turn_complete", "")
         except asyncio.CancelledError:
             pass
         finally:
@@ -914,6 +915,7 @@ class GeminiLiveSession:
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         await self._finalize_chatbox()
+                        _broadcast_console("turn_complete", "")
                         # User message already streamed in-place via stream_user_message
                         if self._transcript_buffer.strip():
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
