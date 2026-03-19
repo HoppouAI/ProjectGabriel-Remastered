@@ -484,7 +484,9 @@ function connectWS() {
         } else if (msg.type === 'toast') {
             showToast(msg.message, msg.level);
         } else if (msg.type === 'log') {
-            addConsoleEntry(msg.data.type, msg.data.content, msg.data.extra || {});
+            if (msg.data.type !== 'music_update') {
+                addConsoleEntry(msg.data.type, msg.data.content, msg.data.extra || {});
+            }
         }
     };
 
