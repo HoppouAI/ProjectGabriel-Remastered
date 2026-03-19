@@ -223,6 +223,12 @@ async def index():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
+@app.get("/overlay")
+async def overlay():
+    html_path = STATIC_DIR / "overlay.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
 @app.get("/api/state")
 async def get_state():
     return get_full_state()
