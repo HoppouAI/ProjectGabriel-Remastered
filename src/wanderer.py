@@ -463,7 +463,7 @@ class Wanderer:
     # ── OSC Output ────────────────────────────────────────────────────────
 
     def _send_osc(self, turn, forward, look_v):
-        if not self.osc:
+        if not self.osc or self._paused:
             return
         client = self.osc.client
         client.send_message("/input/LookHorizontal", float(max(-1, min(1, turn))))
@@ -501,6 +501,9 @@ class Wanderer:
             return
         self._paused = True
         self._auto_paused = True
+        self._smoothed_turn = 0.0
+        self._smoothed_forward = 0.0
+        self._smoothed_look_v = 0.0
         self._zero_osc()
         if self.osc:
             self.osc.send_chatbox("Hold on, someone's talking to me!")
@@ -631,7 +634,8 @@ class Wanderer:
 
                 # While paused, keep thread alive but skip navigation
                 if self._paused:
-                    time.sleep(0.2)
+                    self._zero_osc()
+                    time.sleep(0.5)
                     continue
 
                 frame = capture_fn()
