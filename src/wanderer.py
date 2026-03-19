@@ -42,7 +42,7 @@ DEPTH_MODELS = {
 }
 
 DEFAULT_CFG = {
-    "close_threshold": 0.40,     # Zone mean above this = obstacle (0=far, 1=close)
+    "close_threshold": 0.45,     # Zone mean above this = obstacle (0=far, 1=close)
     "forward_speed": 0.45,       # Base forward movement speed (slower = more reaction time)
     "turn_speed": 0.5,           # Turn speed when avoiding obstacles
     "smoothing_alpha": 0.6,      # EMA smoothing for movement (higher = faster reaction)
@@ -328,23 +328,23 @@ class Wanderer:
                         self._stuck_turn_dir = random.choice([-1.0, 1.0])
                     else:
                         self._stuck_turn_dir = self._committed_turn_dir
-                target_turn = self._stuck_turn_dir * 1.0
-                target_forward = -0.3
+                target_turn = self._stuck_turn_dir * 0.8
+                target_forward = -0.2
                 self._current_action = "stuck"
                 self._smoothed_turn = target_turn
                 self._committed_turn_dir = self._stuck_turn_dir
                 self._committed_turn_until = max(self._committed_turn_until, now + 1.0)
             elif left_blocked:
-                target_turn = 1.0  # Turn right hard
-                target_forward = 0.0  # Stop forward motion
+                target_turn = 0.7  # Turn right
+                target_forward = 0.1  # Slow crawl forward while turning
                 self._current_action = "turning_right"
                 self._stuck_count = 0
                 if now >= self._committed_turn_until:
                     self._committed_turn_dir = 1.0
                     self._committed_turn_until = now + 0.5
             elif right_blocked:
-                target_turn = -1.0  # Turn left hard
-                target_forward = 0.0  # Stop forward motion
+                target_turn = -0.7  # Turn left
+                target_forward = 0.1  # Slow crawl forward while turning
                 self._current_action = "turning_left"
                 self._stuck_count = 0
                 if now >= self._committed_turn_until:
@@ -358,36 +358,36 @@ class Wanderer:
                     else:
                         self._committed_turn_dir = 1.0
                     self._committed_turn_until = now + 0.5
-                target_turn = self._committed_turn_dir * 0.9
+                target_turn = self._committed_turn_dir * 0.6
                 self._current_action = "turning_left" if self._committed_turn_dir < 0 else "turning_right"
-                target_forward = 0.0  # Stop while turning
+                target_forward = 0.1  # Slow crawl forward while turning
                 self._stuck_count = max(0, self._stuck_count - 1)
             self._last_straight_time = now
         elif left_blocked or right_blocked:
             # Side obstacle(s) but center is clear
             # Require higher mean for side-only reactions to avoid false triggers on doorframes
-            side_threshold = close_thresh + 0.10
+            side_threshold = close_thresh + 0.15
             left_strongly_blocked = zones["left"] > side_threshold
             right_strongly_blocked = zones["right"] > side_threshold
             self._stuck_count = max(0, self._stuck_count - 1)
             if left_strongly_blocked and right_strongly_blocked:
-                # Hallway: both sides strongly blocked, center clear - just walk straight
+                # Hallway/doorway: both sides blocked, center clear - walk through
                 self._current_action = "hallway"
                 target_forward = cfg["forward_speed"]
             elif left_strongly_blocked:
-                target_turn = 0.7  # Steer right
-                target_forward *= 0.5
+                target_turn = 0.4  # Gentle steer right
+                target_forward *= 0.7
                 self._current_action = "avoid_left"
                 if now >= self._committed_turn_until:
                     self._committed_turn_dir = 1.0
-                    self._committed_turn_until = now + 0.5
+                    self._committed_turn_until = now + 0.3
             elif right_strongly_blocked:
-                target_turn = -0.7  # Steer left
-                target_forward *= 0.5
+                target_turn = -0.4  # Gentle steer left
+                target_forward *= 0.7
                 self._current_action = "avoid_right"
                 if now >= self._committed_turn_until:
                     self._committed_turn_dir = -1.0
-                    self._committed_turn_until = now + 0.5
+                    self._committed_turn_until = now + 0.3
             else:
                 # Sides mildly blocked (doorframes etc) - just walk through
                 self._current_action = "walking"
