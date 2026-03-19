@@ -23,6 +23,7 @@ import hmac
 import io
 import logging
 import os
+import secrets
 import sys
 import time
 
@@ -188,10 +189,21 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    keys_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.txt")
+
+    # Priority: CLI arg > env var > keys.txt file
     _api_key = args.api_key or os.environ.get("DEPTH_API_KEY")
     if not _api_key:
-        logger.error("No API key set. Use --api-key or DEPTH_API_KEY env var.")
-        sys.exit(1)
+        if os.path.exists(keys_path):
+            with open(keys_path) as f:
+                _api_key = f.read().strip()
+        if not _api_key:
+            _api_key = secrets.token_urlsafe(32)
+            with open(keys_path, "w") as f:
+                f.write(_api_key)
+            logger.info(f"Generated new API key and saved to {keys_path}")
+
+    logger.info(f"API key: {_api_key}")
 
     load_model(args.model, args.input_size, fp16=not args.no_fp16)
 
