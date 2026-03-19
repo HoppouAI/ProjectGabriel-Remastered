@@ -644,11 +644,60 @@ async def websocket_endpoint(ws: WebSocket):
             websocket_clients.remove(ws)
 
 
+# --- Music broadcast loop ---
+
+_music_broadcast_task = None
+_last_music_state = None  # Track previous state to detect changes
+
+
+async def _music_broadcast_loop():
+    """Broadcast music_update log events while music is playing."""
+    global _last_music_state
+    while True:
+        await asyncio.sleep(1)
+        audio_mgr = shared_state.get("audio_mgr")
+        if not audio_mgr or not hasattr(audio_mgr, "get_music_progress"):
+            if _last_music_state is not None:
+                _last_music_state = None
+                add_console_log("music_update", "", {"playing": False})
+            continue
+
+        prog = audio_mgr.get_music_progress()
+        if prog:
+            lyric = None
+            if hasattr(audio_mgr, "get_current_lyric"):
+                lyric = audio_mgr.get_current_lyric()
+            is_playing = audio_mgr.is_music_playing() if hasattr(audio_mgr, "is_music_playing") else True
+            add_console_log("music_update", prog.get("song_name", ""), {
+                "playing": is_playing,
+                "song_name": prog.get("song_name", "Unknown"),
+                "position": round(prog.get("position", 0), 1),
+                "duration": round(prog.get("duration", 0), 1),
+                "progress": round(prog.get("progress", 0), 3),
+                "lyric": lyric,
+            })
+            _last_music_state = True
+        elif _last_music_state is not None:
+            _last_music_state = None
+            add_console_log("music_update", "", {"playing": False})
+
+
+def start_music_broadcast():
+    global _music_broadcast_task
+    if _music_broadcast_task is None or _music_broadcast_task.done():
+        _music_broadcast_task = asyncio.ensure_future(_music_broadcast_loop())
+
+
 # --- Run ---
 
 def run_control_server(host: str = "0.0.0.0", port: int = 8766):
     print("Gabriel Control Panel")
     print(f"Open http://localhost:{port} in your browser")
+
+    @app.on_event("startup")
+    async def _startup():
+        start_music_broadcast()
+
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
