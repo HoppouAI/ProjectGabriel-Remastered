@@ -1,0 +1,19 @@
+[project]
+name = "depth-server"
+version = "0.1.0"
+description = "Depth estimation server for ProjectGabriel wanderer"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]",
+    "transformers>=4.40",
+    "pillow",
+    "numpy",
+    "opencv-python-headless",
+]
+
+[tool.uv]
+# PyTorch with CUDA must be installed separately:
+#   uv pip install torch --index-url https://download.pytorch.org/whl/cu121
+# Or for CPU only:
+#   uv pip install torch --index-url https://download.pytorch.org/whl/cpu
