@@ -95,6 +95,12 @@ class Wanderer:
         self._model_key = self.config.get("wanderer", "model", default="depth-anything-v2-small")
         self._use_fp16 = self.config.get("wanderer", "fp16", default=True)
 
+        # Remote depth server config
+        depth_srv = self.config.get("wanderer", "depth_server", default={}) or {}
+        self._use_remote_depth = depth_srv.get("enabled", False)
+        self._depth_server_url = depth_srv.get("url", "").rstrip("/")
+        self._depth_api_key = depth_srv.get("api_key", "")
+
     @property
     def active(self):
         return self._active
@@ -102,7 +108,11 @@ class Wanderer:
     # ── Model Loading ─────────────────────────────────────────────────────
 
     def preload(self):
-        """Pre-load DPT model in background thread."""
+        """Pre-load DPT model in background thread (skipped when using remote server)."""
+        if self._use_remote_depth:
+            self._preload_ready.set()
+            return
+
         def _do_preload():
             try:
                 logger.info("Wanderer: loading DPT-Large depth model...")
@@ -238,6 +248,27 @@ class Wanderer:
             depth_norm = 1.0 - depth_norm
 
         return depth_norm
+
+    def _estimate_depth_remote(self, frame):
+        """Send frame to remote depth server and receive depth map."""
+        import cv2
+        import requests
+
+        rgb = cv2.resize(frame, (FRAME_W, FRAME_H))
+        _, jpeg = cv2.imencode(".jpg", rgb, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+        resp = requests.post(
+            f"{self._depth_server_url}/depth",
+            files={"file": ("frame.jpg", jpeg.tobytes(), "image/jpeg")},
+            headers={"X-API-Key": self._depth_api_key},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+
+        depth_uint8 = cv2.imdecode(
+            np.frombuffer(resp.content, np.uint8), cv2.IMREAD_GRAYSCALE
+        )
+        return depth_uint8.astype(np.float32) / 255.0
 
     # ── Zone Analysis ─────────────────────────────────────────────────────
 
@@ -563,15 +594,18 @@ class Wanderer:
             self._active = False
             return
 
-        if not self._preload_ready.is_set():
-            logger.info("Wanderer: waiting for model preload...")
-            self._preload_ready.wait(timeout=120)
-        self._load_model()
+        if self._use_remote_depth:
+            logger.info(f"Wanderer: using remote depth server at {self._depth_server_url}")
+        else:
+            if not self._preload_ready.is_set():
+                logger.info("Wanderer: waiting for model preload...")
+                self._preload_ready.wait(timeout=120)
+            self._load_model()
 
-        if self._model is None:
-            logger.error("Wanderer: model failed to load")
-            self._active = False
-            return
+            if self._model is None:
+                logger.error("Wanderer: model failed to load")
+                self._active = False
+                return
 
         logger.info(f"Wanderer started - target {TARGET_FPS} FPS")
         frame_interval = 1.0 / TARGET_FPS
@@ -595,9 +629,12 @@ class Wanderer:
                 # Resize for depth estimation
                 frame_resized = cv2.resize(frame, (FRAME_W, FRAME_H))
 
-                # Depth estimation
+                # Depth estimation (remote or local)
                 t_depth = time.perf_counter()
-                depth_map = self._estimate_depth(frame_resized)
+                if self._use_remote_depth:
+                    depth_map = self._estimate_depth_remote(frame_resized)
+                else:
+                    depth_map = self._estimate_depth(frame_resized)
                 depth_ms = (time.perf_counter() - t_depth) * 1000
 
                 if _first_frame:

@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn[standard]
+torch
+transformers>=4.40
+pillow
+numpy
+opencv-python-headless

@@ -257,6 +257,13 @@ wanderer:
   # Use FP16 on GPU (halves VRAM, ~2x faster, no quality loss)
   fp16: true
 
+  # Remote depth server (offload inference to a dedicated GPU machine)
+  # See depth_server/ for the server setup
+  depth_server:
+    enabled: false
+    url: "http://192.168.1.x:8780"
+    api_key: "your-secret-key"
+
 vision:
   # Screen capture for Gemini Live vision
   # Allows the AI to SEE what's on your screen
