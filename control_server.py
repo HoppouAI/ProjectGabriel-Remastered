@@ -229,6 +229,12 @@ async def overlay():
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
+@app.get("/overlay/config")
+async def overlay_config():
+    html_path = STATIC_DIR / "overlay_config.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
 @app.get("/api/state")
 async def get_state():
     return get_full_state()
