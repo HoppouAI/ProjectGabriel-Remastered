@@ -426,7 +426,8 @@ class Wanderer:
 
         # Velocity-based stuck detection: if we're trying to move forward but
         # VelocityZ from VRChat says we're not actually moving, we're stuck
-        if self.osc and target_forward > 0.2:
+        # Only active if VRChat is actually sending velocity data
+        if self.osc and self.osc.velocity_received and target_forward > 0.2:
             vel_z = abs(self.osc.velocity_z)
             if vel_z < 0.05:
                 self._moving_stuck_frames += 1

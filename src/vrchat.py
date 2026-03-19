@@ -32,6 +32,7 @@ class VRChatOSC:
         self.velocity_y = 0.0
         self.velocity_z = 0.0
         self.grounded = True
+        self.velocity_received = False  # True once any velocity update arrives
 
         # Start OSC listener for avatar parameters
         self._start_osc_listener(config)
@@ -55,9 +56,11 @@ class VRChatOSC:
 
     def _on_velocity_z(self, address, value):
         self.velocity_z = float(value)
+        self.velocity_received = True
 
     def _on_velocity_x(self, address, value):
         self.velocity_x = float(value)
+        self.velocity_received = True
 
     def _on_velocity_y(self, address, value):
         self.velocity_y = float(value)
