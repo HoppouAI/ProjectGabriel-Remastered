@@ -43,7 +43,7 @@ DEPTH_MODELS = {
 
 DEFAULT_CFG = {
     "close_threshold": 0.45,     # Zone mean above this = obstacle (0=far, 1=close)
-    "forward_speed": 0.45,       # Base forward movement speed (slower = more reaction time)
+    "forward_speed": 0.55,       # Base forward movement speed (slower = more reaction time)
     "turn_speed": 0.5,           # Turn speed when avoiding obstacles
     "smoothing_alpha": 0.6,      # EMA smoothing for movement (higher = faster reaction)
     "random_turn_chance": 0.08,  # Chance per frame to do a random turn
@@ -54,7 +54,7 @@ DEFAULT_CFG = {
     "zone_center_range": [0.30, 0.70], # Center of screen
     "zone_right_range": [0.65, 1.0],   # Right third of screen
     "model_input_size": 392,     # Depth model input resolution (lower = faster, default 518)
-    "target_frame_ms": 150,      # Target depth inference time; forward speed scales down above this
+    "target_frame_ms": 200,      # Target depth inference time; forward speed scales down above this
 }
 
 
