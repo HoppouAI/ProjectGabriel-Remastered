@@ -17,12 +17,12 @@ class MemoryTools(BaseTool):
         return [
             types.FunctionDeclaration(
                 name="saveMemory",
-                description="Save a memory. These are YOUR memories -- things YOU learned, people YOU met, experiences YOU had. Always include actual usernames. Say 'I saved/remember' not 'saved for you'.\n**Invocation Condition:** Call when you learn something worth remembering about a person, fact, or experience.",
+                description="Save a memory. These are YOUR memories -- things YOU learned, people YOU met, experiences YOU had. ALWAYS use the person's actual name/username, NEVER 'user' or 'the user'. Say 'I saved/remember' not 'saved for you'.\n**Invocation Condition:** Call when you learn something worth remembering about a person, fact, or experience.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
                         "key": {"type": "STRING", "description": "Short identifier (e.g., 'john_likes_cats')"},
-                        "content": {"type": "STRING", "description": "What to remember"},
+                        "content": {"type": "STRING", "description": "What to remember. Use the person's real name/username, never 'user' or 'the user'. Example: 'Kitty prefers the Femboy-3 avatar'"},
                         "category": {"type": "STRING", "description": "Category (e.g., 'personal', 'facts', 'preferences')"},
                         "memoryType": {"type": "STRING", "description": "long_term (permanent), short_term (7 days), or quick_note (6 hours)"},
                         "tags": {"type": "STRING", "description": "Comma-separated tags (e.g., 'friend,vrc,important')"},
