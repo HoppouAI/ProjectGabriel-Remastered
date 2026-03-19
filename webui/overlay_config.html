@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gabriel - OBS Overlay Configurator</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-body: #0a0a0f;
+  --bg-card: rgba(14, 14, 22, 0.92);
+  --bg-input: rgba(24, 24, 38, 0.85);
+  --border: rgba(70, 60, 110, 0.22);
+  --border-hover: rgba(110, 80, 220, 0.35);
+  --text: #eeeef4;
+  --text-secondary: #8888a4;
+  --accent: #7c5cff;
+  --accent-soft: rgba(124, 92, 255, 0.12);
+  --success: #4ade80;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg-body);
+  color: var(--text);
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 15% 0%, rgba(124, 92, 255, 0.05) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 100%, rgba(92, 140, 255, 0.03) 0%, transparent 45%);
+  -webkit-font-smoothing: antialiased;
+}
+
+.header {
+  background: rgba(10, 10, 18, 0.95);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.header h1 { font-size: 1.1rem; font-weight: 600; }
+.header a { color: var(--text-secondary); text-decoration: none; font-size: 0.85rem; }
+.header a:hover { color: var(--accent); }
+
+.layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  height: calc(100vh - 52px);
+}
+
+.sidebar {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.preview-area {
+  position: relative;
+  background: repeating-conic-gradient(#1a1a2e 0% 25%, #12121f 0% 50%) 50% / 20px 20px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.section {
+  margin-bottom: 1.25rem;
+}
+.section-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.field label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  min-width: 110px;
+  flex-shrink: 0;
+}
+.field input[type="text"],
+.field input[type="number"],
+.field select {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.field input:focus, .field select:focus {
+  border-color: var(--accent);
+}
+.field input[type="color"] {
+  width: 32px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
+  cursor: pointer;
+  padding: 0;
+}
+.field input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+.field .color-pair {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+}
+.field .color-pair input[type="text"] {
+  flex: 1;
+}
+
+.url-box {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 380px;
+  background: rgba(10, 10, 18, 0.98);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  z-index: 10;
+}
+.url-box label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.url-row {
+  display: flex;
+  gap: 0.4rem;
+}
+.url-row input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  outline: none;
+}
+.url-row button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+.url-row button:hover { opacity: 0.85; }
+.url-row button:active { opacity: 0.7; }
+
+.preview-container {
+  max-width: 800px;
+  width: 100%;
+  padding: 16px 24px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+.preview-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 4px;
+}
+.preview-text {
+  font-size: 24px;
+  color: #ffffff;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+.preview-user-container {
+  max-width: 800px;
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  margin-bottom: 8px;
+  transition: all 0.3s ease;
+  display: none;
+}
+.preview-user-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 4px;
+}
+.preview-user-text {
+  font-size: 24px;
+  color: #ffffff;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.sidebar { padding-bottom: 120px; }
+
+.toast {
+  position: fixed;
+  bottom: 80px;
+  left: 190px;
+  transform: translateX(-50%);
+  background: var(--success);
+  color: #000;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 100;
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>OBS Overlay Configurator</h1>
+  <a href="/">Back to Dashboard</a>
+</div>
+
+<div class="layout">
+  <div class="sidebar" id="sidebar">
+
+    <!-- AI Response -->
+    <div class="section">
+      <div class="section-title">AI Response</div>
+      <div class="field">
+        <label>Label</label>
+        <input type="text" id="opt-label" value="Gabriel" data-param="label">
+      </div>
+      <div class="field">
+        <label>Hide Label</label>
+        <input type="checkbox" id="opt-hideLabel" data-param="hideLabel">
+      </div>
+      <div class="field">
+        <label>Font</label>
+        <input type="text" id="opt-font" value="" placeholder="Segoe UI" data-param="font">
+      </div>
+      <div class="field">
+        <label>Google Font</label>
+        <input type="text" id="opt-googleFont" value="" placeholder="e.g. Poppins, Inter" data-param="googleFont">
+      </div>
+      <div class="field">
+        <label>Font Size</label>
+        <input type="text" id="opt-fontSize" value="" placeholder="24px" data-param="fontSize">
+      </div>
+      <div class="field">
+        <label>Font Weight</label>
+        <select id="opt-fontWeight" data-param="fontWeight">
+          <option value="">Default (400)</option>
+          <option value="300">300 Light</option>
+          <option value="400">400 Regular</option>
+          <option value="500">500 Medium</option>
+          <option value="600">600 Semi-Bold</option>
+          <option value="700">700 Bold</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Text Color</label>
+        <div class="color-pair">
+          <input type="color" id="opt-color-picker" value="#ffffff">
+          <input type="text" id="opt-color" value="" placeholder="#ffffff" data-param="color">
+        </div>
+      </div>
+      <div class="field">
+        <label>Text Stroke</label>
+        <input type="text" id="opt-textStroke" value="" placeholder="e.g. 1px black" data-param="textStroke">
+      </div>
+      <div class="field">
+        <label>Text Shadow</label>
+        <input type="text" id="opt-textShadow" value="" placeholder="e.g. 2px 2px 8px black" data-param="textShadow">
+      </div>
+      <div class="field">
+        <label>Letter Spacing</label>
+        <input type="text" id="opt-letterSpacing" value="" placeholder="normal" data-param="letterSpacing">
+      </div>
+      <div class="field">
+        <label>Line Height</label>
+        <input type="text" id="opt-lineHeight" value="" placeholder="1.4" data-param="lineHeight">
+      </div>
+      <div class="field">
+        <label>Text Align</label>
+        <select id="opt-textAlign" data-param="textAlign">
+          <option value="">Default (left)</option>
+          <option value="left">Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Container -->
+    <div class="section">
+      <div class="section-title">Container</div>
+      <div class="field">
+        <label>Background</label>
+        <input type="text" id="opt-bg" value="" placeholder="rgba(0,0,0,0.7)" data-param="bg">
+      </div>
+      <div class="field">
+        <label>Border</label>
+        <input type="text" id="opt-border" value="" placeholder="none" data-param="border">
+      </div>
+      <div class="field">
+        <label>Border Radius</label>
+        <input type="text" id="opt-borderRadius" value="" placeholder="12px" data-param="borderRadius">
+      </div>
+      <div class="field">
+        <label>Padding</label>
+        <input type="text" id="opt-padding" value="" placeholder="16px 24px" data-param="padding">
+      </div>
+      <div class="field">
+        <label>Max Width</label>
+        <input type="text" id="opt-maxWidth" value="" placeholder="800px" data-param="maxWidth">
+      </div>
+      <div class="field">
+        <label>Backdrop</label>
+        <input type="text" id="opt-backdrop" value="" placeholder="blur(8px)" data-param="backdrop">
+      </div>
+    </div>
+
+    <!-- Label Styling -->
+    <div class="section">
+      <div class="section-title">Label Styling</div>
+      <div class="field">
+        <label>Label Size</label>
+        <input type="text" id="opt-labelSize" value="" placeholder="14px" data-param="labelSize">
+      </div>
+      <div class="field">
+        <label>Label Color</label>
+        <div class="color-pair">
+          <input type="color" id="opt-labelColor-picker" value="#999999">
+          <input type="text" id="opt-labelColor" value="" placeholder="rgba(255,255,255,0.6)" data-param="labelColor">
+        </div>
+      </div>
+      <div class="field">
+        <label>Label Weight</label>
+        <select id="opt-labelWeight" data-param="labelWeight">
+          <option value="">Default (600)</option>
+          <option value="400">400 Regular</option>
+          <option value="500">500 Medium</option>
+          <option value="600">600 Semi-Bold</option>
+          <option value="700">700 Bold</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Label Shadow</label>
+        <input type="text" id="opt-labelShadow" value="" placeholder="none" data-param="labelShadow">
+      </div>
+    </div>
+
+    <!-- Animation & Timing -->
+    <div class="section">
+      <div class="section-title">Animation & Timing</div>
+      <div class="field">
+        <label>Fade Duration</label>
+        <input type="text" id="opt-fadeDuration" value="" placeholder="0.4s" data-param="fadeDuration">
+      </div>
+      <div class="field">
+        <label>Fade Out (ms)</label>
+        <input type="number" id="opt-fadeOut" value="" placeholder="8000" data-param="fadeOut">
+      </div>
+      <div class="field">
+        <label>Animation From</label>
+        <select id="opt-animFrom" data-param="animFrom">
+          <option value="">Slide Up (default)</option>
+          <option value="translateY(-20px)">Slide Down</option>
+          <option value="translateX(-20px)">Slide Right</option>
+          <option value="translateX(20px)">Slide Left</option>
+          <option value="scale(0.95)">Scale In</option>
+          <option value="none">None (Fade Only)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Position -->
+    <div class="section">
+      <div class="section-title">Position</div>
+      <div class="field">
+        <label>Vertical</label>
+        <select id="opt-align" data-param="align">
+          <option value="">Bottom (default)</option>
+          <option value="flex-start">Top</option>
+          <option value="center">Center</option>
+          <option value="flex-end">Bottom</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Horizontal</label>
+        <select id="opt-justify" data-param="justify">
+          <option value="">Center (default)</option>
+          <option value="flex-start">Left</option>
+          <option value="center">Center</option>
+          <option value="flex-end">Right</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Body Padding</label>
+        <input type="text" id="opt-bodyPadding" value="" placeholder="20px" data-param="bodyPadding">
+      </div>
+    </div>
+
+    <!-- User Transcription -->
+    <div class="section">
+      <div class="section-title">User Transcription</div>
+      <div class="field">
+        <label>Show User</label>
+        <input type="checkbox" id="opt-showUser" data-param="showUser">
+      </div>
+      <div class="field">
+        <label>User Label</label>
+        <input type="text" id="opt-userLabel" value="" placeholder="User" data-param="userLabel">
+      </div>
+      <div class="field">
+        <label>User Fade (ms)</label>
+        <input type="number" id="opt-userFadeOut" value="" placeholder="5000" data-param="userFadeOut">
+      </div>
+      <div class="field">
+        <label>User BG</label>
+        <input type="text" id="opt-userBg" value="" placeholder="rgba(255,255,255,0.1)" data-param="userBg">
+      </div>
+      <div class="field">
+        <label>User Color</label>
+        <div class="color-pair">
+          <input type="color" id="opt-userColor-picker" value="#ffffff">
+          <input type="text" id="opt-userColor" value="" placeholder="#ffffff" data-param="userColor">
+        </div>
+      </div>
+      <div class="field">
+        <label>User Font Size</label>
+        <input type="text" id="opt-userFontSize" value="" placeholder="24px" data-param="userFontSize">
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Live Preview -->
+  <div class="preview-area" id="previewArea">
+    <div style="display:flex;flex-direction:column;align-items:center;width:100%;max-width:800px;" id="previewWrapper">
+      <div class="preview-user-container" id="prevUserContainer">
+        <div class="preview-user-label" id="prevUserLabel">User</div>
+        <div class="preview-user-text" id="prevUserText">Hey Gabriel, what's up?</div>
+      </div>
+      <div class="preview-container" id="prevContainer">
+        <div class="preview-label" id="prevLabel">Gabriel</div>
+        <div class="preview-text" id="prevText">Hey! Not much, just hanging out here. What are you up to today?</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="url-box">
+  <label>Generated OBS Browser Source URL</label>
+  <div class="url-row">
+    <input type="text" id="generatedUrl" readonly>
+    <button onclick="copyUrl()">Copy</button>
+    <button onclick="openPreview()" style="background:var(--accent-soft);color:var(--accent);">Open</button>
+  </div>
+</div>
+
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+(function() {
+  var preview = {
+    container: document.getElementById('prevContainer'),
+    text: document.getElementById('prevText'),
+    label: document.getElementById('prevLabel'),
+    userContainer: document.getElementById('prevUserContainer'),
+    userText: document.getElementById('prevUserText'),
+    userLabel: document.getElementById('prevUserLabel'),
+    wrapper: document.getElementById('previewWrapper'),
+    area: document.getElementById('previewArea'),
+  };
+
+  function getVal(id) {
+    var el = document.getElementById(id);
+    if (!el) return '';
+    if (el.type === 'checkbox') return el.checked;
+    return el.value.trim();
+  }
+
+  function updatePreview() {
+    var font = getVal('opt-font') || "'Segoe UI', sans-serif";
+    var googleFont = getVal('opt-googleFont');
+    if (googleFont) font = "'" + googleFont + "', sans-serif";
+
+    var fontSize = getVal('opt-fontSize') || '24px';
+    var fontWeight = getVal('opt-fontWeight') || '400';
+    var color = getVal('opt-color') || '#ffffff';
+    var textStroke = getVal('opt-textStroke') || 'unset';
+    var textShadow = getVal('opt-textShadow') || 'none';
+    var letterSpacing = getVal('opt-letterSpacing') || 'normal';
+    var lineHeight = getVal('opt-lineHeight') || '1.4';
+    var textAlign = getVal('opt-textAlign') || 'left';
+
+    var bg = getVal('opt-bg') || 'rgba(0,0,0,0.7)';
+    var border = getVal('opt-border') || 'none';
+    var borderRadius = getVal('opt-borderRadius') || '12px';
+    var padding = getVal('opt-padding') || '16px 24px';
+    var maxWidth = getVal('opt-maxWidth') || '800px';
+    var backdrop = getVal('opt-backdrop') || 'blur(8px)';
+
+    var labelText = getVal('opt-label') || 'Gabriel';
+    var hideLabel = getVal('opt-hideLabel');
+    var labelSize = getVal('opt-labelSize') || '14px';
+    var labelColor = getVal('opt-labelColor') || 'rgba(255,255,255,0.6)';
+    var labelWeight = getVal('opt-labelWeight') || '600';
+    var labelShadow = getVal('opt-labelShadow') || 'none';
+
+    var align = getVal('opt-align') || 'flex-end';
+    var justify = getVal('opt-justify') || 'center';
+    var bodyPadding = getVal('opt-bodyPadding') || '20px';
+
+    var showUser = getVal('opt-showUser');
+    var userLabel = getVal('opt-userLabel') || 'User';
+    var userBg = getVal('opt-userBg') || 'rgba(255,255,255,0.1)';
+    var userColor = getVal('opt-userColor') || '#ffffff';
+    var userFontSize = getVal('opt-userFontSize') || fontSize;
+
+    // Apply to preview
+    preview.container.style.fontFamily = font;
+    preview.container.style.background = bg;
+    preview.container.style.border = border;
+    preview.container.style.borderRadius = borderRadius;
+    preview.container.style.padding = padding;
+    preview.container.style.maxWidth = maxWidth;
+    preview.container.style.backdropFilter = backdrop;
+
+    preview.text.style.fontFamily = font;
+    preview.text.style.fontSize = fontSize;
+    preview.text.style.fontWeight = fontWeight;
+    preview.text.style.color = color;
+    preview.text.style.webkitTextStroke = textStroke;
+    preview.text.style.textShadow = textShadow;
+    preview.text.style.letterSpacing = letterSpacing;
+    preview.text.style.lineHeight = lineHeight;
+    preview.text.style.textAlign = textAlign;
+
+    preview.label.textContent = labelText;
+    preview.label.style.display = hideLabel ? 'none' : 'block';
+    preview.label.style.fontFamily = font;
+    preview.label.style.fontSize = labelSize;
+    preview.label.style.color = labelColor;
+    preview.label.style.fontWeight = labelWeight;
+    preview.label.style.textShadow = labelShadow;
+
+    preview.area.style.alignItems = align;
+    preview.area.style.justifyContent = justify;
+    preview.area.style.padding = bodyPadding;
+    preview.wrapper.style.alignItems = justify;
+    preview.wrapper.style.maxWidth = maxWidth;
+
+    preview.userContainer.style.display = showUser ? 'block' : 'none';
+    preview.userContainer.style.background = userBg;
+    preview.userContainer.style.borderRadius = borderRadius;
+    preview.userContainer.style.maxWidth = maxWidth;
+    preview.userContainer.style.backdropFilter = backdrop;
+    preview.userLabel.textContent = userLabel;
+    preview.userLabel.style.fontFamily = font;
+    preview.userLabel.style.fontSize = labelSize;
+    preview.userLabel.style.color = labelColor;
+    preview.userText.style.fontFamily = font;
+    preview.userText.style.fontSize = userFontSize;
+    preview.userText.style.color = userColor;
+    preview.userText.style.lineHeight = lineHeight;
+    preview.userText.style.textAlign = textAlign;
+
+    // Load Google Font for preview
+    if (googleFont) {
+      var existing = document.getElementById('preview-google-font');
+      var href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(googleFont) + ':wght@300;400;500;600;700&display=swap';
+      if (!existing) {
+        var link = document.createElement('link');
+        link.id = 'preview-google-font';
+        link.rel = 'stylesheet';
+        link.href = href;
+        document.head.appendChild(link);
+      } else if (existing.href !== href) {
+        existing.href = href;
+      }
+    }
+
+    updateUrl();
+  }
+
+  function updateUrl() {
+    var base = window.location.origin + '/overlay';
+    var params = new URLSearchParams();
+    var fields = document.querySelectorAll('[data-param]');
+
+    fields.forEach(function(el) {
+      var param = el.dataset.param;
+      var val;
+      if (el.type === 'checkbox') {
+        if (el.checked) val = 'true';
+        else return;
+      } else {
+        val = el.value.trim();
+        if (!val) return;
+      }
+      params.set(param, val);
+    });
+
+    var qs = params.toString();
+    var url = base + (qs ? '?' + qs : '');
+    document.getElementById('generatedUrl').value = url;
+  }
+
+  // Bind all inputs to live update
+  document.querySelectorAll('[data-param]').forEach(function(el) {
+    el.addEventListener('input', updatePreview);
+    el.addEventListener('change', updatePreview);
+  });
+
+  // Sync color pickers with text inputs
+  var colorPairs = [
+    ['opt-color-picker', 'opt-color'],
+    ['opt-labelColor-picker', 'opt-labelColor'],
+    ['opt-userColor-picker', 'opt-userColor'],
+  ];
+  colorPairs.forEach(function(pair) {
+    var picker = document.getElementById(pair[0]);
+    var text = document.getElementById(pair[1]);
+    if (picker && text) {
+      picker.addEventListener('input', function() {
+        text.value = picker.value;
+        updatePreview();
+      });
+      text.addEventListener('input', function() {
+        if (/^#[0-9a-fA-F]{6}$/.test(text.value)) {
+          picker.value = text.value;
+        }
+      });
+    }
+  });
+
+  // Copy URL
+  window.copyUrl = function() {
+    var input = document.getElementById('generatedUrl');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(function() {
+      var toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(function() { toast.classList.remove('show'); }, 1500);
+    });
+  };
+
+  // Open preview in new tab
+  window.openPreview = function() {
+    var url = document.getElementById('generatedUrl').value;
+    if (url) window.open(url, '_blank');
+  };
+
+  // Initial render
+  updatePreview();
+})();
+</script>
+</body>
+</html>
