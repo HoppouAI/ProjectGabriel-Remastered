@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gabriel - Music Overlay</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: transparent;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: var(--align, flex-start);
+    justify-content: var(--justify, flex-end);
+    padding: var(--body-padding, 20px);
+  }
+
+  #music-container {
+    max-width: var(--max-width, 360px);
+    width: 100%;
+    padding: var(--padding, 14px 18px);
+    border-radius: var(--border-radius, 12px);
+    background: var(--bg, rgba(0, 0, 0, 0.75));
+    border: var(--border, none);
+    backdrop-filter: var(--backdrop, blur(12px));
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity var(--fade-duration, 0.5s) ease, transform var(--fade-duration, 0.5s) ease;
+    pointer-events: none;
+  }
+
+  #music-container.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  #music-icon {
+    display: inline-block;
+    margin-right: 6px;
+    font-size: var(--title-size, 14px);
+    animation: music-pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes music-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  #music-title {
+    font-family: var(--font, 'Segoe UI', sans-serif);
+    font-size: var(--title-size, 14px);
+    font-weight: var(--title-weight, 600);
+    color: var(--title-color, rgba(255, 255, 255, 0.9));
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: var(--title-shadow, none);
+  }
+
+  #music-progress-bar {
+    width: 100%;
+    height: var(--bar-height, 3px);
+    background: var(--bar-bg, rgba(255, 255, 255, 0.15));
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+
+  #music-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--bar-color, rgba(255, 255, 255, 0.7));
+    border-radius: 3px;
+    transition: width 1.2s linear;
+  }
+
+  #music-time {
+    font-family: var(--font, 'Segoe UI', sans-serif);
+    font-size: var(--time-size, 11px);
+    color: var(--time-color, rgba(255, 255, 255, 0.4));
+    display: flex;
+    justify-content: space-between;
+  }
+
+  #music-lyric {
+    font-family: var(--font, 'Segoe UI', sans-serif);
+    font-size: var(--lyric-size, 13px);
+    color: var(--lyric-color, rgba(255, 255, 255, 0.7));
+    margin-top: 8px;
+    text-align: center;
+    font-style: italic;
+    min-height: 1.3em;
+    transition: opacity 0.3s ease;
+    text-shadow: var(--lyric-shadow, none);
+  }
+</style>
+</head>
+<body>
+  <div id="music-container">
+    <div id="music-title"><span id="music-icon">&#9835;</span> <span id="music-name"></span></div>
+    <div id="music-progress-bar"><div id="music-progress-fill"></div></div>
+    <div id="music-time"><span id="music-elapsed">0:00</span><span id="music-duration">0:00</span></div>
+    <div id="music-lyric"></div>
+  </div>
+
+<script>
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var root = document.documentElement.style;
+
+  var cssMap = {
+    'font':          '--font',
+    'bg':            '--bg',
+    'border':        '--border',
+    'borderRadius':  '--border-radius',
+    'padding':       '--padding',
+    'maxWidth':      '--max-width',
+    'backdrop':      '--backdrop',
+    'fadeDuration':  '--fade-duration',
+    'align':         '--align',
+    'justify':       '--justify',
+    'bodyPadding':   '--body-padding',
+    'titleSize':     '--title-size',
+    'titleColor':    '--title-color',
+    'titleWeight':   '--title-weight',
+    'titleShadow':   '--title-shadow',
+    'barHeight':     '--bar-height',
+    'barColor':      '--bar-color',
+    'barBg':         '--bar-bg',
+    'timeSize':      '--time-size',
+    'timeColor':     '--time-color',
+    'lyricSize':     '--lyric-size',
+    'lyricColor':    '--lyric-color',
+    'lyricShadow':   '--lyric-shadow',
+  };
+
+  params.forEach(function(value, key) {
+    if (cssMap[key]) root.setProperty(cssMap[key], value);
+  });
+
+  var googleFont = params.get('googleFont');
+  if (googleFont) {
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(googleFont) + ':wght@300;400;500;600;700&display=swap';
+    document.head.appendChild(link);
+    root.setProperty('--font', "'" + googleFont + "', sans-serif");
+  }
+
+  var container = document.getElementById('music-container');
+  var nameEl = document.getElementById('music-name');
+  var fill = document.getElementById('music-progress-fill');
+  var elapsed = document.getElementById('music-elapsed');
+  var duration = document.getElementById('music-duration');
+  var lyricEl = document.getElementById('music-lyric');
+
+  function formatTime(sec) {
+    var m = Math.floor(sec / 60);
+    var s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function connect() {
+    var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var wsUrl = protocol + '//' + location.host + '/ws';
+    var customWs = params.get('ws');
+    if (customWs) wsUrl = customWs;
+
+    var ws = new WebSocket(wsUrl);
+
+    ws.onmessage = function(event) {
+      var msg;
+      try { msg = JSON.parse(event.data); } catch(e) { return; }
+      if (msg.type !== 'log' || !msg.data) return;
+
+      var logType = msg.data.type;
+      var extra = msg.data.extra || {};
+
+      if (logType === 'music_update') {
+        if (extra.playing) {
+          nameEl.textContent = extra.song_name || 'Unknown';
+          fill.style.width = ((extra.progress || 0) * 100) + '%';
+          elapsed.textContent = formatTime(extra.position || 0);
+          duration.textContent = formatTime(extra.duration || 0);
+          if (extra.lyric) {
+            lyricEl.textContent = extra.lyric;
+            lyricEl.style.opacity = '1';
+          } else {
+            lyricEl.style.opacity = '0';
+          }
+          container.classList.add('visible');
+        } else {
+          container.classList.remove('visible');
+        }
+      }
+    };
+
+    ws.onclose = function() { setTimeout(connect, 3000); };
+    ws.onerror = function() { ws.close(); };
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>
