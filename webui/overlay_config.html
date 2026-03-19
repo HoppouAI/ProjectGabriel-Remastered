@@ -14,9 +14,11 @@
   --border-hover: rgba(110, 80, 220, 0.35);
   --text: #eeeef4;
   --text-secondary: #8888a4;
+  --text-muted: #55556a;
   --accent: #7c5cff;
   --accent-soft: rgba(124, 92, 255, 0.12);
   --success: #4ade80;
+  --danger: #f87171;
   --radius: 14px;
   --radius-sm: 8px;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -43,22 +45,24 @@ body {
   padding: 0.75rem 1.5rem;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: space-between;
 }
+.header-left { display: flex; align-items: center; gap: 0.75rem; }
 .header h1 { font-size: 1.1rem; font-weight: 600; }
 .header a { color: var(--text-secondary); text-decoration: none; font-size: 0.85rem; }
 .header a:hover { color: var(--accent); }
 
 .layout {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 400px 1fr;
   height: calc(100vh - 52px);
 }
 
 .sidebar {
   border-right: 1px solid var(--border);
   overflow-y: auto;
-  padding: 1rem;
+  padding: 1rem 1.15rem;
+  padding-bottom: 130px;
 }
 
 .preview-area {
@@ -71,49 +75,130 @@ body {
   overflow: hidden;
 }
 
-.section {
-  margin-bottom: 1.25rem;
+/* Presets */
+.presets {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
 }
-.section-title {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.preset-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
   color: var(--text-secondary);
-  margin-bottom: 0.5rem;
-  padding-bottom: 0.35rem;
-  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.preset-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
+/* Sections */
+.section {
+  margin-bottom: 1.15rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.section-header {
+  padding: 0.6rem 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.section-header:hover { background: rgba(124, 92, 255, 0.04); }
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+.section-toggle {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+.section-body {
+  padding: 0.5rem 0.85rem 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.section.collapsed .section-body { display: none; }
+.section.collapsed .section-toggle { transform: rotate(-90deg); }
+
+/* Fields */
 .field {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.55rem;
 }
+.field:last-child { margin-bottom: 0; }
 .field label {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-secondary);
-  min-width: 110px;
+  min-width: 100px;
   flex-shrink: 0;
 }
 .field input[type="text"],
-.field input[type="number"],
 .field select {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 0.4rem 0.6rem;
+  padding: 0.38rem 0.55rem;
   color: var(--text);
   font-family: var(--font);
   font-size: 0.8rem;
   outline: none;
   transition: border-color 0.2s;
+  min-width: 0;
 }
-.field input:focus, .field select:focus {
-  border-color: var(--accent);
+.field input:focus, .field select:focus { border-color: var(--accent); }
+
+/* Range sliders */
+.field input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(124, 92, 255, 0.18);
+  border-radius: 4px;
+  outline: none;
 }
+.field input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.15);
+}
+.range-val {
+  font-size: 0.72rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  min-width: 38px;
+  text-align: right;
+}
+
+/* Color field */
 .field input[type="color"] {
   width: 32px;
   height: 28px;
@@ -122,72 +207,114 @@ body {
   background: var(--bg-input);
   cursor: pointer;
   padding: 0;
+  flex-shrink: 0;
 }
 .field input[type="checkbox"] {
   accent-color: var(--accent);
   width: 16px;
   height: 16px;
+  cursor: pointer;
 }
-.field .color-pair {
+.color-group {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   flex: 1;
 }
-.field .color-pair input[type="text"] {
+.color-group input[type="text"] { flex: 1; }
+
+/* Opacity slider composite */
+.bg-composite {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   flex: 1;
 }
+.bg-composite input[type="color"] { flex-shrink: 0; }
+.bg-composite input[type="range"] { flex: 1; }
+.bg-composite .range-val { min-width: 32px; }
 
+/* Shadow presets */
+.shadow-presets {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.shadow-chip {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.shadow-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.shadow-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* URL box */
 .url-box {
   position: fixed;
   bottom: 0;
   left: 0;
-  width: 380px;
+  width: 400px;
   background: rgba(10, 10, 18, 0.98);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--border);
-  padding: 0.75rem 1rem;
+  padding: 0.65rem 1rem;
   z-index: 10;
 }
-.url-box label {
-  font-size: 0.7rem;
+.url-label {
+  font-size: 0.68rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-secondary);
-  display: block;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.3rem;
 }
 .url-row {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.35rem;
 }
 .url-row input {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 0.4rem 0.6rem;
+  padding: 0.38rem 0.55rem;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   outline: none;
+  min-width: 0;
 }
-.url-row button {
-  background: var(--accent);
-  color: white;
+.btn {
   border: none;
   border-radius: var(--radius-sm);
-  padding: 0.4rem 0.75rem;
+  padding: 0.38rem 0.7rem;
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  font-family: var(--font);
   transition: opacity 0.2s;
 }
-.url-row button:hover { opacity: 0.85; }
-.url-row button:active { opacity: 0.7; }
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-ghost { background: var(--accent-soft); color: var(--accent); }
+.btn-danger { background: rgba(248,113,113,0.12); color: var(--danger); }
 
+/* Preview */
 .preview-container {
   max-width: 800px;
   width: 100%;
@@ -233,12 +360,10 @@ body {
   word-wrap: break-word;
 }
 
-.sidebar { padding-bottom: 120px; }
-
 .toast {
   position: fixed;
   bottom: 80px;
-  left: 190px;
+  left: 200px;
   transform: translateX(-50%);
   background: var(--success);
   color: #000;
@@ -249,6 +374,7 @@ body {
   opacity: 0;
   transition: opacity 0.3s;
   z-index: 100;
+  pointer-events: none;
 }
 .toast.show { opacity: 1; }
 </style>
@@ -256,220 +382,277 @@ body {
 <body>
 
 <div class="header">
-  <h1>OBS Overlay Configurator</h1>
-  <a href="/">Back to Dashboard</a>
+  <div class="header-left">
+    <h1>OBS Overlay Configurator</h1>
+  </div>
+  <div style="display:flex;align-items:center;gap:0.75rem;">
+    <button class="btn btn-danger" onclick="resetAll()">Reset</button>
+    <a href="/">Back to Dashboard</a>
+  </div>
 </div>
 
 <div class="layout">
   <div class="sidebar" id="sidebar">
 
-    <!-- AI Response -->
-    <div class="section">
-      <div class="section-title">AI Response</div>
-      <div class="field">
-        <label>Label</label>
-        <input type="text" id="opt-label" value="Gabriel" data-param="label">
+    <!-- Presets -->
+    <div class="presets" id="presetBar">
+      <button class="preset-btn active" data-preset="default">Default</button>
+      <button class="preset-btn" data-preset="minimal">Minimal</button>
+      <button class="preset-btn" data-preset="streamer">Streamer</button>
+      <button class="preset-btn" data-preset="neon">Neon</button>
+      <button class="preset-btn" data-preset="glass">Glass</button>
+      <button class="preset-btn" data-preset="retro">Retro</button>
+    </div>
+
+    <!-- Text -->
+    <div class="section" id="sec-text">
+      <div class="section-header" onclick="toggleSection('sec-text')">
+        <span class="section-title">Text</span>
+        <span class="section-toggle">&#9660;</span>
       </div>
-      <div class="field">
-        <label>Hide Label</label>
-        <input type="checkbox" id="opt-hideLabel" data-param="hideLabel">
-      </div>
-      <div class="field">
-        <label>Font</label>
-        <input type="text" id="opt-font" value="" placeholder="Segoe UI" data-param="font">
-      </div>
-      <div class="field">
-        <label>Google Font</label>
-        <input type="text" id="opt-googleFont" value="" placeholder="e.g. Poppins, Inter" data-param="googleFont">
-      </div>
-      <div class="field">
-        <label>Font Size</label>
-        <input type="text" id="opt-fontSize" value="" placeholder="24px" data-param="fontSize">
-      </div>
-      <div class="field">
-        <label>Font Weight</label>
-        <select id="opt-fontWeight" data-param="fontWeight">
-          <option value="">Default (400)</option>
-          <option value="300">300 Light</option>
-          <option value="400">400 Regular</option>
-          <option value="500">500 Medium</option>
-          <option value="600">600 Semi-Bold</option>
-          <option value="700">700 Bold</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Text Color</label>
-        <div class="color-pair">
-          <input type="color" id="opt-color-picker" value="#ffffff">
-          <input type="text" id="opt-color" value="" placeholder="#ffffff" data-param="color">
+      <div class="section-body">
+        <div class="field">
+          <label>Label Text</label>
+          <input type="text" id="opt-label" value="Gabriel" data-param="label">
+        </div>
+        <div class="field">
+          <label>Show Label</label>
+          <input type="checkbox" id="opt-showLabel" checked>
+        </div>
+        <div class="field">
+          <label>Google Font</label>
+          <input type="text" id="opt-googleFont" value="" placeholder="e.g. Poppins, Inter, Nunito" data-param="googleFont">
+        </div>
+        <div class="field">
+          <label>Font Size</label>
+          <input type="range" id="opt-fontSize-range" min="12" max="72" value="24">
+          <span class="range-val" id="opt-fontSize-val">24px</span>
+        </div>
+        <div class="field">
+          <label>Font Weight</label>
+          <select id="opt-fontWeight" data-param="fontWeight">
+            <option value="">Regular</option>
+            <option value="300">Light</option>
+            <option value="500">Medium</option>
+            <option value="600">Semi-Bold</option>
+            <option value="700">Bold</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Text Color</label>
+          <div class="color-group">
+            <input type="color" id="opt-color-picker" value="#ffffff">
+            <input type="text" id="opt-color" value="" placeholder="#ffffff" data-param="color">
+          </div>
+        </div>
+        <div class="field">
+          <label>Text Align</label>
+          <select id="opt-textAlign" data-param="textAlign">
+            <option value="">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Line Height</label>
+          <input type="range" id="opt-lineHeight-range" min="10" max="24" value="14" step="1">
+          <span class="range-val" id="opt-lineHeight-val">1.4</span>
+        </div>
+        <div class="field">
+          <label>Label Size</label>
+          <input type="range" id="opt-labelSize-range" min="8" max="24" value="14">
+          <span class="range-val" id="opt-labelSize-val">14px</span>
+        </div>
+        <div class="field">
+          <label>Label Color</label>
+          <div class="color-group">
+            <input type="color" id="opt-labelColor-picker" value="#999999">
+            <input type="text" id="opt-labelColor" value="" placeholder="rgba(255,255,255,0.6)" data-param="labelColor">
+          </div>
         </div>
       </div>
-      <div class="field">
-        <label>Text Stroke</label>
-        <input type="text" id="opt-textStroke" value="" placeholder="e.g. 1px black" data-param="textStroke">
+    </div>
+
+    <!-- Text Effects -->
+    <div class="section" id="sec-effects">
+      <div class="section-header" onclick="toggleSection('sec-effects')">
+        <span class="section-title">Text Effects</span>
+        <span class="section-toggle">&#9660;</span>
       </div>
-      <div class="field">
-        <label>Text Shadow</label>
-        <input type="text" id="opt-textShadow" value="" placeholder="e.g. 2px 2px 8px black" data-param="textShadow">
-      </div>
-      <div class="field">
-        <label>Letter Spacing</label>
-        <input type="text" id="opt-letterSpacing" value="" placeholder="normal" data-param="letterSpacing">
-      </div>
-      <div class="field">
-        <label>Line Height</label>
-        <input type="text" id="opt-lineHeight" value="" placeholder="1.4" data-param="lineHeight">
-      </div>
-      <div class="field">
-        <label>Text Align</label>
-        <select id="opt-textAlign" data-param="textAlign">
-          <option value="">Default (left)</option>
-          <option value="left">Left</option>
-          <option value="center">Center</option>
-          <option value="right">Right</option>
-        </select>
+      <div class="section-body">
+        <div class="field">
+          <label>Text Shadow</label>
+          <div class="shadow-presets" id="shadowPresets">
+            <span class="shadow-chip active" data-shadow="">None</span>
+            <span class="shadow-chip" data-shadow="1px 1px 3px rgba(0,0,0,0.8)">Subtle</span>
+            <span class="shadow-chip" data-shadow="2px 2px 6px rgba(0,0,0,0.9)">Medium</span>
+            <span class="shadow-chip" data-shadow="0 0 10px rgba(0,0,0,1)">Glow</span>
+            <span class="shadow-chip" data-shadow="3px 3px 0 #000">Hard</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>Custom Shadow</label>
+          <input type="text" id="opt-textShadow" value="" placeholder="CSS text-shadow value" data-param="textShadow">
+        </div>
+        <div class="field">
+          <label>Outline</label>
+          <div class="shadow-presets" id="strokePresets">
+            <span class="shadow-chip active" data-stroke="">None</span>
+            <span class="shadow-chip" data-stroke="0.5px black">Thin</span>
+            <span class="shadow-chip" data-stroke="1px black">Medium</span>
+            <span class="shadow-chip" data-stroke="2px black">Thick</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>Letter Spacing</label>
+          <input type="range" id="opt-letterSpacing-range" min="-2" max="8" value="0" step="0.5">
+          <span class="range-val" id="opt-letterSpacing-val">0px</span>
+        </div>
       </div>
     </div>
 
     <!-- Container -->
-    <div class="section">
-      <div class="section-title">Container</div>
-      <div class="field">
-        <label>Background</label>
-        <input type="text" id="opt-bg" value="" placeholder="rgba(0,0,0,0.7)" data-param="bg">
+    <div class="section" id="sec-container">
+      <div class="section-header" onclick="toggleSection('sec-container')">
+        <span class="section-title">Container</span>
+        <span class="section-toggle">&#9660;</span>
       </div>
-      <div class="field">
-        <label>Border</label>
-        <input type="text" id="opt-border" value="" placeholder="none" data-param="border">
-      </div>
-      <div class="field">
-        <label>Border Radius</label>
-        <input type="text" id="opt-borderRadius" value="" placeholder="12px" data-param="borderRadius">
-      </div>
-      <div class="field">
-        <label>Padding</label>
-        <input type="text" id="opt-padding" value="" placeholder="16px 24px" data-param="padding">
-      </div>
-      <div class="field">
-        <label>Max Width</label>
-        <input type="text" id="opt-maxWidth" value="" placeholder="800px" data-param="maxWidth">
-      </div>
-      <div class="field">
-        <label>Backdrop</label>
-        <input type="text" id="opt-backdrop" value="" placeholder="blur(8px)" data-param="backdrop">
-      </div>
-    </div>
-
-    <!-- Label Styling -->
-    <div class="section">
-      <div class="section-title">Label Styling</div>
-      <div class="field">
-        <label>Label Size</label>
-        <input type="text" id="opt-labelSize" value="" placeholder="14px" data-param="labelSize">
-      </div>
-      <div class="field">
-        <label>Label Color</label>
-        <div class="color-pair">
-          <input type="color" id="opt-labelColor-picker" value="#999999">
-          <input type="text" id="opt-labelColor" value="" placeholder="rgba(255,255,255,0.6)" data-param="labelColor">
+      <div class="section-body">
+        <div class="field">
+          <label>Background</label>
+          <div class="bg-composite">
+            <input type="color" id="opt-bg-color" value="#000000">
+            <input type="range" id="opt-bg-opacity" min="0" max="100" value="70">
+            <span class="range-val" id="opt-bg-opacity-val">70%</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>Corner Radius</label>
+          <input type="range" id="opt-borderRadius-range" min="0" max="40" value="12">
+          <span class="range-val" id="opt-borderRadius-val">12px</span>
+        </div>
+        <div class="field">
+          <label>Padding</label>
+          <input type="range" id="opt-padding-range" min="4" max="48" value="16">
+          <span class="range-val" id="opt-padding-val">16px</span>
+        </div>
+        <div class="field">
+          <label>Max Width</label>
+          <input type="range" id="opt-maxWidth-range" min="300" max="1400" value="800" step="50">
+          <span class="range-val" id="opt-maxWidth-val">800px</span>
+        </div>
+        <div class="field">
+          <label>Border</label>
+          <select id="opt-border-preset">
+            <option value="">None</option>
+            <option value="1px solid rgba(255,255,255,0.1)">Subtle White</option>
+            <option value="1px solid rgba(124,92,255,0.3)">Purple Glow</option>
+            <option value="1px solid rgba(74,222,128,0.3)">Green</option>
+            <option value="2px solid rgba(255,255,255,0.2)">Thick White</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Blur Backdrop</label>
+          <input type="range" id="opt-backdrop-range" min="0" max="24" value="8">
+          <span class="range-val" id="opt-backdrop-val">8px</span>
         </div>
       </div>
-      <div class="field">
-        <label>Label Weight</label>
-        <select id="opt-labelWeight" data-param="labelWeight">
-          <option value="">Default (600)</option>
-          <option value="400">400 Regular</option>
-          <option value="500">500 Medium</option>
-          <option value="600">600 Semi-Bold</option>
-          <option value="700">700 Bold</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Label Shadow</label>
-        <input type="text" id="opt-labelShadow" value="" placeholder="none" data-param="labelShadow">
-      </div>
     </div>
 
-    <!-- Animation & Timing -->
-    <div class="section">
-      <div class="section-title">Animation & Timing</div>
-      <div class="field">
-        <label>Fade Duration</label>
-        <input type="text" id="opt-fadeDuration" value="" placeholder="0.4s" data-param="fadeDuration">
+    <!-- Position & Animation -->
+    <div class="section" id="sec-position">
+      <div class="section-header" onclick="toggleSection('sec-position')">
+        <span class="section-title">Position & Animation</span>
+        <span class="section-toggle">&#9660;</span>
       </div>
-      <div class="field">
-        <label>Fade Out (ms)</label>
-        <input type="number" id="opt-fadeOut" value="" placeholder="8000" data-param="fadeOut">
-      </div>
-      <div class="field">
-        <label>Animation From</label>
-        <select id="opt-animFrom" data-param="animFrom">
-          <option value="">Slide Up (default)</option>
-          <option value="translateY(-20px)">Slide Down</option>
-          <option value="translateX(-20px)">Slide Right</option>
-          <option value="translateX(20px)">Slide Left</option>
-          <option value="scale(0.95)">Scale In</option>
-          <option value="none">None (Fade Only)</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Position -->
-    <div class="section">
-      <div class="section-title">Position</div>
-      <div class="field">
-        <label>Vertical</label>
-        <select id="opt-align" data-param="align">
-          <option value="">Bottom (default)</option>
-          <option value="flex-start">Top</option>
-          <option value="center">Center</option>
-          <option value="flex-end">Bottom</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Horizontal</label>
-        <select id="opt-justify" data-param="justify">
-          <option value="">Center (default)</option>
-          <option value="flex-start">Left</option>
-          <option value="center">Center</option>
-          <option value="flex-end">Right</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Body Padding</label>
-        <input type="text" id="opt-bodyPadding" value="" placeholder="20px" data-param="bodyPadding">
+      <div class="section-body">
+        <div class="field">
+          <label>Vertical</label>
+          <select id="opt-align" data-param="align">
+            <option value="flex-end">Bottom</option>
+            <option value="flex-start">Top</option>
+            <option value="center">Center</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Horizontal</label>
+          <select id="opt-justify" data-param="justify">
+            <option value="">Center</option>
+            <option value="flex-start">Left</option>
+            <option value="flex-end">Right</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Margin</label>
+          <input type="range" id="opt-bodyPadding-range" min="0" max="80" value="20">
+          <span class="range-val" id="opt-bodyPadding-val">20px</span>
+        </div>
+        <div class="field">
+          <label>Entrance</label>
+          <select id="opt-animFrom" data-param="animFrom">
+            <option value="">Slide Up</option>
+            <option value="translateY(-20px)">Slide Down</option>
+            <option value="translateX(-20px)">Slide Right</option>
+            <option value="translateX(20px)">Slide Left</option>
+            <option value="scale(0.95)">Scale In</option>
+            <option value="none">Fade Only</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Fade Speed</label>
+          <input type="range" id="opt-fadeDuration-range" min="1" max="20" value="4" step="1">
+          <span class="range-val" id="opt-fadeDuration-val">0.4s</span>
+        </div>
+        <div class="field">
+          <label>Visible For</label>
+          <input type="range" id="opt-fadeOut-range" min="2" max="30" value="8" step="1">
+          <span class="range-val" id="opt-fadeOut-val">8s</span>
+        </div>
       </div>
     </div>
 
     <!-- User Transcription -->
-    <div class="section">
-      <div class="section-title">User Transcription</div>
-      <div class="field">
-        <label>Show User</label>
-        <input type="checkbox" id="opt-showUser" data-param="showUser">
+    <div class="section" id="sec-user">
+      <div class="section-header" onclick="toggleSection('sec-user')">
+        <span class="section-title">User Speech (Optional)</span>
+        <span class="section-toggle">&#9660;</span>
       </div>
-      <div class="field">
-        <label>User Label</label>
-        <input type="text" id="opt-userLabel" value="" placeholder="User" data-param="userLabel">
-      </div>
-      <div class="field">
-        <label>User Fade (ms)</label>
-        <input type="number" id="opt-userFadeOut" value="" placeholder="5000" data-param="userFadeOut">
-      </div>
-      <div class="field">
-        <label>User BG</label>
-        <input type="text" id="opt-userBg" value="" placeholder="rgba(255,255,255,0.1)" data-param="userBg">
-      </div>
-      <div class="field">
-        <label>User Color</label>
-        <div class="color-pair">
-          <input type="color" id="opt-userColor-picker" value="#ffffff">
-          <input type="text" id="opt-userColor" value="" placeholder="#ffffff" data-param="userColor">
+      <div class="section-body">
+        <div class="field">
+          <label>Show User</label>
+          <input type="checkbox" id="opt-showUser" data-param="showUser">
         </div>
-      </div>
-      <div class="field">
-        <label>User Font Size</label>
-        <input type="text" id="opt-userFontSize" value="" placeholder="24px" data-param="userFontSize">
+        <div id="userFields" style="display:none;">
+          <div class="field">
+            <label>User Label</label>
+            <input type="text" id="opt-userLabel" value="" placeholder="User" data-param="userLabel">
+          </div>
+          <div class="field">
+            <label>Text Color</label>
+            <div class="color-group">
+              <input type="color" id="opt-userColor-picker" value="#ffffff">
+              <input type="text" id="opt-userColor" value="" placeholder="#ffffff" data-param="userColor">
+            </div>
+          </div>
+          <div class="field">
+            <label>Font Size</label>
+            <input type="range" id="opt-userFontSize-range" min="12" max="72" value="24">
+            <span class="range-val" id="opt-userFontSize-val">24px</span>
+          </div>
+          <div class="field">
+            <label>Background</label>
+            <div class="bg-composite">
+              <input type="color" id="opt-userBg-color" value="#ffffff">
+              <input type="range" id="opt-userBg-opacity" min="0" max="100" value="10">
+              <span class="range-val" id="opt-userBg-opacity-val">10%</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Visible For</label>
+            <input type="range" id="opt-userFadeOut-range" min="2" max="30" value="5" step="1">
+            <span class="range-val" id="opt-userFadeOut-val">5s</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -484,130 +667,333 @@ body {
       </div>
       <div class="preview-container" id="prevContainer">
         <div class="preview-label" id="prevLabel">Gabriel</div>
-        <div class="preview-text" id="prevText">Hey! Not much, just hanging out here. What are you up to today?</div>
+        <div class="preview-text" id="prevText">Hey! Not much, just hanging out here in VRChat. What are you up to today?</div>
       </div>
     </div>
   </div>
 </div>
 
 <div class="url-box">
-  <label>Generated OBS Browser Source URL</label>
+  <div class="url-label">OBS Browser Source URL</div>
   <div class="url-row">
     <input type="text" id="generatedUrl" readonly>
-    <button onclick="copyUrl()">Copy</button>
-    <button onclick="openPreview()" style="background:var(--accent-soft);color:var(--accent);">Open</button>
+    <button class="btn btn-primary" onclick="copyUrl()">Copy</button>
+    <button class="btn btn-ghost" onclick="openPreview()">Open</button>
   </div>
 </div>
 
-<div class="toast" id="toast">Copied!</div>
+<div class="toast" id="toast">Copied to clipboard!</div>
 
 <script>
 (function() {
-  var preview = {
-    container: document.getElementById('prevContainer'),
-    text: document.getElementById('prevText'),
-    label: document.getElementById('prevLabel'),
-    userContainer: document.getElementById('prevUserContainer'),
-    userText: document.getElementById('prevUserText'),
-    userLabel: document.getElementById('prevUserLabel'),
-    wrapper: document.getElementById('previewWrapper'),
-    area: document.getElementById('previewArea'),
+  // --- Preview elements ---
+  var P = {
+    c: document.getElementById('prevContainer'),
+    t: document.getElementById('prevText'),
+    l: document.getElementById('prevLabel'),
+    uc: document.getElementById('prevUserContainer'),
+    ut: document.getElementById('prevUserText'),
+    ul: document.getElementById('prevUserLabel'),
+    w: document.getElementById('previewWrapper'),
+    a: document.getElementById('previewArea'),
   };
 
-  function getVal(id) {
+  // --- Presets ---
+  var presets = {
+    default: {},
+    minimal: {
+      'opt-bg-color': '#000000', 'opt-bg-opacity': '0', 'opt-borderRadius-range': '0',
+      'opt-padding-range': '8', 'opt-backdrop-range': '0', 'opt-border-preset': '',
+      'opt-fontSize-range': '22', 'opt-showLabel': false,
+      'opt-textShadow': '2px 2px 4px rgba(0,0,0,0.9)',
+    },
+    streamer: {
+      'opt-bg-color': '#1a0a3e', 'opt-bg-opacity': '85', 'opt-borderRadius-range': '16',
+      'opt-border-preset': '1px solid rgba(124,92,255,0.3)', 'opt-fontSize-range': '28',
+      'opt-fontWeight': '500', 'opt-textShadow': '0 0 10px rgba(0,0,0,1)',
+      'opt-backdrop-range': '12',
+    },
+    neon: {
+      'opt-bg-color': '#000000', 'opt-bg-opacity': '80', 'opt-borderRadius-range': '8',
+      'opt-border-preset': '1px solid rgba(74,222,128,0.3)',
+      'opt-color-picker': '#4ade80', 'opt-color': '#4ade80',
+      'opt-textShadow': '0 0 8px rgba(74,222,128,0.6), 0 0 20px rgba(74,222,128,0.3)',
+      'opt-fontSize-range': '26', 'opt-fontWeight': '600',
+      'opt-labelColor-picker': '#22c55e', 'opt-labelColor': 'rgba(74,222,128,0.7)',
+    },
+    glass: {
+      'opt-bg-color': '#ffffff', 'opt-bg-opacity': '10', 'opt-borderRadius-range': '20',
+      'opt-border-preset': '1px solid rgba(255,255,255,0.1)', 'opt-backdrop-range': '16',
+      'opt-fontSize-range': '24', 'opt-textShadow': '1px 1px 3px rgba(0,0,0,0.8)',
+    },
+    retro: {
+      'opt-bg-color': '#1a1a00', 'opt-bg-opacity': '90', 'opt-borderRadius-range': '0',
+      'opt-border-preset': '2px solid rgba(255,255,255,0.2)',
+      'opt-color-picker': '#fbbf24', 'opt-color': '#fbbf24',
+      'opt-fontSize-range': '20', 'opt-fontWeight': '700',
+      'opt-googleFont': 'Press Start 2P',
+      'opt-lineHeight-range': '20',
+      'opt-labelColor-picker': '#f59e0b', 'opt-labelColor': 'rgba(251,191,36,0.7)',
+      'opt-backdrop-range': '0', 'opt-padding-range': '20',
+    },
+  };
+
+  // Default values for reset
+  var defaults = {
+    'opt-label': 'Gabriel', 'opt-showLabel': true, 'opt-googleFont': '',
+    'opt-fontSize-range': '24', 'opt-fontWeight': '', 'opt-color-picker': '#ffffff', 'opt-color': '',
+    'opt-textAlign': '', 'opt-lineHeight-range': '14', 'opt-labelSize-range': '14',
+    'opt-labelColor-picker': '#999999', 'opt-labelColor': '',
+    'opt-textShadow': '', 'opt-letterSpacing-range': '0',
+    'opt-bg-color': '#000000', 'opt-bg-opacity': '70', 'opt-borderRadius-range': '12',
+    'opt-padding-range': '16', 'opt-maxWidth-range': '800', 'opt-border-preset': '',
+    'opt-backdrop-range': '8',
+    'opt-align': 'flex-end', 'opt-justify': '', 'opt-bodyPadding-range': '20',
+    'opt-animFrom': '', 'opt-fadeDuration-range': '4', 'opt-fadeOut-range': '8',
+    'opt-showUser': false, 'opt-userLabel': '', 'opt-userColor-picker': '#ffffff', 'opt-userColor': '',
+    'opt-userFontSize-range': '24', 'opt-userBg-color': '#ffffff', 'opt-userBg-opacity': '10',
+    'opt-userFadeOut-range': '5',
+  };
+
+  function setField(id, val) {
     var el = document.getElementById(id);
-    if (!el) return '';
-    if (el.type === 'checkbox') return el.checked;
-    return el.value.trim();
+    if (!el) return;
+    if (el.type === 'checkbox') {
+      el.checked = !!val;
+    } else if (el.tagName === 'SELECT') {
+      el.value = val || '';
+    } else {
+      el.value = val || '';
+    }
   }
 
-  function updatePreview() {
-    var font = getVal('opt-font') || "'Segoe UI', sans-serif";
-    var googleFont = getVal('opt-googleFont');
-    if (googleFont) font = "'" + googleFont + "', sans-serif";
+  function applyPreset(name) {
+    // Reset to defaults first
+    Object.keys(defaults).forEach(function(k) { setField(k, defaults[k]); });
+    // Clear shadow/stroke chip selection
+    document.querySelectorAll('.shadow-chip').forEach(function(c) { c.classList.remove('active'); });
+    document.querySelectorAll('[data-shadow=""]').forEach(function(c) { c.classList.add('active'); });
+    document.querySelectorAll('[data-stroke=""]').forEach(function(c) { c.classList.add('active'); });
 
-    var fontSize = getVal('opt-fontSize') || '24px';
-    var fontWeight = getVal('opt-fontWeight') || '400';
-    var color = getVal('opt-color') || '#ffffff';
-    var textStroke = getVal('opt-textStroke') || 'unset';
-    var textShadow = getVal('opt-textShadow') || 'none';
-    var letterSpacing = getVal('opt-letterSpacing') || 'normal';
-    var lineHeight = getVal('opt-lineHeight') || '1.4';
-    var textAlign = getVal('opt-textAlign') || 'left';
+    // Apply preset overrides
+    var p = presets[name] || {};
+    Object.keys(p).forEach(function(k) { setField(k, p[k]); });
 
-    var bg = getVal('opt-bg') || 'rgba(0,0,0,0.7)';
-    var border = getVal('opt-border') || 'none';
-    var borderRadius = getVal('opt-borderRadius') || '12px';
-    var padding = getVal('opt-padding') || '16px 24px';
-    var maxWidth = getVal('opt-maxWidth') || '800px';
-    var backdrop = getVal('opt-backdrop') || 'blur(8px)';
+    // Highlight active preset
+    document.querySelectorAll('.preset-btn').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.preset === name);
+    });
 
-    var labelText = getVal('opt-label') || 'Gabriel';
-    var hideLabel = getVal('opt-hideLabel');
-    var labelSize = getVal('opt-labelSize') || '14px';
-    var labelColor = getVal('opt-labelColor') || 'rgba(255,255,255,0.6)';
-    var labelWeight = getVal('opt-labelWeight') || '600';
-    var labelShadow = getVal('opt-labelShadow') || 'none';
+    // Update shadow chip highlight
+    if (p['opt-textShadow']) {
+      document.querySelectorAll('#shadowPresets .shadow-chip').forEach(function(c) {
+        c.classList.toggle('active', c.dataset.shadow === p['opt-textShadow']);
+      });
+    }
 
-    var align = getVal('opt-align') || 'flex-end';
-    var justify = getVal('opt-justify') || 'center';
-    var bodyPadding = getVal('opt-bodyPadding') || '20px';
+    updateAll();
+  }
 
-    var showUser = getVal('opt-showUser');
-    var userLabel = getVal('opt-userLabel') || 'User';
-    var userBg = getVal('opt-userBg') || 'rgba(255,255,255,0.1)';
-    var userColor = getVal('opt-userColor') || '#ffffff';
-    var userFontSize = getVal('opt-userFontSize') || fontSize;
+  // Preset buttons
+  document.querySelectorAll('.preset-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { applyPreset(btn.dataset.preset); });
+  });
+
+  // Reset button
+  window.resetAll = function() { applyPreset('default'); };
+
+  // Section collapse
+  window.toggleSection = function(id) {
+    document.getElementById(id).classList.toggle('collapsed');
+  };
+
+  // --- Helpers ---
+  function hexToRgba(hex, opacity) {
+    var r = parseInt(hex.slice(1,3), 16);
+    var g = parseInt(hex.slice(3,5), 16);
+    var b = parseInt(hex.slice(5,7), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + (opacity / 100).toFixed(2) + ')';
+  }
+
+  // --- Range slider value displays ---
+  var rangeFields = [
+    { range: 'opt-fontSize-range', val: 'opt-fontSize-val', unit: 'px' },
+    { range: 'opt-lineHeight-range', val: 'opt-lineHeight-val', unit: '', format: function(v) { return (v/10).toFixed(1); } },
+    { range: 'opt-labelSize-range', val: 'opt-labelSize-val', unit: 'px' },
+    { range: 'opt-letterSpacing-range', val: 'opt-letterSpacing-val', unit: 'px' },
+    { range: 'opt-borderRadius-range', val: 'opt-borderRadius-val', unit: 'px' },
+    { range: 'opt-padding-range', val: 'opt-padding-val', unit: 'px' },
+    { range: 'opt-maxWidth-range', val: 'opt-maxWidth-val', unit: 'px' },
+    { range: 'opt-backdrop-range', val: 'opt-backdrop-val', unit: 'px' },
+    { range: 'opt-bodyPadding-range', val: 'opt-bodyPadding-val', unit: 'px' },
+    { range: 'opt-fadeDuration-range', val: 'opt-fadeDuration-val', unit: 's', format: function(v) { return (v/10).toFixed(1); } },
+    { range: 'opt-fadeOut-range', val: 'opt-fadeOut-val', unit: 's' },
+    { range: 'opt-bg-opacity', val: 'opt-bg-opacity-val', unit: '%' },
+    { range: 'opt-userFontSize-range', val: 'opt-userFontSize-val', unit: 'px' },
+    { range: 'opt-userBg-opacity', val: 'opt-userBg-opacity-val', unit: '%' },
+    { range: 'opt-userFadeOut-range', val: 'opt-userFadeOut-val', unit: 's' },
+  ];
+
+  rangeFields.forEach(function(rf) {
+    var range = document.getElementById(rf.range);
+    var label = document.getElementById(rf.val);
+    if (range && label) {
+      range.addEventListener('input', function() {
+        var v = rf.format ? rf.format(range.value) : range.value;
+        label.textContent = v + rf.unit;
+        updateAll();
+      });
+    }
+  });
+
+  // Shadow preset chips
+  document.querySelectorAll('#shadowPresets .shadow-chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      document.querySelectorAll('#shadowPresets .shadow-chip').forEach(function(c) { c.classList.remove('active'); });
+      chip.classList.add('active');
+      document.getElementById('opt-textShadow').value = chip.dataset.shadow;
+      updateAll();
+    });
+  });
+
+  // Stroke preset chips
+  document.querySelectorAll('#strokePresets .shadow-chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      document.querySelectorAll('#strokePresets .shadow-chip').forEach(function(c) { c.classList.remove('active'); });
+      chip.classList.add('active');
+      updateAll();
+    });
+  });
+
+  // Color picker sync
+  var colorPairs = [
+    ['opt-color-picker', 'opt-color'],
+    ['opt-labelColor-picker', 'opt-labelColor'],
+    ['opt-userColor-picker', 'opt-userColor'],
+  ];
+  colorPairs.forEach(function(pair) {
+    var picker = document.getElementById(pair[0]);
+    var text = document.getElementById(pair[1]);
+    if (picker && text) {
+      picker.addEventListener('input', function() { text.value = picker.value; updateAll(); });
+      text.addEventListener('input', function() {
+        if (/^#[0-9a-fA-F]{6}$/.test(text.value)) picker.value = text.value;
+      });
+    }
+  });
+
+  // Show/hide user fields
+  document.getElementById('opt-showUser').addEventListener('change', function() {
+    document.getElementById('userFields').style.display = this.checked ? 'block' : 'none';
+    updateAll();
+  });
+
+  // Show/hide label checkbox
+  document.getElementById('opt-showLabel').addEventListener('change', function() { updateAll(); });
+
+  // Bind all remaining inputs
+  document.querySelectorAll('.field input[type="text"], .field select').forEach(function(el) {
+    el.addEventListener('input', updateAll);
+    el.addEventListener('change', updateAll);
+  });
+  document.querySelectorAll('.field input[type="color"]').forEach(function(el) {
+    el.addEventListener('input', updateAll);
+  });
+
+  // --- Main update ---
+  function updateAll() {
+    // Collect values
+    var googleFont = document.getElementById('opt-googleFont').value.trim();
+    var font = googleFont ? "'" + googleFont + "', sans-serif" : "'Segoe UI', sans-serif";
+    var fontSize = document.getElementById('opt-fontSize-range').value + 'px';
+    var fontWeight = document.getElementById('opt-fontWeight').value || '400';
+    var color = document.getElementById('opt-color').value || document.getElementById('opt-color-picker').value;
+    var textAlign = document.getElementById('opt-textAlign').value || 'left';
+    var lineHeight = (document.getElementById('opt-lineHeight-range').value / 10).toFixed(1);
+    var textShadow = document.getElementById('opt-textShadow').value || 'none';
+    var letterSpacing = document.getElementById('opt-letterSpacing-range').value + 'px';
+    if (letterSpacing === '0px') letterSpacing = 'normal';
+
+    var activeStroke = document.querySelector('#strokePresets .shadow-chip.active');
+    var textStroke = activeStroke ? activeStroke.dataset.stroke : '';
+
+    var bgColor = document.getElementById('opt-bg-color').value;
+    var bgOpacity = document.getElementById('opt-bg-opacity').value;
+    var bg = hexToRgba(bgColor, bgOpacity);
+    var borderRadius = document.getElementById('opt-borderRadius-range').value + 'px';
+    var padding = document.getElementById('opt-padding-range').value + 'px';
+    var maxWidth = document.getElementById('opt-maxWidth-range').value + 'px';
+    var borderVal = document.getElementById('opt-border-preset').value || 'none';
+    var backdrop = 'blur(' + document.getElementById('opt-backdrop-range').value + 'px)';
+    if (document.getElementById('opt-backdrop-range').value === '0') backdrop = 'none';
+
+    var label = document.getElementById('opt-label').value || 'Gabriel';
+    var showLabel = document.getElementById('opt-showLabel').checked;
+    var labelSize = document.getElementById('opt-labelSize-range').value + 'px';
+    var labelColor = document.getElementById('opt-labelColor').value ||
+      hexToRgba(document.getElementById('opt-labelColor-picker').value, 60);
+
+    var align = document.getElementById('opt-align').value || 'flex-end';
+    var justify = document.getElementById('opt-justify').value || 'center';
+    var bodyPadding = document.getElementById('opt-bodyPadding-range').value + 'px';
+
+    var showUser = document.getElementById('opt-showUser').checked;
+    var userLabel = document.getElementById('opt-userLabel').value || 'User';
+    var userColor = document.getElementById('opt-userColor').value ||
+      document.getElementById('opt-userColor-picker').value;
+    var userFontSize = document.getElementById('opt-userFontSize-range').value + 'px';
+    var userBgColor = document.getElementById('opt-userBg-color').value;
+    var userBgOpacity = document.getElementById('opt-userBg-opacity').value;
+    var userBg = hexToRgba(userBgColor, userBgOpacity);
 
     // Apply to preview
-    preview.container.style.fontFamily = font;
-    preview.container.style.background = bg;
-    preview.container.style.border = border;
-    preview.container.style.borderRadius = borderRadius;
-    preview.container.style.padding = padding;
-    preview.container.style.maxWidth = maxWidth;
-    preview.container.style.backdropFilter = backdrop;
+    P.c.style.fontFamily = font;
+    P.c.style.background = bg;
+    P.c.style.border = borderVal;
+    P.c.style.borderRadius = borderRadius;
+    P.c.style.padding = padding;
+    P.c.style.maxWidth = maxWidth;
+    P.c.style.backdropFilter = backdrop;
 
-    preview.text.style.fontFamily = font;
-    preview.text.style.fontSize = fontSize;
-    preview.text.style.fontWeight = fontWeight;
-    preview.text.style.color = color;
-    preview.text.style.webkitTextStroke = textStroke;
-    preview.text.style.textShadow = textShadow;
-    preview.text.style.letterSpacing = letterSpacing;
-    preview.text.style.lineHeight = lineHeight;
-    preview.text.style.textAlign = textAlign;
+    P.t.style.fontFamily = font;
+    P.t.style.fontSize = fontSize;
+    P.t.style.fontWeight = fontWeight;
+    P.t.style.color = color;
+    P.t.style.webkitTextStroke = textStroke || 'unset';
+    P.t.style.textShadow = textShadow;
+    P.t.style.letterSpacing = letterSpacing;
+    P.t.style.lineHeight = lineHeight;
+    P.t.style.textAlign = textAlign;
 
-    preview.label.textContent = labelText;
-    preview.label.style.display = hideLabel ? 'none' : 'block';
-    preview.label.style.fontFamily = font;
-    preview.label.style.fontSize = labelSize;
-    preview.label.style.color = labelColor;
-    preview.label.style.fontWeight = labelWeight;
-    preview.label.style.textShadow = labelShadow;
+    P.l.textContent = label;
+    P.l.style.display = showLabel ? 'block' : 'none';
+    P.l.style.fontFamily = font;
+    P.l.style.fontSize = labelSize;
+    P.l.style.color = labelColor;
 
-    preview.area.style.alignItems = align;
-    preview.area.style.justifyContent = justify;
-    preview.area.style.padding = bodyPadding;
-    preview.wrapper.style.alignItems = justify;
-    preview.wrapper.style.maxWidth = maxWidth;
+    P.a.style.alignItems = align;
+    P.a.style.justifyContent = justify;
+    P.a.style.padding = bodyPadding;
+    P.w.style.alignItems = justify;
+    P.w.style.maxWidth = maxWidth;
 
-    preview.userContainer.style.display = showUser ? 'block' : 'none';
-    preview.userContainer.style.background = userBg;
-    preview.userContainer.style.borderRadius = borderRadius;
-    preview.userContainer.style.maxWidth = maxWidth;
-    preview.userContainer.style.backdropFilter = backdrop;
-    preview.userLabel.textContent = userLabel;
-    preview.userLabel.style.fontFamily = font;
-    preview.userLabel.style.fontSize = labelSize;
-    preview.userLabel.style.color = labelColor;
-    preview.userText.style.fontFamily = font;
-    preview.userText.style.fontSize = userFontSize;
-    preview.userText.style.color = userColor;
-    preview.userText.style.lineHeight = lineHeight;
-    preview.userText.style.textAlign = textAlign;
+    P.uc.style.display = showUser ? 'block' : 'none';
+    P.uc.style.background = userBg;
+    P.uc.style.borderRadius = borderRadius;
+    P.uc.style.maxWidth = maxWidth;
+    P.uc.style.backdropFilter = backdrop;
+    P.ul.textContent = userLabel;
+    P.ul.style.fontFamily = font;
+    P.ul.style.fontSize = labelSize;
+    P.ul.style.color = labelColor;
+    P.ul.style.display = showLabel ? 'block' : 'none';
+    P.ut.style.fontFamily = font;
+    P.ut.style.fontSize = userFontSize;
+    P.ut.style.color = userColor;
+    P.ut.style.lineHeight = lineHeight;
+    P.ut.style.textAlign = textAlign;
 
-    // Load Google Font for preview
+    // Load Google Font
     if (googleFont) {
       var existing = document.getElementById('preview-google-font');
       var href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(googleFont) + ':wght@300;400;500;600;700&display=swap';
@@ -622,79 +1008,143 @@ body {
       }
     }
 
+    // Update range labels
+    rangeFields.forEach(function(rf) {
+      var range = document.getElementById(rf.range);
+      var label = document.getElementById(rf.val);
+      if (range && label) {
+        var v = rf.format ? rf.format(range.value) : range.value;
+        label.textContent = v + rf.unit;
+      }
+    });
+
     updateUrl();
   }
 
   function updateUrl() {
     var base = window.location.origin + '/overlay';
     var params = new URLSearchParams();
-    var fields = document.querySelectorAll('[data-param]');
 
-    fields.forEach(function(el) {
-      var param = el.dataset.param;
-      var val;
-      if (el.type === 'checkbox') {
-        if (el.checked) val = 'true';
-        else return;
-      } else {
-        val = el.value.trim();
-        if (!val) return;
-      }
-      params.set(param, val);
-    });
+    // Map UI controls to overlay URL params
+    var googleFont = document.getElementById('opt-googleFont').value.trim();
+    if (googleFont) params.set('googleFont', googleFont);
+
+    var fs = document.getElementById('opt-fontSize-range').value;
+    if (fs !== '24') params.set('fontSize', fs + 'px');
+
+    var fw = document.getElementById('opt-fontWeight').value;
+    if (fw) params.set('fontWeight', fw);
+
+    var color = document.getElementById('opt-color').value.trim();
+    if (color) params.set('color', color);
+
+    var textAlign = document.getElementById('opt-textAlign').value;
+    if (textAlign) params.set('textAlign', textAlign);
+
+    var lh = document.getElementById('opt-lineHeight-range').value;
+    if (lh !== '14') params.set('lineHeight', (lh/10).toFixed(1));
+
+    var textShadow = document.getElementById('opt-textShadow').value.trim();
+    if (textShadow) params.set('textShadow', textShadow);
+
+    var activeStroke = document.querySelector('#strokePresets .shadow-chip.active');
+    var stroke = activeStroke ? activeStroke.dataset.stroke : '';
+    if (stroke) params.set('textStroke', stroke);
+
+    var ls = document.getElementById('opt-letterSpacing-range').value;
+    if (ls !== '0') params.set('letterSpacing', ls + 'px');
+
+    // Background
+    var bgColor = document.getElementById('opt-bg-color').value;
+    var bgOpacity = document.getElementById('opt-bg-opacity').value;
+    if (bgColor !== '#000000' || bgOpacity !== '70') {
+      params.set('bg', hexToRgba(bgColor, bgOpacity));
+    }
+
+    var br = document.getElementById('opt-borderRadius-range').value;
+    if (br !== '12') params.set('borderRadius', br + 'px');
+
+    var pd = document.getElementById('opt-padding-range').value;
+    if (pd !== '16') params.set('padding', pd + 'px');
+
+    var mw = document.getElementById('opt-maxWidth-range').value;
+    if (mw !== '800') params.set('maxWidth', mw + 'px');
+
+    var border = document.getElementById('opt-border-preset').value;
+    if (border) params.set('border', border);
+
+    var bd = document.getElementById('opt-backdrop-range').value;
+    if (bd !== '8') params.set('backdrop', bd === '0' ? 'none' : 'blur(' + bd + 'px)');
+
+    // Label
+    var label = document.getElementById('opt-label').value.trim();
+    if (label && label !== 'Gabriel') params.set('label', label);
+
+    if (!document.getElementById('opt-showLabel').checked) params.set('hideLabel', 'true');
+
+    var labelSize = document.getElementById('opt-labelSize-range').value;
+    if (labelSize !== '14') params.set('labelSize', labelSize + 'px');
+
+    var labelColor = document.getElementById('opt-labelColor').value.trim();
+    if (labelColor) params.set('labelColor', labelColor);
+
+    // Position
+    var align = document.getElementById('opt-align').value;
+    if (align && align !== 'flex-end') params.set('align', align);
+
+    var justify = document.getElementById('opt-justify').value;
+    if (justify) params.set('justify', justify);
+
+    var bp = document.getElementById('opt-bodyPadding-range').value;
+    if (bp !== '20') params.set('bodyPadding', bp + 'px');
+
+    var animFrom = document.getElementById('opt-animFrom').value;
+    if (animFrom) params.set('animFrom', animFrom);
+
+    var fadeDur = document.getElementById('opt-fadeDuration-range').value;
+    if (fadeDur !== '4') params.set('fadeDuration', (fadeDur/10).toFixed(1) + 's');
+
+    var fadeOut = document.getElementById('opt-fadeOut-range').value;
+    if (fadeOut !== '8') params.set('fadeOut', parseInt(fadeOut) * 1000);
+
+    // User
+    if (document.getElementById('opt-showUser').checked) {
+      params.set('showUser', 'true');
+      var ul = document.getElementById('opt-userLabel').value.trim();
+      if (ul && ul !== 'User') params.set('userLabel', ul);
+      var uc = document.getElementById('opt-userColor').value.trim();
+      if (uc) params.set('userColor', uc);
+      var ufs = document.getElementById('opt-userFontSize-range').value;
+      if (ufs !== '24') params.set('userFontSize', ufs + 'px');
+      var ubgC = document.getElementById('opt-userBg-color').value;
+      var ubgO = document.getElementById('opt-userBg-opacity').value;
+      if (ubgC !== '#ffffff' || ubgO !== '10') params.set('userBg', hexToRgba(ubgC, ubgO));
+      var ufo = document.getElementById('opt-userFadeOut-range').value;
+      if (ufo !== '5') params.set('userFadeOut', parseInt(ufo) * 1000);
+    }
 
     var qs = params.toString();
-    var url = base + (qs ? '?' + qs : '');
-    document.getElementById('generatedUrl').value = url;
+    document.getElementById('generatedUrl').value = base + (qs ? '?' + qs : '');
   }
 
-  // Bind all inputs to live update
-  document.querySelectorAll('[data-param]').forEach(function(el) {
-    el.addEventListener('input', updatePreview);
-    el.addEventListener('change', updatePreview);
-  });
-
-  // Sync color pickers with text inputs
-  var colorPairs = [
-    ['opt-color-picker', 'opt-color'],
-    ['opt-labelColor-picker', 'opt-labelColor'],
-    ['opt-userColor-picker', 'opt-userColor'],
-  ];
-  colorPairs.forEach(function(pair) {
-    var picker = document.getElementById(pair[0]);
-    var text = document.getElementById(pair[1]);
-    if (picker && text) {
-      picker.addEventListener('input', function() {
-        text.value = picker.value;
-        updatePreview();
-      });
-      text.addEventListener('input', function() {
-        if (/^#[0-9a-fA-F]{6}$/.test(text.value)) {
-          picker.value = text.value;
-        }
-      });
-    }
-  });
-
-  // Copy URL
+  // Copy
   window.copyUrl = function() {
     var input = document.getElementById('generatedUrl');
-    input.select();
     navigator.clipboard.writeText(input.value).then(function() {
-      var toast = document.getElementById('toast');
-      toast.classList.add('show');
-      setTimeout(function() { toast.classList.remove('show'); }, 1500);
+      var t = document.getElementById('toast');
+      t.classList.add('show');
+      setTimeout(function() { t.classList.remove('show'); }, 1500);
     });
   };
 
-  // Open preview in new tab
+  // Open
   window.openPreview = function() {
     var url = document.getElementById('generatedUrl').value;
     if (url) window.open(url, '_blank');
   };
 
-  // Initial render
-  updatePreview();
+  // Init
+  updateAll();
 })();
 </script>
 </body>
