@@ -1007,10 +1007,23 @@ class GeminiLiveSession:
         dur_min, dur_sec = divmod(int(duration), 60)
         time_str = f"{pos_min}:{pos_sec:02d} / {dur_min}:{dur_sec:02d}"
         
-        # Create progress bar
+        # Create progress bar with sub-block transitions
         bar_width = 14
-        filled = int(progress * bar_width)
-        bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
+        exact = progress * bar_width
+        filled = int(exact)
+        fraction = exact - filled
+        if filled >= bar_width:
+            bar = "\u2588" * bar_width
+        else:
+            if fraction < 0.25:
+                transition = "\u2591"
+            elif fraction < 0.5:
+                transition = "\u2592"
+            elif fraction < 0.75:
+                transition = "\u2593"
+            else:
+                transition = "\u2588"
+            bar = "\u2588" * filled + transition + "\u2591" * (bar_width - filled - 1)
         
         # Get current lyric
         lyric = self.audio.get_current_lyric()
