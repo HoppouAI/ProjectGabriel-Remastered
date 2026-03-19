@@ -656,10 +656,104 @@ body {
       </div>
     </div>
 
+    <!-- Music Display -->
+    <div class="section" id="sec-music">
+      <div class="section-header" onclick="toggleSection('sec-music')">
+        <span class="section-title">Music Display</span>
+        <span class="section-toggle">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="field">
+          <label>Show Music</label>
+          <input type="checkbox" id="opt-showMusic" checked>
+        </div>
+        <div id="musicFields">
+          <div class="field">
+            <label>Position</label>
+            <select id="opt-musicPos">
+              <option value="top-right">Top Right</option>
+              <option value="top-left">Top Left</option>
+              <option value="bottom-right">Bottom Right</option>
+              <option value="bottom-left">Bottom Left</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Max Width</label>
+            <input type="range" id="opt-musicMaxWidth-range" min="200" max="600" value="360" step="10">
+            <span class="range-val" id="opt-musicMaxWidth-val">360px</span>
+          </div>
+          <div class="field">
+            <label>Background</label>
+            <div class="bg-composite">
+              <input type="color" id="opt-musicBg-color" value="#000000">
+              <input type="range" id="opt-musicBg-opacity" min="0" max="100" value="75">
+              <span class="range-val" id="opt-musicBg-opacity-val">75%</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Corner Radius</label>
+            <input type="range" id="opt-musicRadius-range" min="0" max="24" value="12">
+            <span class="range-val" id="opt-musicRadius-val">12px</span>
+          </div>
+          <div class="field">
+            <label>Title Color</label>
+            <div class="color-group">
+              <input type="color" id="opt-musicTitleColor-picker" value="#ffffff">
+              <input type="text" id="opt-musicTitleColor" value="" placeholder="rgba(255,255,255,0.9)">
+            </div>
+          </div>
+          <div class="field">
+            <label>Title Size</label>
+            <input type="range" id="opt-musicTitleSize-range" min="10" max="24" value="14">
+            <span class="range-val" id="opt-musicTitleSize-val">14px</span>
+          </div>
+          <div class="field">
+            <label>Bar Color</label>
+            <div class="color-group">
+              <input type="color" id="opt-musicBarColor-picker" value="#ffffff">
+              <input type="text" id="opt-musicBarColor" value="" placeholder="rgba(255,255,255,0.7)">
+            </div>
+          </div>
+          <div class="field">
+            <label>Bar Height</label>
+            <input type="range" id="opt-musicBarHeight-range" min="2" max="8" value="3">
+            <span class="range-val" id="opt-musicBarHeight-val">3px</span>
+          </div>
+          <div class="field">
+            <label>Lyric Color</label>
+            <div class="color-group">
+              <input type="color" id="opt-musicLyricColor-picker" value="#ffffff">
+              <input type="text" id="opt-musicLyricColor" value="" placeholder="rgba(255,255,255,0.7)">
+            </div>
+          </div>
+          <div class="field">
+            <label>Lyric Size</label>
+            <input type="range" id="opt-musicLyricSize-range" min="10" max="20" value="13">
+            <span class="range-val" id="opt-musicLyricSize-val">13px</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Live Preview -->
   <div class="preview-area" id="previewArea">
+    <!-- Music preview -->
+    <div id="prevMusicContainer" style="position:absolute;top:20px;right:20px;max-width:360px;width:100%;padding:14px 18px;border-radius:12px;background:rgba(0,0,0,0.75);backdrop-filter:blur(12px);display:none;z-index:5;">
+      <div style="margin-bottom:6px;" id="prevMusicTitle">
+        <span id="prevMusicIcon" style="display:inline-block;margin-right:6px;font-size:14px;">&#9835;</span>
+        <span id="prevMusicName" style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.9);">Example Song Title</span>
+      </div>
+      <div id="prevMusicBar" style="width:100%;height:3px;background:rgba(255,255,255,0.15);border-radius:3px;overflow:hidden;margin-bottom:4px;">
+        <div id="prevMusicFill" style="height:100%;width:35%;background:rgba(255,255,255,0.7);border-radius:3px;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.4);">
+        <span>1:23</span><span>3:45</span>
+      </div>
+      <div id="prevMusicLyric" style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:8px;text-align:center;font-style:italic;">Sample lyric line here...</div>
+    </div>
+
     <div style="display:flex;flex-direction:column;align-items:center;width:100%;max-width:800px;" id="previewWrapper">
       <div class="preview-user-container" id="prevUserContainer">
         <div class="preview-user-label" id="prevUserLabel">User</div>
@@ -753,6 +847,12 @@ body {
     'opt-showUser': false, 'opt-userLabel': '', 'opt-userColor-picker': '#ffffff', 'opt-userColor': '',
     'opt-userFontSize-range': '24', 'opt-userBg-color': '#ffffff', 'opt-userBg-opacity': '10',
     'opt-userFadeOut-range': '5',
+    'opt-showMusic': true, 'opt-musicPos': 'top-right', 'opt-musicMaxWidth-range': '360',
+    'opt-musicBg-color': '#000000', 'opt-musicBg-opacity': '75', 'opt-musicRadius-range': '12',
+    'opt-musicTitleColor-picker': '#ffffff', 'opt-musicTitleColor': '',
+    'opt-musicTitleSize-range': '14', 'opt-musicBarColor-picker': '#ffffff', 'opt-musicBarColor': '',
+    'opt-musicBarHeight-range': '3', 'opt-musicLyricColor-picker': '#ffffff', 'opt-musicLyricColor': '',
+    'opt-musicLyricSize-range': '13',
   };
 
   function setField(id, val) {
@@ -832,6 +932,12 @@ body {
     { range: 'opt-userFontSize-range', val: 'opt-userFontSize-val', unit: 'px' },
     { range: 'opt-userBg-opacity', val: 'opt-userBg-opacity-val', unit: '%' },
     { range: 'opt-userFadeOut-range', val: 'opt-userFadeOut-val', unit: 's' },
+    { range: 'opt-musicMaxWidth-range', val: 'opt-musicMaxWidth-val', unit: 'px' },
+    { range: 'opt-musicBg-opacity', val: 'opt-musicBg-opacity-val', unit: '%' },
+    { range: 'opt-musicRadius-range', val: 'opt-musicRadius-val', unit: 'px' },
+    { range: 'opt-musicTitleSize-range', val: 'opt-musicTitleSize-val', unit: 'px' },
+    { range: 'opt-musicBarHeight-range', val: 'opt-musicBarHeight-val', unit: 'px' },
+    { range: 'opt-musicLyricSize-range', val: 'opt-musicLyricSize-val', unit: 'px' },
   ];
 
   rangeFields.forEach(function(rf) {
@@ -870,6 +976,9 @@ body {
     ['opt-color-picker', 'opt-color'],
     ['opt-labelColor-picker', 'opt-labelColor'],
     ['opt-userColor-picker', 'opt-userColor'],
+    ['opt-musicTitleColor-picker', 'opt-musicTitleColor'],
+    ['opt-musicBarColor-picker', 'opt-musicBarColor'],
+    ['opt-musicLyricColor-picker', 'opt-musicLyricColor'],
   ];
   colorPairs.forEach(function(pair) {
     var picker = document.getElementById(pair[0]);
@@ -885,6 +994,12 @@ body {
   // Show/hide user fields
   document.getElementById('opt-showUser').addEventListener('change', function() {
     document.getElementById('userFields').style.display = this.checked ? 'block' : 'none';
+    updateAll();
+  });
+
+  // Show/hide music fields
+  document.getElementById('opt-showMusic').addEventListener('change', function() {
+    document.getElementById('musicFields').style.display = this.checked ? 'block' : 'none';
     updateAll();
   });
 
@@ -992,6 +1107,44 @@ body {
     P.ut.style.color = userColor;
     P.ut.style.lineHeight = lineHeight;
     P.ut.style.textAlign = textAlign;
+
+    // Music preview
+    var showMusic = document.getElementById('opt-showMusic').checked;
+    var mc = document.getElementById('prevMusicContainer');
+    mc.style.display = showMusic ? 'block' : 'none';
+    if (showMusic) {
+      var musicPos = document.getElementById('opt-musicPos').value;
+      mc.style.top = musicPos.startsWith('top') ? '20px' : 'auto';
+      mc.style.bottom = musicPos.startsWith('bottom') ? '20px' : 'auto';
+      mc.style.left = musicPos.endsWith('left') ? '20px' : 'auto';
+      mc.style.right = musicPos.endsWith('right') ? '20px' : 'auto';
+      mc.style.maxWidth = document.getElementById('opt-musicMaxWidth-range').value + 'px';
+      var mBgC = document.getElementById('opt-musicBg-color').value;
+      var mBgO = document.getElementById('opt-musicBg-opacity').value;
+      mc.style.background = hexToRgba(mBgC, mBgO);
+      mc.style.borderRadius = document.getElementById('opt-musicRadius-range').value + 'px';
+
+      var titleColor = document.getElementById('opt-musicTitleColor').value ||
+        hexToRgba(document.getElementById('opt-musicTitleColor-picker').value, 90);
+      document.getElementById('prevMusicName').style.color = titleColor;
+      document.getElementById('prevMusicName').style.fontSize = document.getElementById('opt-musicTitleSize-range').value + 'px';
+      document.getElementById('prevMusicIcon').style.fontSize = document.getElementById('opt-musicTitleSize-range').value + 'px';
+
+      var barColor = document.getElementById('opt-musicBarColor').value ||
+        hexToRgba(document.getElementById('opt-musicBarColor-picker').value, 70);
+      document.getElementById('prevMusicFill').style.background = barColor;
+      document.getElementById('prevMusicBar').style.height = document.getElementById('opt-musicBarHeight-range').value + 'px';
+
+      var lyricColor = document.getElementById('opt-musicLyricColor').value ||
+        hexToRgba(document.getElementById('opt-musicLyricColor-picker').value, 70);
+      document.getElementById('prevMusicLyric').style.color = lyricColor;
+      document.getElementById('prevMusicLyric').style.fontSize = document.getElementById('opt-musicLyricSize-range').value + 'px';
+
+      if (googleFont) {
+        document.getElementById('prevMusicName').style.fontFamily = font;
+        document.getElementById('prevMusicLyric').style.fontFamily = font;
+      }
+    }
 
     // Load Google Font
     if (googleFont) {
@@ -1121,6 +1274,42 @@ body {
       if (ubgC !== '#ffffff' || ubgO !== '10') params.set('userBg', hexToRgba(ubgC, ubgO));
       var ufo = document.getElementById('opt-userFadeOut-range').value;
       if (ufo !== '5') params.set('userFadeOut', parseInt(ufo) * 1000);
+    }
+
+    // Music
+    if (!document.getElementById('opt-showMusic').checked) {
+      params.set('showMusic', 'false');
+    } else {
+      var mPos = document.getElementById('opt-musicPos').value;
+      if (mPos !== 'top-right') {
+        // Map position to CSS variables
+        var posMap = {
+          'top-left':     { musicTop: '20px', musicRight: 'auto', musicLeft: '20px' },
+          'bottom-right': { musicTop: 'auto', musicBottom: '20px' },
+          'bottom-left':  { musicTop: 'auto', musicBottom: '20px', musicRight: 'auto', musicLeft: '20px' },
+        };
+        var pm = posMap[mPos];
+        if (pm) Object.keys(pm).forEach(function(k) { params.set(k, pm[k]); });
+      }
+      var mmw = document.getElementById('opt-musicMaxWidth-range').value;
+      if (mmw !== '360') params.set('musicMaxWidth', mmw + 'px');
+      var mbgC = document.getElementById('opt-musicBg-color').value;
+      var mbgO = document.getElementById('opt-musicBg-opacity').value;
+      if (mbgC !== '#000000' || mbgO !== '75') params.set('musicBg', hexToRgba(mbgC, mbgO));
+      var mbr = document.getElementById('opt-musicRadius-range').value;
+      if (mbr !== '12') params.set('musicBorderRadius', mbr + 'px');
+      var mtc = document.getElementById('opt-musicTitleColor').value.trim();
+      if (mtc) params.set('musicTitleColor', mtc);
+      var mts = document.getElementById('opt-musicTitleSize-range').value;
+      if (mts !== '14') params.set('musicTitleSize', mts + 'px');
+      var mbc = document.getElementById('opt-musicBarColor').value.trim();
+      if (mbc) params.set('musicBarColor', mbc);
+      var mbh = document.getElementById('opt-musicBarHeight-range').value;
+      if (mbh !== '3') params.set('musicBarHeight', mbh + 'px');
+      var mlc = document.getElementById('opt-musicLyricColor').value.trim();
+      if (mlc) params.set('musicLyricColor', mlc);
+      var mls = document.getElementById('opt-musicLyricSize-range').value;
+      if (mls !== '13') params.set('musicLyricSize', mls + 'px');
     }
 
     var qs = params.toString();
