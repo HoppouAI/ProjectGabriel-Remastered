@@ -42,7 +42,7 @@ DEPTH_MODELS = {
 }
 
 DEFAULT_CFG = {
-    "close_threshold": 0.50,     # Zone mean above this = obstacle (0=  far, 1=close)
+    "close_threshold": 0.40,     # Zone mean above this = obstacle (0=far, 1=close)
     "forward_speed": 0.45,       # Base forward movement speed (slower = more reaction time)
     "turn_speed": 0.5,           # Turn speed when avoiding obstacles
     "smoothing_alpha": 0.6,      # EMA smoothing for movement (higher = faster reaction)
@@ -52,6 +52,8 @@ DEFAULT_CFG = {
     "zone_left_range": [0.0, 0.35],    # Left third of screen
     "zone_center_range": [0.30, 0.70], # Center of screen
     "zone_right_range": [0.65, 1.0],   # Right third of screen
+    "model_input_size": 392,     # Depth model input resolution (lower = faster, default 518)
+    "target_frame_ms": 150,      # Target depth inference time; forward speed scales down above this
 }
 
 
@@ -131,22 +133,28 @@ class Wanderer:
         repo = model_spec["repo"]
         self._invert_depth = model_spec["invert"]
 
+        # Model input size (must be divisible by 14 for ViT patch size)
+        input_size = self._cfg.get("model_input_size", 392)
+        input_size = max(14, (input_size // 14) * 14)  # Round down to nearest multiple of 14
+
         # Try auto-loading processor; fall back to manual construction
         try:
             from transformers import AutoImageProcessor
-            self._transform = AutoImageProcessor.from_pretrained(repo, use_fast=True)
+            self._transform = AutoImageProcessor.from_pretrained(
+                repo, use_fast=True,
+                size={"height": input_size, "width": input_size},
+            )
         except (OSError, Exception) as e:
             logger.warning(f"AutoImageProcessor failed for {repo}: {e}, using manual processor")
             from transformers import DPTImageProcessor
-            # Depth-Anything-V2 uses 518x518, DPT-Large uses 384x384
-            size = 518 if "depth-anything" in self._model_key else 384
             self._transform = DPTImageProcessor(
                 do_resize=True,
-                size={"height": size, "width": size},
+                size={"height": input_size, "width": input_size},
                 do_normalize=True,
                 image_mean=[0.485, 0.456, 0.406],
                 image_std=[0.229, 0.224, 0.225],
             )
+        logger.info(f"Depth model input size: {input_size}x{input_size}")
 
         self._model = AutoModelForDepthEstimation.from_pretrained(repo)
 
@@ -608,6 +616,12 @@ class Wanderer:
 
                 # Decide movement
                 turn, forward, look_v = self._decide_movement(zones)
+
+                # Scale forward speed down when depth inference is slow
+                target_ms = self._cfg["target_frame_ms"]
+                if depth_ms > target_ms:
+                    speed_scale = max(0.2, target_ms / depth_ms)
+                    forward *= speed_scale
 
                 # Send OSC
                 self._send_osc(turn, forward, look_v)
