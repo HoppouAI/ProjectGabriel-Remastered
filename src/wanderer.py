@@ -424,10 +424,10 @@ class Wanderer:
             if (target_turn > 0) != (self._committed_turn_dir > 0):
                 target_turn = self._committed_turn_dir * abs(target_turn)
 
-        # Velocity-based stuck detection: if we're trying to move forward but
-        # VelocityZ from VRChat says we're not actually moving, we're stuck
-        # Only active if VRChat is actually sending velocity data
-        if self.osc and self.osc.velocity_received and target_forward > 0.2:
+        # Velocity-based stuck detection: only when walking forward (not during avoidance)
+        # During avoidance turns, velZ is naturally 0 from spinning -- that's not being stuck
+        walking_forward = self._current_action in ("walking", "hallway") and target_forward > 0.2
+        if self.osc and self.osc.velocity_received and walking_forward:
             vel_z = abs(self.osc.velocity_z)
             if vel_z < 0.05:
                 self._moving_stuck_frames += 1
