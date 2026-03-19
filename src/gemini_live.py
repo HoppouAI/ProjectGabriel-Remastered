@@ -802,18 +802,12 @@ class GeminiLiveSession:
                                     self._idle_chatbox.stop()
                                     self.osc.set_typing(True)
                                     self.osc.send_chatbox("Thinking...")
-                                    # Pause wanderer when AI starts thinking (user spoke)
-                                    if self._wanderer and self._wanderer.active and not self._wanderer._paused:
-                                        self._wanderer.on_speech_activity()
                             elif part.inline_data:
                                 self._thinking_shown = False
                                 if not self._speaking:
                                     self._speaking = True
                                     self._idle_chatbox.stop()
                                     self.osc.set_typing(True)
-                                    # Pause wanderer when AI starts speaking (user spoke)
-                                    if self._wanderer and self._wanderer.active and not self._wanderer._paused:
-                                        self._wanderer.on_speech_activity()
                                 # Try to start talking animations (idempotent, handles manual animation blocking)
                                 if self._emotion_system:
                                     self._emotion_system.start_speaking()
