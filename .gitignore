@@ -183,6 +183,7 @@ cython_debug/
 # ProjectGabriel
 config.yml
 session_handle.txt
+depth_server/keys.txt
 data/conversations/
 data/avatars.json
 data/vrchat_cookies.json
