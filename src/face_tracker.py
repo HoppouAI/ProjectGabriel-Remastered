@@ -17,10 +17,11 @@ TARGET_FPS = 15  # Lower FPS than person tracker since face tracking is less cri
 
 DEFAULT_CFG = {
     "confidence_threshold": 0.35,
-    "smoothing_alpha": 0.35,
+    "smoothing_alpha": 0.5,
     "max_turn_rate": 0.12,
     "deadzone": 0.15,
-    "turn_gain": 2.5,
+    "turn_gain": 2.0,
+    "vertical_gain": 1.2,
     "min_output": 0.45,
     "lock_timeout": 3.0,
     "idle_switch_min": 5.0,
@@ -388,9 +389,8 @@ class FaceTracker:
                 target = min(detections, key=lambda d: abs(d["norm_dx"] - self._smoothed_look_h))
 
         # Compute raw look values
-        gain = cfg["turn_gain"]
-        raw_look_h = max(-1.0, min(1.0, target["norm_dx"] * gain))
-        raw_look_v = -target["norm_dy"] * 0.4  # Gentle vertical correction
+        raw_look_h = max(-1.0, min(1.0, target["norm_dx"] * cfg["turn_gain"]))
+        raw_look_v = max(-1.0, min(1.0, -target["norm_dy"] * cfg["vertical_gain"]))
 
         # EMA smoothing
         new_look_h = self._smoothed_look_h * (1 - alpha) + raw_look_h * alpha
@@ -401,6 +401,9 @@ class FaceTracker:
         delta_h = new_look_h - self._smoothed_look_h
         if abs(delta_h) > max_rate:
             new_look_h = self._smoothed_look_h + max_rate * (1 if delta_h > 0 else -1)
+        delta_v = new_look_v - self._smoothed_look_v
+        if abs(delta_v) > max_rate:
+            new_look_v = self._smoothed_look_v + max_rate * (1 if delta_v > 0 else -1)
 
         self._smoothed_look_h = new_look_h
         self._smoothed_look_v = new_look_v
