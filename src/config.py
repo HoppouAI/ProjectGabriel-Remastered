@@ -323,5 +323,33 @@ class Config:
         return self.get("emotions", default={}) or {}
 
     @property
+    def thinking_sound_enabled(self):
+        return self.get("audio", "thinking_sound", "enabled", default=False)
+
+    @property
+    def thinking_sound_on_thinking(self):
+        return self.get("audio", "thinking_sound", "on_thinking", default=True)
+
+    @property
+    def thinking_sound_on_recall(self):
+        return self.get("audio", "thinking_sound", "on_recall", default=True)
+
+    @property
+    def thinking_sound_file(self):
+        return self.get("audio", "thinking_sound", "file", default="sfx/thinking.wav")
+
+    @property
+    def thinking_sound_volume(self):
+        return self.get("audio", "thinking_sound", "volume", default=30)
+
+    @property
+    def thinking_sound_fade_in_ms(self):
+        return self.get("audio", "thinking_sound", "fade_in_ms", default=500)
+
+    @property
+    def thinking_sound_fade_out_ms(self):
+        return self.get("audio", "thinking_sound", "fade_out_ms", default=800)
+
+    @property
     def obs_enabled(self):
         return self.get("obs", "enabled", default=False)
