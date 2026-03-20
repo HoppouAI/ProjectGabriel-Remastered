@@ -32,7 +32,7 @@ class MemoryTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="searchMemories",
-                description="Search through your stored memories by keyword or phrase.\n**Invocation Condition:** Call before asking someone a question you might already know the answer to.",
+                description="Quick keyword search through stored memories. Returns raw memory entries matching the search term. Only use this for simple lookups where you need to check if a specific fact exists.\n**Invocation Condition:** Call ONLY for quick keyword lookups. Do NOT use when asked to summarize, recall, or remember -- use recallMemories instead.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -68,7 +68,7 @@ class MemoryTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="recallMemories",
-                description="Deep memory recall agent. Uses AI to search ALL memories and summarize relevant information.\n**Invocation Condition:** Call when you need to remember something specific about a person, event, or topic. More thorough than searchMemories. Use when someone references past events or asks about people you met.",
+                description="Deep memory recall and summarization agent. Searches ALL memories using AI to find and summarize everything relevant. THIS is the tool to use when asked to remember, recall, or summarize anything.\n**Invocation Condition:** ALWAYS use this instead of searchMemories when asked to summarize, recall, remember, or tell what you know about something. Use when someone references past events, asks about people, or says 'summarize'. This is your PRIMARY memory tool.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
