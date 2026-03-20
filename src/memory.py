@@ -1111,7 +1111,8 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
                 config=gtypes.GenerateContentConfig(
                     system_instruction=system_prompt,
                     temperature=0.7,
-                    max_output_tokens=500,
+                    max_output_tokens=1024,
+                    thinking_config=gtypes.ThinkingConfig(thinking_budget=2048),
                 ),
             ),
             timeout=15.0,
