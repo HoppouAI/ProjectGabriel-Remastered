@@ -35,6 +35,7 @@ shared_state = {
     "audio_mgr": None,
     "memory_mgr": None,
     "get_emotion_fn": None,
+    "config": None,
 }
 
 console_logs = deque(maxlen=100)
@@ -225,18 +226,27 @@ async def index():
 
 @app.get("/overlay")
 async def overlay():
+    cfg = shared_state.get("config")
+    if not cfg or not cfg.obs_enabled:
+        raise HTTPException(status_code=404, detail="OBS overlay is disabled (obs.enabled: false)")
     html_path = STATIC_DIR / "overlay.html"
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
 @app.get("/overlay/config")
 async def overlay_config():
+    cfg = shared_state.get("config")
+    if not cfg or not cfg.obs_enabled:
+        raise HTTPException(status_code=404, detail="OBS overlay is disabled (obs.enabled: false)")
     html_path = STATIC_DIR / "overlay_config.html"
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
 @app.get("/overlay/music")
 async def overlay_music():
+    cfg = shared_state.get("config")
+    if not cfg or not cfg.obs_enabled:
+        raise HTTPException(status_code=404, detail="OBS overlay is disabled (obs.enabled: false)")
     html_path = STATIC_DIR / "overlay_music.html"
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
@@ -696,7 +706,9 @@ def start_music_broadcast():
 
 @app.on_event("startup")
 async def _on_startup():
-    start_music_broadcast()
+    cfg = shared_state.get("config")
+    if cfg and cfg.obs_enabled:
+        start_music_broadcast()
 
 
 # --- Run ---

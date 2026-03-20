@@ -357,3 +357,11 @@ emotions:
     #   osc_path: "/avatar/parameters/YourParam/dance-1"
     #   category: "dance"
     #   looping: true
+
+# ══════════════════════════════════════════════════════════
+# OBS Overlay (optional streaming overlay)
+# ══════════════════════════════════════════════════════════
+# Provides transparent browser source overlays for OBS/streaming.
+# When disabled, overlay routes and music broadcast are inactive.
+obs:
+  enabled: false

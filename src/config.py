@@ -321,3 +321,7 @@ class Config:
     @property
     def emotion_config(self):
         return self.get("emotions", default={}) or {}
+
+    @property
+    def obs_enabled(self):
+        return self.get("obs", "enabled", default=False)
