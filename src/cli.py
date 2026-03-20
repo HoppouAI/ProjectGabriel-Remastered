@@ -84,6 +84,7 @@ def print_startup_info(config):
         ("Emotions", config.emotion_enabled),
         ("Vision", config.vision_enabled),
         ("VRChat API", bool(config.vrchat_api_username)),
+        ("OBS Overlay", config.obs_enabled),
     ]
 
     parts = []

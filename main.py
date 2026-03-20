@@ -28,7 +28,7 @@ class _ProactorAssertFilter(logging.Filter):
 logging.getLogger("asyncio").addFilter(_ProactorAssertFilter())
 
 
-def setup_control_server(session, audio, personality, memory, get_emotion_fn):
+def setup_control_server(session, audio, personality, memory, get_emotion_fn, config):
     """Setup the control panel shared state and return a uvicorn Server."""
     try:
         from control_server import app, shared_state
@@ -39,6 +39,7 @@ def setup_control_server(session, audio, personality, memory, get_emotion_fn):
         shared_state["personality_mgr"] = personality
         shared_state["memory_mgr"] = memory
         shared_state["get_emotion_fn"] = get_emotion_fn
+        shared_state["config"] = config
         logger.info("Starting control panel on http://localhost:8766")
         config = uvicorn.Config(app, host="0.0.0.0", port=8766, log_level="warning")
         server = uvicorn.Server(config)
@@ -162,7 +163,7 @@ async def main():
         face_tracker.start()
 
     # Start control panel as async task in same event loop
-    control_server = setup_control_server(session, audio, personality, memory_system, get_emotion_system)
+    control_server = setup_control_server(session, audio, personality, memory_system, get_emotion_system, config)
     if control_server:
         asyncio.create_task(control_server.serve())
 

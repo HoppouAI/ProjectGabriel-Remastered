@@ -184,6 +184,11 @@ class MyTool(BaseTool):
 - Dashboard with console log, controls, and session info
 - Memory manager tab for viewing/searching/deleting memories
 - Vision debug server on port 8767 (when `yolo.vision_debug: true`)
+- OBS overlay system (optional, `obs.enabled: false` by default):
+  - `/overlay` -- transparent text overlay (browser source)
+  - `/overlay/music` -- standalone music overlay (browser source)
+  - `/overlay/config` -- visual configurator with presets
+  - When disabled: routes return 404, music broadcast loop doesn't start, turn_complete events not sent
 
 ### CLI
 - `src/cli.py` -- colored logging formatter, startup banner, config display
