@@ -27,6 +27,8 @@ class AudioManager:
         self._boosted_sound_channel = None  # Channel for boosted playback
         self._lyrics = []  # Parsed SRT entries: [(start_sec, end_sec, text), ...]
         self._pygame_ready = False
+        self._thinking_sound = None  # Loaded thinking sound
+        self._thinking_channel = None  # Channel playing the thinking sound
         self._setup_devices()
 
     def _setup_devices(self):
@@ -395,7 +397,46 @@ class AudioManager:
         if not self._pygame_ready:
             return
         pygame.mixer.stop()
+        self._thinking_channel = None
         logger.info("All SFX playback stopped")
+
+    def start_thinking_sound(self, source="thinking"):
+        """Start playing the thinking sound effect with fade-in (looping).
+        
+        Args:
+            source: "thinking" or "recall" -- checked against on_thinking/on_recall config.
+        """
+        if not self.config.thinking_sound_enabled:
+            return
+        if source == "thinking" and not self.config.thinking_sound_on_thinking:
+            return
+        if source == "recall" and not self.config.thinking_sound_on_recall:
+            return
+        self._setup_pygame()
+        filepath = self.config.thinking_sound_file
+        if not os.path.exists(filepath):
+            logger.warning(f"Thinking sound file not found: {filepath}")
+            return
+        if self._thinking_channel and self._thinking_channel.get_busy():
+            return  # Already playing
+        try:
+            if self._thinking_sound is None:
+                self._thinking_sound = pygame.mixer.Sound(filepath)
+            vol = min(max(0, self.config.thinking_sound_volume), 100) / 100.0
+            self._thinking_sound.set_volume(vol)
+            fade_in = self.config.thinking_sound_fade_in_ms
+            self._thinking_channel = self._thinking_sound.play(loops=-1, fade_ms=fade_in)
+            logger.debug("Thinking sound started")
+        except Exception as e:
+            logger.error(f"Failed to start thinking sound: {e}")
+
+    def stop_thinking_sound(self):
+        """Stop the thinking sound effect with fade-out."""
+        if self._thinking_channel and self._thinking_channel.get_busy():
+            fade_out = self.config.thinking_sound_fade_out_ms if self.config.thinking_sound_enabled else 800
+            self._thinking_channel.fadeout(fade_out)
+            self._thinking_channel = None
+            logger.debug("Thinking sound stopping (fade out)")
 
     def cleanup(self):
         if self._pygame_ready:

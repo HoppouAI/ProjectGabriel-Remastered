@@ -162,14 +162,18 @@ class MemoryTools(BaseTool):
     async def _recall(self, args):
         if self.osc:
             self.osc.send_chatbox("Thinking about the past...")
+        self.audio.start_thinking_sound("recall")
         api_key = self.config.api_key if self.config else ""
         personality_prompt = ""
         if self.personality:
             current = self.personality.get_current()
             personality_prompt = current.get("prompt", "")
-        return await recall_memories(
-            query=args.get("query", ""),
-            context=args.get("context", ""),
-            api_key=api_key,
-            personality_prompt=personality_prompt,
-        )
+        try:
+            return await recall_memories(
+                query=args.get("query", ""),
+                context=args.get("context", ""),
+                api_key=api_key,
+                personality_prompt=personality_prompt,
+            )
+        finally:
+            self.audio.stop_thinking_sound()

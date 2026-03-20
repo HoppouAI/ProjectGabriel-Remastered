@@ -173,6 +173,18 @@ audio:
   receive_sample_rate: 24000
   chunk_size: 1024
 
+  # Thinking sound effect -- plays a looping ambient sound while the AI is thinking
+  # or recalling memories. Fades in when thinking starts, fades out when done.
+  # Place your sound file (e.g. a subtle hum or chime loop) at the configured path.
+  thinking_sound:
+    enabled: false
+    on_thinking: true              # Play during AI thinking (thought generation)
+    on_recall: true                # Play during memory recall (recallMemories tool)
+    file: "sfx/thinking.wav"       # Path to the sound file (wav/ogg/mp3)
+    volume: 30                     # Volume 0-100
+    fade_in_ms: 500                # Fade-in duration in milliseconds
+    fade_out_ms: 800               # Fade-out duration in milliseconds
+
 vrchat:
   # VRChat OSC settings
   osc_ip: "127.0.0.1"

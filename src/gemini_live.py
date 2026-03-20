@@ -851,7 +851,10 @@ class GeminiLiveSession:
                                     self._idle_chatbox.stop()
                                     self.osc.set_typing(True)
                                     self.osc.send_chatbox("Thinking...")
+                                    self.audio.start_thinking_sound("thinking")
                             elif part.inline_data:
+                                if self._thinking_shown:
+                                    self.audio.stop_thinking_sound()
                                 self._thinking_shown = False
                                 if not self._speaking:
                                     self._speaking = True
@@ -912,6 +915,8 @@ class GeminiLiveSession:
 
                     if response.server_content and response.server_content.turn_complete:
                         self._speaking = False
+                        if self._thinking_shown:
+                            self.audio.stop_thinking_sound()
                         self._thinking_shown = False
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
@@ -930,6 +935,8 @@ class GeminiLiveSession:
 
                     if response.server_content and response.server_content.interrupted:
                         self._speaking = False
+                        if self._thinking_shown:
+                            self.audio.stop_thinking_sound()
                         self._thinking_shown = False
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
