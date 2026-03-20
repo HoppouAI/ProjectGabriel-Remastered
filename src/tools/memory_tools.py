@@ -163,6 +163,10 @@ class MemoryTools(BaseTool):
         if self.osc:
             self.osc.send_chatbox("Thinking about the past...")
         self.audio.start_thinking_sound("recall")
+        from src.emotions import get_emotion_system
+        emo = get_emotion_system()
+        if emo:
+            emo.start_thinking()
         api_key = self.config.api_key if self.config else ""
         personality_prompt = ""
         if self.personality:
@@ -177,3 +181,5 @@ class MemoryTools(BaseTool):
             )
         finally:
             self.audio.stop_thinking_sound()
+            if emo:
+                emo.stop_thinking()
