@@ -346,6 +346,10 @@ emotions:
   idle_animation: "sad-idle"       # Animation name to play when idle (must be defined below)
   idle_timeout: 10                 # Seconds of silence before idle animation starts
 
+  # Thinking animation - plays while AI is thinking or recalling memories
+  # Set to a defined animation name, or leave empty to disable
+  thinking_animation: ""           # Animation name to play when thinking (must be defined below)
+
   # ── Animations ──
   # Each animation maps to its VRChat OSC parameter path
   # looping: true = stays on until stopAnimation is called

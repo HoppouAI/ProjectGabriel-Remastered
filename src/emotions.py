@@ -74,6 +74,10 @@ class EmotionSystem:
         self._idle_active = False
         self._last_activity_time = time.time()
         
+        # Thinking animation config
+        self._thinking_animation_name = emo_cfg.get('thinking_animation', '')
+        self._thinking_active = False
+        
         # Track manual animation state (dances, etc.)
         self._manual_animation_active = False
         
@@ -85,15 +89,19 @@ class EmotionSystem:
         self.osc_client = osc_client
 
     def start(self):
-        """Start the emotion system."""
+        """Start the emotion system. Clears any leftover animation state from previous runs."""
         if not self.enabled:
             logger.info("Emotion system disabled in config")
             return
+        # Reset all animations to off -- clears stuck state from ungraceful exits
+        for name in self.animations:
+            self._send_animation_osc(name, False)
         logger.info("Emotion system started")
 
     def stop(self):
         """Stop the emotion system."""
         self.stop_speaking()
+        self.stop_thinking()
         self._stop_idle_animation()
         self._clear_current_animation()
         logger.info("Emotion system stopped")
@@ -143,9 +151,41 @@ class EmotionSystem:
                 self._current_animation = None
         logger.debug("Idle animation stopped")
 
+    def start_thinking(self):
+        """Start thinking animation (called when AI enters thinking/recall state)."""
+        if not self.enabled or not self._thinking_animation_name or self._thinking_active:
+            return
+        anim_data = self.animations.get(self._thinking_animation_name)
+        if not anim_data:
+            return
+        # Stop idle animation if active
+        if self._idle_active:
+            self._stop_idle_animation()
+        self._thinking_active = True
+        with self._animation_lock:
+            if self._current_animation and self._current_animation not in self._talking_anims:
+                self._send_animation_osc(self._current_animation, False)
+            self._current_animation = self._thinking_animation_name
+            self._send_animation_osc(self._thinking_animation_name, True)
+        logger.debug(f"Thinking animation started: {self._thinking_animation_name}")
+
+    def stop_thinking(self):
+        """Stop thinking animation."""
+        if not self._thinking_active:
+            return
+        self._thinking_active = False
+        with self._animation_lock:
+            if self._current_animation == self._thinking_animation_name:
+                self._send_animation_osc(self._thinking_animation_name, False)
+                self._current_animation = None
+        logger.debug("Thinking animation stopped")
+
     def start_speaking(self):
         """Start talking animations (called when AI begins speaking)."""
         self.mark_activity()
+        # Stop thinking animation when speech starts
+        if self._thinking_active:
+            self.stop_thinking()
         if not self.enabled or self._is_speaking or not self._talking_anims:
             return
         
@@ -175,13 +215,14 @@ class EmotionSystem:
         self._talking_stop_event.set()
         
         if self._talking_thread and self._talking_thread.is_alive():
-            self._talking_thread.join(timeout=1)
+            self._talking_thread.join(timeout=2)
         self._talking_thread = None
         
-        # Turn off current talking animation
+        # Turn off ALL talking animations to handle any race conditions
         with self._animation_lock:
+            for anim_name in self._talking_anims:
+                self._send_animation_osc(anim_name, False)
             if self._current_animation in self._talking_anims:
-                self._send_animation_osc(self._current_animation, False)
                 self._current_animation = None
         
         logger.debug("Stopped talking animations")
@@ -190,12 +231,13 @@ class EmotionSystem:
         """Background thread that alternates talking animations."""
         while not self._talking_stop_event.is_set() and self._is_speaking:
             try:
-                # Get next talking animation
                 if self._talking_anims:
                     anim_name = self._talking_anims[self._current_talking_index % len(self._talking_anims)]
                     self._current_talking_index += 1
                     
                     with self._animation_lock:
+                        if self._talking_stop_event.is_set() or not self._is_speaking:
+                            break
                         # Turn off previous animation if it's a talking one
                         if self._current_animation and self._current_animation in self._talking_anims:
                             self._send_animation_osc(self._current_animation, False)
