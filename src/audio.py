@@ -79,7 +79,8 @@ class AudioManager:
             0.0 after 10s of music
         """
         if not self.is_music_playing():
-            self._music_start_time = None
+            if self._music_paused_at is None:
+                self._music_start_time = None
             return 1.0
         
         if self._music_start_time is None:
