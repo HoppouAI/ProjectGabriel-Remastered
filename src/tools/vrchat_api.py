@@ -44,7 +44,7 @@ class VRChatAPITools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="invitePlayer",
-                description="Invite a player to your current VRChat instance. Use the exact display name from getInstancePlayers or a user ID.\n**Invocation Condition:** Call when asked to invite someone to your instance or world.",
+                description="Invite a player to YOUR current VRChat instance (sends them an invite to come to you). Use the exact display name or user ID.\n**Invocation Condition:** Call when you want to bring someone to YOUR world/instance. NOT for joining someone else's instance.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -55,11 +55,22 @@ class VRChatAPITools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="requestInvite",
-                description="Request an invite from a player to join their instance.\n**Invocation Condition:** Call when asked to request an invite from someone.",
+                description="Request an invite from a player so YOU can join THEIR instance. Sends them a notification asking them to invite you.\n**Invocation Condition:** Call when you want to JOIN someone else's world/instance. This is for going TO them, not bringing them to you.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
                         "player": {"type": "STRING", "description": "Player display name or user ID (usr_xxx) to request invite from"},
+                    },
+                    "required": ["player"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="inviteSelfToInstance",
+                description="Invite yourself to a friend's instance to join them directly (bypasses needing them to accept). Only works if the instance type allows it.\n**Invocation Condition:** Call when you want to go to where a friend is. Preferred over requestInvite if you want to join immediately.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "player": {"type": "STRING", "description": "Friend's display name or user ID (usr_xxx) to join"},
                     },
                     "required": ["player"],
                 },
@@ -133,6 +144,8 @@ class VRChatAPITools(BaseTool):
             return await self._invite_player(args["player"])
         elif name == "requestInvite":
             return await self._request_invite(args["player"])
+        elif name == "inviteSelfToInstance":
+            return await self._invite_self_to_instance(args["player"])
         elif name == "getOwnAvatar":
             return await self._get_own_avatar()
         elif name == "getAvatarInfo":
@@ -213,6 +226,28 @@ class VRChatAPITools(BaseTool):
         if not user_id:
             return {"result": "error", "message": f"Could not find player '{player}' -- use getInstancePlayers first or provide a user ID (usr_xxx)"}
         result = await api.request_invite(user_id)
+        return result
+
+    async def _invite_self_to_instance(self, player):
+        api = self.handler._get_vrchat_api()
+        user_id = self._resolve_player_id(player)
+        if not user_id:
+            return {"result": "error", "message": f"Could not find player '{player}'"}
+        user_info = await api.get_user(user_id)
+        if "error" in user_info:
+            return {"result": "error", "message": user_info["error"]}
+        location = user_info.get("location", "")
+        if not location or location in ("", "offline", "private"):
+            return {"result": "error", "message": f"Cannot join {player} -- they are offline or in a private instance"}
+        current_user = await api.get_current_user()
+        if "error" in current_user:
+            return {"result": "error", "message": current_user["error"]}
+        my_user_id = current_user.get("id", "")
+        if not my_user_id:
+            return {"result": "error", "message": "Could not determine own user ID"}
+        result = await api.invite_user(my_user_id, location)
+        if result.get("result") == "ok":
+            return {"result": "ok", "message": f"Self-invite sent to join {player}'s instance"}
         return result
 
     async def _get_own_avatar(self):
