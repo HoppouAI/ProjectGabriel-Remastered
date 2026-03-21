@@ -23,20 +23,29 @@ class _PitchShifter:
         self._semitones = 0.0
         self._shift = PitchShift(semitones=0.0)
         self._board = Pedalboard([self._shift])
+        self._out_buf = np.zeros(0, dtype=np.float32)
 
     def reset(self):
         from pedalboard import Pedalboard, PitchShift
         self._shift = PitchShift(semitones=self._semitones)
         self._board = Pedalboard([self._shift])
+        self._out_buf = np.zeros(0, dtype=np.float32)
 
     def process(self, chunk: np.ndarray, semitones: float) -> np.ndarray:
         if semitones != self._semitones:
             self._semitones = semitones
             self._shift.semitones = semitones
+        n = len(chunk)
         audio = chunk.astype(np.float32) / 32767.0
         audio_2d = audio.reshape(1, -1)
         result = self._board(audio_2d, self.sample_rate)
-        return (result[0] * 32767.0).astype(np.float32)
+        processed = result[0] * 32767.0
+        self._out_buf = np.append(self._out_buf, processed)
+        if len(self._out_buf) >= n:
+            out = self._out_buf[:n].copy()
+            self._out_buf = self._out_buf[n:]
+            return out
+        return chunk
 
 
 class AudioManager:
