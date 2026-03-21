@@ -289,7 +289,7 @@ class DiscordBot:
             if entry["images"]:
                 all_images.extend(entry["images"])
                 image_note = f" [attached {len(entry['images'])} image(s)]"
-            message_lines.append(f"{user_display}: {msg.content}{image_note}")
+            message_lines.append(f"{user_display} (ID:{msg.author.id}): {msg.content}{image_note}")
 
             # Log each user message to conversation store
             self._conversations.add_message(
@@ -314,17 +314,26 @@ class DiscordBot:
                 if delay > 0:
                     await asyncio.sleep(delay)
 
-                try:
-                    response = await asyncio.wait_for(
-                        self._gemini.send_message(full_prompt, images=all_images if all_images else None),
-                        timeout=60.0,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("Gemini response timed out")
-                    return
+                response = None
+                for attempt in range(3):
+                    try:
+                        msg_to_send = full_prompt if attempt == 0 else "(You didn't respond. Please try again.)"
+                        imgs = (all_images if all_images else None) if attempt == 0 else None
+                        response = await asyncio.wait_for(
+                            self._gemini.send_message(msg_to_send, images=imgs),
+                            timeout=60.0,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Gemini response timed out (attempt {attempt + 1}/3)")
+                        continue
+                    if response and not response.startswith("[Error:"):
+                        break
+                    logger.warning(f"Empty/bad response from Gemini (attempt {attempt + 1}/3): {response}")
+                    response = None
+                    await asyncio.sleep(1)
 
-            if not response or response.startswith("[Error:"):
-                logger.warning(f"Bad response from Gemini: {response}")
+            if not response:
+                logger.warning("Gemini failed to respond after 3 attempts")
                 return
 
             max_len = self.config.max_message_length
