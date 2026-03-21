@@ -1,7 +1,9 @@
 # ╔══════════════════════════════════════════════════════════╗
-# ║          ProjectGabriel Discord Bot Configuration        ║
+# ║       ProjectGabriel Discord Bot Configuration           ║
 # ╚══════════════════════════════════════════════════════════╝
 # Copy this file to config.yml and fill in your values.
+# This bot uses the same prompt/append/personality system as the main AI.
+# Prompts are loaded from config/prompts/ (prompts.yml, appends.yml, personalities.yml).
 
 # Discord self-bot token (your user account token)
 discord_token: "YOUR_DISCORD_TOKEN_HERE"
@@ -12,57 +14,64 @@ authorized_users:
   - "123456789012345678"
   # - "987654321098765432"
 
-# Gemini configuration for the Discord bot's own Live session
 gemini:
+  # Primary API key (required) - get from https://aistudio.google.com/apikey
   api_key: "YOUR_GEMINI_API_KEY_HERE"
-  backup_keys: []
 
-  # Model for the Live session
+  # Backup keys for automatic rotation when rate limited (optional)
+  # The system will cycle through these when the primary key hits quota limits
+  backup_keys: []
+  #  - "BACKUP_KEY_1"
+  #  - "BACKUP_KEY_2"
+
+  # Gemini Live model - must support native audio
   model: "gemini-2.5-flash-native-audio-preview-09-2025"
 
-  # Voice for audio responses (transcription is captured for text)
-  # Options: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr
-  voice: "Puck"
-
-  # Which named prompt to use from config/prompts/prompts.yml
-  # Falls back to system_prompt below if the named prompt is not found
+  # System prompt -- select a named prompt from config/prompts/prompts.yml
+  # The prompt system, appends, and personalities are shared with the main AI.
   prompt: "normal"
 
-  # Fallback system prompt (used only if named prompt above is not found in prompts.yml)
+  # Fallback system prompt (used only if the named prompt above is not found)
   system_prompt: |
     You are a friendly AI chatting on Discord. You respond naturally and in-character
     like a real person would. Keep responses concise and conversational -- Discord
     messages should feel human, not robotic. Use casual language, emojis when
     appropriate, and match the energy of whoever you're talking to.
 
-    You have access to memory tools to remember things about people and conversations.
-    You can also relay important information to the main VRChat AI session.
+  # ── Voice Configuration ──
+  # Prebuilt voice for the Live session's audio (transcription is captured for text).
+  # Available voices: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr
+  voice: "Puck"
 
-    Guidelines:
-    - Keep messages short (1-3 sentences usually)
-    - Don't start messages with "Sure!" or "Of course!"
-    - Use lowercase casually when appropriate
-    - React naturally to images people send
-    - Remember details about people you talk to
+  # ── Generation Parameters ──
+  temperature: 1.0     # 0.0-2.0, controls randomness (default: 1.0, higher = more creative)
+  top_p: null          # Nucleus sampling threshold (null = model default)
+  top_k: null          # Top-k sampling (null = model default)
+  max_output_tokens: 1024  # Max tokens per response
 
-  # Generation parameters
-  temperature: 1.0
-  top_p: null
-  top_k: null
-  max_output_tokens: 1024
-
-  # Thinking configuration
+  # ── Thinking Configuration ──
+  # Enables the model to "think" before responding (inner monologue).
   thinking:
+    # Thinking token budget - guides how many tokens the model uses to think.
+    # Higher = more thorough but slower responses. Set to 0 to disable thinking.
+    # null = use model default (dynamic thinking)
     budget: 2048
+
+    # Whether to include thought summaries in logs.
     include_thoughts: false
 
-  # Context window compression (keeps long conversations manageable)
+  # ── Context Window Compression ──
+  # Prevents session termination when context gets too large.
   context_window_compression:
     enabled: true
+    # Token count that triggers compression (null = 80% of model's context window)
     trigger_tokens: 100000
+    # Tokens to keep after compression (null = trigger_tokens / 2)
     target_tokens: 50000
 
-# Bot behavior settings
+# ══════════════════════════════════════════════════════════
+# Bot Behavior
+# ══════════════════════════════════════════════════════════
 behavior:
   # Auto-respond to DMs from anyone (not just authorized users)
   auto_respond_dms: true
@@ -74,32 +83,46 @@ behavior:
   auto_respond_channels: []
   #  - "1234567890123456789"
 
-  # Typing indicator delay (simulate reading before responding)
+  # Typing indicator delay in ms (simulates reading before responding)
   typing_delay_ms: 1500
 
-  # Max message length before splitting
+  # Max Discord message length before splitting into multiple messages
   max_message_length: 2000
 
-  # Rate limit: minimum seconds between responses in the same channel
+  # Minimum seconds between responses in the same channel (rate limiting)
   response_cooldown: 2.0
 
   # How many recent messages to include as context when responding
   context_message_count: 15
 
-# Memory system (uses the main ProjectGabriel memory system)
+# ══════════════════════════════════════════════════════════
+# Persistent Memory System
+# ══════════════════════════════════════════════════════════
+# Uses the main ProjectGabriel memory system (shared database).
 memory:
   enabled: true
-  # Prefix for Discord bot memories to distinguish from VRChat memories
+
+  # Prefix for Discord bot memory keys to distinguish from VRChat memories
   key_prefix: "discord_"
 
-# Relay messages back to the main VRChat Gemini session
+  # How many recent memories to include in the system prompt
+  prompt_memory_count: 10
+
+# ══════════════════════════════════════════════════════════
+# VRChat Relay
+# ══════════════════════════════════════════════════════════
+# Relay messages back to the main VRChat Gemini Live session.
+# The Discord bot can forward important info/requests to VRChat.
 relay:
   enabled: true
 
-# Conversation logging
+# ══════════════════════════════════════════════════════════
+# Conversation Logging
+# ══════════════════════════════════════════════════════════
+# Per-channel conversation history saved to JSON files.
 conversations:
   enabled: true
   save_dir: "discord_bot/data/conversations"
 
-# Logging
+# Logging level: DEBUG, INFO, WARNING, ERROR
 log_level: "INFO"
