@@ -14,7 +14,15 @@ class RelayTool:
         return [
             types.FunctionDeclaration(
                 name="relayToVRChat",
-                description="Send information to the main VRChat AI session. Use this to relay important messages, requests, or context from Discord users to the VRChat AI.\n**Invocation Condition:** Call when someone on Discord wants to communicate something to the VRChat AI, or when you have important info to share.",
+                description=(
+                    "Send a message to the main VRChat AI session (your other self). "
+                    "The VRChat AI is a separate instance of you -- treat it like messaging yourself. "
+                    "Be specific and actionable in your content: include WHO is asking, WHAT they want, "
+                    "and any relevant details so your VRChat self can act immediately without needing to ask followups. "
+                    "Bad: 'play a song'. Good: 'BarricadeBandit wants you to play Blinding Lights by The Weeknd'.\n"
+                    "**Invocation Condition:** Call when someone on Discord wants to communicate something "
+                    "to the VRChat AI, or when you have important info to share."
+                ),
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -39,8 +47,8 @@ class RelayTool:
             return {"result": "error", "message": "content required"}
 
         # Build relay message
-        prefix = f"[Discord - {from_user}] " if from_user else "[Discord] "
-        relay_text = f"DISCORD ACTIVITY: {prefix}{content}"
+        prefix = f"[From Discord, relayed by your Discord self on behalf of {from_user}] " if from_user else "[From your Discord self] "
+        relay_text = f"{prefix}{content}"
 
         if self.handler._relay_callback:
             try:
