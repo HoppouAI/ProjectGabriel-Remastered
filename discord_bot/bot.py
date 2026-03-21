@@ -324,29 +324,23 @@ class DiscordBot:
                     await asyncio.sleep(delay)
 
                 response = None
-                for attempt in range(3):
-                    try:
-                        msg_to_send = full_prompt if attempt == 0 else "(You didn't respond. Please try again.)"
-                        imgs = (all_images if all_images else None) if attempt == 0 else None
-                        response = await asyncio.wait_for(
-                            self._gemini.send_message(msg_to_send, images=imgs),
-                            timeout=60.0,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning(f"Gemini response timed out (attempt {attempt + 1}/3)")
-                        continue
-                    # Tool-only response (model acted via tool call, no text to send)
-                    if response == "[TOOL_ONLY]":
-                        logger.info("Model responded via tool call only")
-                        return
-                    if response and not response.startswith("[Error:"):
-                        break
-                    logger.warning(f"Empty/bad response from Gemini (attempt {attempt + 1}/3): {response}")
-                    response = None
-                    await asyncio.sleep(1)
+                try:
+                    response = await asyncio.wait_for(
+                        self._gemini.send_message(full_prompt, images=all_images if all_images else None),
+                        timeout=60.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Gemini response timed out")
 
-            if not response:
-                logger.warning("Gemini failed to respond after 3 attempts")
+                # Tool-only response (model acted via tool call, no text to send)
+                if response == "[TOOL_ONLY]":
+                    logger.info("Model responded via tool call only")
+                    return
+
+            if not response or response.startswith("[Error:"):
+                logger.warning(f"Bad response from Gemini: {response}")
+                await last_message.channel.send("-# no response...")
+                return
                 return
 
             max_len = self.config.max_message_length
