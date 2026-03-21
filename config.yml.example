@@ -185,6 +185,12 @@ audio:
     fade_in_ms: 500                # Fade-in duration in milliseconds
     fade_out_ms: 800               # Fade-out duration in milliseconds
 
+  # Real-time voice pitch shifting -- allows the AI to shift its voice pitch
+  # up or down in semitones via the setVoicePitch tool, like a voice changer.
+  pitch_shift:
+    enabled: false                 # Set to true to allow pitch shifting
+    max_semitones: 12              # Maximum allowed shift in either direction (1-24)
+
 vrchat:
   # VRChat OSC settings
   osc_ip: "127.0.0.1"

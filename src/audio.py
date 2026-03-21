@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+from scipy.signal import resample
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 import pygame
 
@@ -29,6 +30,9 @@ class AudioManager:
         self._pygame_ready = False
         self._thinking_sound = None  # Loaded thinking sound
         self._thinking_channel = None  # Channel playing the thinking sound
+        self._pitch_semitones = 0.0
+        self._pitch_overlap_in = np.zeros(0, dtype=np.float32)
+        self._pitch_overlap_out = np.zeros(0, dtype=np.float32)
         self._setup_devices()
 
     def _setup_devices(self):
@@ -129,8 +133,48 @@ class AudioManager:
         if voice_mult < 1.0:
             samples *= voice_mult
         
+        if self._pitch_semitones != 0.0 and self.config.get("audio", "pitch_shift", "enabled", default=False):
+            samples = self._pitch_shift_chunk(samples)
+
         samples = np.clip(samples, -32767, 32767).astype(np.int16)
         return samples.tobytes()
+
+    def _pitch_shift_chunk(self, samples: np.ndarray) -> np.ndarray:
+        """Pitch-shift audio using double FFT resample with overlap for smooth boundaries."""
+        OVERLAP = 128
+        ratio = 2.0 ** (self._pitch_semitones / 12.0)
+        prev_in = self._pitch_overlap_in
+        prev_out = self._pitch_overlap_out
+
+        if len(prev_in) > 0:
+            extended = np.concatenate([prev_in, samples])
+        else:
+            extended = samples
+
+        n = len(extended)
+        inter_len = max(1, int(round(n / ratio)))
+        result = resample(resample(extended.astype(np.float64), inter_len), n).astype(np.float32)
+
+        self._pitch_overlap_in = samples[-OVERLAP:].copy()
+
+        if len(prev_in) > 0:
+            xfade_len = min(len(prev_in), len(result))
+            fade_in = np.linspace(0.0, 1.0, xfade_len, dtype=np.float32)
+            result[:xfade_len] = prev_out[-xfade_len:] * (1.0 - fade_in) + result[:xfade_len] * fade_in
+            result = result[len(prev_in):]
+
+        self._pitch_overlap_out = result[-OVERLAP:].copy() if len(result) >= OVERLAP else result.copy()
+        return result
+
+    def set_pitch(self, semitones: float):
+        max_st = self.config.get("audio", "pitch_shift", "max_semitones", default=12)
+        self._pitch_semitones = max(-max_st, min(max_st, semitones))
+        self._pitch_overlap_in = np.zeros(0, dtype=np.float32)
+        self._pitch_overlap_out = np.zeros(0, dtype=np.float32)
+        logger.info(f"Voice pitch set to {self._pitch_semitones:+.1f} semitones")
+
+    def get_pitch(self) -> float:
+        return self._pitch_semitones
 
     def set_boost(self, level: int):
         self.boost_level = max(0, min(10, level))

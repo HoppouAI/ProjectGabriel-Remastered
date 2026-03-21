@@ -54,6 +54,17 @@ class VoiceTools(BaseTool):
                 description="List custom voices available for switching. Each voice has a display name and description. When telling the user about voices, use ONLY the display_name, never the internal ID or provider name.\n**Invocation Condition:** Call when asked what voices are available, or before switching to a custom voice.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
+            types.FunctionDeclaration(
+                name="setVoicePitch",
+                description="Shift the pitch of the AI voice up or down in semitones, like a voice changer. 0 = normal pitch. Positive = higher, negative = lower. Small values (1-3) sound natural, larger values (4-12) sound dramatic.\n**Invocation Condition:** Call when asked to raise or lower pitch, sound higher or deeper, do a voice changer effect, or reset voice pitch.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "semitones": {"type": "NUMBER", "description": "Pitch shift in semitones. 0=normal, +2=slightly higher, -3=deeper, +5=chipmunk-ish, -5=deep bass. Range limited by config (default -12 to +12)."},
+                    },
+                    "required": ["semitones"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -63,6 +74,8 @@ class VoiceTools(BaseTool):
         elif name == "toggleVrchatMic":
             self.osc.toggle_voice()
             return {"result": "ok"}
+        elif name == "setVoicePitch":
+            return self._set_pitch(args.get("semitones", 0))
         elif name == "switchTTSProvider":
             return await self._switch_tts(args.get("provider", ""), args.get("voice"))
         elif name == "listTTSProviders":
@@ -134,3 +147,10 @@ class VoiceTools(BaseTool):
                     "providers": [p for p in ("qwen3", "hoppou", "chirp3_hd") if p in vdef],
                 }
         return {"result": "ok", "voices": voices}
+
+    def _set_pitch(self, semitones):
+        if not self.config.get("audio", "pitch_shift", "enabled", default=False):
+            return {"result": "error", "message": "Pitch shifting is disabled in config"}
+        self.audio.set_pitch(float(semitones))
+        current = self.audio.get_pitch()
+        return {"result": "ok", "semitones": current}
