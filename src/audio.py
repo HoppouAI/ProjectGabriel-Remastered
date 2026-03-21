@@ -14,102 +14,29 @@ MUSIC_FADEOUT_END = 10.0   # AI voice completely muted after this many seconds
 
 
 class _PitchShifter:
-    """WSOLA-based streaming pitch shifter. Resamples to shift pitch, then
-    uses Waveform Similarity Overlap-Add to correct the speed back to
-    original, preserving waveform shape for natural-sounding voice."""
+    """Pedalboard-based streaming pitch shifter using Spotify's high-quality
+    time-stretch algorithm for smooth, artifact-free voice pitch shifting."""
 
     def __init__(self, sample_rate=24000):
+        from pedalboard import Pedalboard, PitchShift
         self.sample_rate = sample_rate
-        self.win_size = 1024
-        self.hop = self.win_size // 2
-        self.search = 128
-        self.window = np.hanning(self.win_size).astype(np.float64)
-        self.in_buf = np.zeros(0, dtype=np.float64)
-        self.out_buf = np.zeros(0, dtype=np.float64)
-        self._prev_tail = np.zeros(self.hop, dtype=np.float64)
+        self._semitones = 0.0
+        self._shift = PitchShift(semitones=0.0)
+        self._board = Pedalboard([self._shift])
 
     def reset(self):
-        self.in_buf = np.zeros(0, dtype=np.float64)
-        self.out_buf = np.zeros(0, dtype=np.float64)
-        self._prev_tail = np.zeros(self.hop, dtype=np.float64)
+        from pedalboard import Pedalboard, PitchShift
+        self._shift = PitchShift(semitones=self._semitones)
+        self._board = Pedalboard([self._shift])
 
     def process(self, chunk: np.ndarray, semitones: float) -> np.ndarray:
-        from scipy.signal import resample
-        ratio = 2.0 ** (semitones / 12.0)
-        n = len(chunk)
-        self.in_buf = np.append(self.in_buf, chunk.astype(np.float64))
-        process_size = max(self.win_size * 4, n * 2)
-        if len(self.in_buf) < process_size:
-            if len(self.out_buf) >= n:
-                result = self.out_buf[:n].copy()
-                self.out_buf = self.out_buf[n:]
-                return result.astype(np.float32)
-            return chunk
-
-        block = self.in_buf[:process_size]
-        self.in_buf = self.in_buf[process_size:]
-
-        resampled_len = max(self.win_size, int(round(len(block) / ratio)))
-        resampled = resample(block, resampled_len)
-        stretched = self._wsola(resampled, len(block))
-        self.out_buf = np.append(self.out_buf, stretched)
-
-        if len(self.out_buf) >= n:
-            result = self.out_buf[:n].copy()
-            self.out_buf = self.out_buf[n:]
-            return result.astype(np.float32)
-        return chunk
-
-    def _wsola(self, audio, target_len):
-        n = len(audio)
-        if n <= self.win_size:
-            return np.resize(audio, target_len) if target_len > 0 else audio
-        stretch = target_len / n
-        hop_in = self.hop
-        hop_out = max(1, int(round(hop_in * stretch)))
-
-        out_len = target_len + self.win_size
-        output = np.zeros(out_len, dtype=np.float64)
-        norm = np.zeros(out_len, dtype=np.float64)
-
-        pos_in = 0
-        pos_out = 0
-
-        while pos_out + self.win_size <= out_len:
-            best = self._find_best(audio, pos_in, output, pos_out)
-            if best + self.win_size > n:
-                break
-            grain = audio[best:best + self.win_size] * self.window
-            output[pos_out:pos_out + self.win_size] += grain
-            norm[pos_out:pos_out + self.win_size] += self.window
-            pos_in = best + hop_in
-            pos_out += hop_out
-
-        mask = norm > 1e-8
-        output[mask] /= norm[mask]
-        self._prev_tail = output[max(0, min(target_len, len(output)) - self.hop):min(target_len, len(output))].copy()
-        if len(self._prev_tail) < self.hop:
-            self._prev_tail = np.pad(self._prev_tail, (0, self.hop - len(self._prev_tail)))
-        return output[:target_len]
-
-    def _find_best(self, audio, expected, output, out_pos):
-        n = len(audio)
-        lo = max(0, expected - self.search)
-        hi = min(n - self.win_size, expected + self.search)
-        if lo > hi:
-            return max(0, min(expected, n - self.win_size))
-
-        tpl_len = min(self.hop, out_pos)
-        if tpl_len < 16 or out_pos == 0:
-            return max(lo, min(expected, hi))
-
-        template = output[out_pos - tpl_len:out_pos]
-        seg = audio[lo:hi + tpl_len]
-        if len(seg) < tpl_len:
-            return max(lo, min(expected, hi))
-
-        corr = np.correlate(seg, template, mode='valid')
-        return lo + int(np.argmax(corr))
+        if semitones != self._semitones:
+            self._semitones = semitones
+            self._shift.semitones = semitones
+        audio = chunk.astype(np.float32) / 32767.0
+        audio_2d = audio.reshape(1, -1)
+        result = self._board(audio_2d, self.sample_rate)
+        return (result[0] * 32767.0).astype(np.float32)
 
 
 class AudioManager:
@@ -232,7 +159,7 @@ class AudioManager:
         
         if self._pitch_semitones != 0.0 and self.config.get("audio", "pitch_shift", "enabled", default=False):
             if self._pitch_shifter is None:
-                self._pitch_shifter = _PitchShifter()
+                self._pitch_shifter = _PitchShifter(self.config.receive_sample_rate)
             samples = self._pitch_shifter.process(samples, self._pitch_semitones)
 
         samples = np.clip(samples, -32767, 32767).astype(np.int16)
