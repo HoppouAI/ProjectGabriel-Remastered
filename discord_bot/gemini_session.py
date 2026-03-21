@@ -16,11 +16,11 @@ SESSION_EXPIRY_HOURS = 2
 
 
 class GeminiTextSession:
-    """Gemini Live session using TEXT modality for Discord bot.
+    """Gemini Live session for Discord bot using AUDIO modality with transcription.
 
-    Unlike the main VRChat session which uses audio I/O, this session
-    sends and receives text. Messages are sent via send_client_content
-    for conversation history and send_realtime_input for new messages.
+    Uses AUDIO response modality (required by Gemini Live) but captures the
+    output_audio_transcription for text. Audio data is discarded since we only
+    need the transcription for Discord messages.
     """
 
     def __init__(self, config, tool_handler):
@@ -41,12 +41,22 @@ class GeminiTextSession:
         self._load_session_handle()
 
     def _build_config(self):
+        transcription_config = types.AudioTranscriptionConfig()
+
         config_kwargs = dict(
-            response_modalities=["TEXT"],
+            response_modalities=["AUDIO"],
             system_instruction=types.Content(
                 parts=[types.Part.from_text(text=self.config.system_prompt)]
             ),
             tools=self.tool_handler.get_declarations(),
+            output_audio_transcription=transcription_config,
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=self.config.voice
+                    )
+                )
+            ),
             session_resumption=types.SessionResumptionConfig(
                 handle=self._session_handle
             ) if self._session_handle else types.SessionResumptionConfig(),
@@ -201,24 +211,33 @@ class GeminiTextSession:
 
     async def _receive_loop(self):
         """Continuously receive responses from Gemini Live."""
-        text_buffer = ""
+        transcript_buffer = ""
         while not self._closing:
             try:
                 async for response in self._session.receive():
-                    # Text response
+                    # Audio data from model_turn is discarded (we only need transcription)
+
+                    # Capture output transcription (text version of audio response)
+                    if (
+                        response.server_content
+                        and hasattr(response.server_content, "output_transcription")
+                        and response.server_content.output_transcription
+                    ):
+                        transcription = response.server_content.output_transcription
+                        if hasattr(transcription, "text") and transcription.text:
+                            transcript_buffer += transcription.text
+
+                    # Thinking/thought parts (for logging)
                     if response.server_content and response.server_content.model_turn:
                         for part in response.server_content.model_turn.parts:
                             if getattr(part, "thought", False) and part.text:
                                 logger.debug(f"Discord bot thinking: {part.text[:100]}")
-                                continue
-                            if part.text:
-                                text_buffer += part.text
 
-                    # Turn complete - deliver response
+                    # Turn complete - deliver accumulated transcription
                     if response.server_content and response.server_content.turn_complete:
-                        if text_buffer.strip():
-                            await self._response_queue.put(text_buffer.strip())
-                        text_buffer = ""
+                        if transcript_buffer.strip():
+                            await self._response_queue.put(transcript_buffer.strip())
+                        transcript_buffer = ""
 
                     # Tool calls
                     if response.tool_call:
