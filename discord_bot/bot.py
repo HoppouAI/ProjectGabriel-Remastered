@@ -39,6 +39,7 @@ class DiscordBot:
         self._batch_queues = {}  # channel_id -> list of (message, images) tuples
         self._batch_tasks = {}  # channel_id -> asyncio.Task (debounce timer)
         self._response_tasks = {}  # channel_id -> asyncio.Task (current response)
+        self._disabled = False  # Global disable toggle
         self._running = False
         self._start_time = datetime.now()
 
@@ -198,6 +199,10 @@ class DiscordBot:
             if not should_respond:
                 return
 
+            # Global disable check (admin commands still work above)
+            if self._disabled:
+                return
+
             # Check if channel is muted
             muted = getattr(self._tool_handler, "_muted_channels", None)
             if muted and channel_id in muted:
@@ -254,12 +259,25 @@ class DiscordBot:
             h, r = divmod(int(uptime.total_seconds()), 3600)
             m, s = divmod(r, 60)
             connected = "Yes" if self._gemini and self._gemini._connected.is_set() else "No"
+            muted = getattr(self._tool_handler, "_muted_channels", set())
             await message.channel.send(
                 f"**Bot Status**\n"
                 f"Uptime: {h}h {m}m {s}s\n"
                 f"Gemini Connected: {connected}\n"
-                f"Guilds: {len(self._client.guilds)}"
+                f"Guilds: {len(self._client.guilds)}\n"
+                f"Enabled: {'No' if self._disabled else 'Yes'}\n"
+                f"Muted Channels: {len(muted)}"
             )
+            return True
+
+        elif cmd == "enable":
+            self._disabled = False
+            await message.channel.send("Bot enabled.")
+            return True
+
+        elif cmd == "disable":
+            self._disabled = True
+            await message.channel.send("Bot disabled. Use `!enable` to re-enable.")
             return True
 
         elif cmd == "say":
@@ -273,6 +291,47 @@ class DiscordBot:
                 await message.channel.send("Relayed to VRChat session.")
             return True
 
+        elif cmd == "mute":
+            return await self._cmd_mute(message, arg)
+
+        elif cmd == "unmute":
+            return await self._cmd_unmute(message, arg)
+
+        elif cmd == "mutes":
+            return await self._cmd_list_mutes(message)
+
+        elif cmd == "reconnect":
+            if self._gemini:
+                await message.channel.send("Reconnecting Gemini session...")
+                await self._gemini.disconnect()
+            return True
+
+        elif cmd == "personality":
+            if not arg:
+                current = self._personality.get_current()
+                await message.channel.send(f"Current personality: **{current['name']}**")
+            else:
+                result = self._personality.switch(arg)
+                if result:
+                    if self._gemini:
+                        await self._gemini.inject_context(
+                            f"[System] Personality switched to: {result['name']}. {result['prompt']}"
+                        )
+                    await message.channel.send(f"Switched to **{result['name']}**")
+                else:
+                    available = [p["name"] for p in self._personality.list_personalities()]
+                    await message.channel.send(f"Unknown personality. Available: {', '.join(available)}")
+            return True
+
+        elif cmd == "clear":
+            target = arg or str(message.channel.id)
+            self._conversations._conversations.pop(target, None)
+            path = self._conversations._file_for(target)
+            if path.exists():
+                path.unlink()
+            await message.channel.send(f"Cleared conversation history for `{target}`.")
+            return True
+
         elif cmd == "reload":
             try:
                 self.config = BotConfig()
@@ -284,15 +343,96 @@ class DiscordBot:
         elif cmd == "help":
             await message.channel.send(
                 "**Admin Commands**\n"
-                "`!status` - Bot status\n"
+                "`!status` - Bot status & info\n"
+                "`!enable` / `!disable` - Toggle bot responses\n"
                 "`!say <text>` - Send a message as the bot\n"
                 "`!relay <text>` - Relay message to VRChat AI\n"
+                "`!mute <channel_id> [minutes|perm]` - Mute a channel\n"
+                "`!unmute <channel_id>` - Unmute a channel\n"
+                "`!mutes` - List active mutes\n"
+                "`!reconnect` - Reconnect Gemini session\n"
+                "`!personality [name]` - View/switch personality\n"
+                "`!clear [channel_id]` - Clear conversation history\n"
                 "`!reload` - Reload config\n"
                 "`!help` - This help"
             )
             return True
 
         return False
+
+    async def _cmd_mute(self, message, arg):
+        """Admin mute command: !mute <channel_id> [minutes|perm]"""
+        parts = arg.split()
+        if not parts:
+            await message.channel.send("Usage: `!mute <channel_id> [minutes|perm]`")
+            return True
+
+        channel_id = parts[0]
+        duration_str = parts[1] if len(parts) > 1 else "perm"
+
+        if not hasattr(self._tool_handler, "_muted_channels"):
+            self._tool_handler._muted_channels = set()
+        self._tool_handler._muted_channels.add(channel_id)
+
+        from discord_bot.tools.discord_actions import DiscordActionsTool
+
+        if duration_str.lower() in ("perm", "permanent", "forever"):
+            # Permanent mute - use a very far future expiry
+            DiscordActionsTool._save_mute(channel_id, time.time() + 365 * 24 * 3600, "")
+            await message.channel.send(f"Permanently muted channel `{channel_id}`.")
+        else:
+            try:
+                minutes = int(duration_str)
+            except ValueError:
+                await message.channel.send("Duration must be a number of minutes or `perm`.")
+                return True
+            expires_at = time.time() + minutes * 60
+            DiscordActionsTool._save_mute(channel_id, expires_at, "")
+
+            async def _unmute():
+                await asyncio.sleep(minutes * 60)
+                self._tool_handler._muted_channels.discard(channel_id)
+                DiscordActionsTool._remove_mute(channel_id)
+                logger.info(f"Admin unmuted channel {channel_id}")
+
+            asyncio.create_task(_unmute())
+            await message.channel.send(f"Muted channel `{channel_id}` for {minutes} minutes.")
+        return True
+
+    async def _cmd_unmute(self, message, arg):
+        """Admin unmute command: !unmute <channel_id>"""
+        channel_id = arg.strip()
+        if not channel_id:
+            await message.channel.send("Usage: `!unmute <channel_id>`")
+            return True
+
+        muted = getattr(self._tool_handler, "_muted_channels", set())
+        muted.discard(channel_id)
+
+        from discord_bot.tools.discord_actions import DiscordActionsTool
+        DiscordActionsTool._remove_mute(channel_id)
+        await message.channel.send(f"Unmuted channel `{channel_id}`.")
+        return True
+
+    async def _cmd_list_mutes(self, message):
+        """Admin list mutes command: !mutes"""
+        from discord_bot.tools.discord_actions import DiscordActionsTool
+        active = DiscordActionsTool.load_persisted_mutes()
+        if not active:
+            await message.channel.send("No active mutes.")
+            return True
+
+        lines = []
+        now = time.time()
+        for cid, data in active.items():
+            remaining = data["expires_at"] - now
+            if remaining > 364 * 24 * 3600:
+                lines.append(f"`{cid}` - permanent")
+            else:
+                mins = int(remaining / 60)
+                lines.append(f"`{cid}` - {mins}m remaining")
+        await message.channel.send("**Active Mutes**\n" + "\n".join(lines))
+        return True
 
     async def _batch_debounce(self, channel_id):
         """Wait for the batch window, then process all queued messages together."""
