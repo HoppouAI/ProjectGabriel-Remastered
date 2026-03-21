@@ -54,6 +54,24 @@ class DiscordActionsTool:
                 description="Get the list of members in the current Discord channel, group DM, or server.\n**Invocation Condition:** Call when someone asks who is in the chat, group, channel, or server.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
+            types.FunctionDeclaration(
+                name="muteChannel",
+                description=(
+                    "Temporarily mute a channel/DM so you stop responding there for a period of time. "
+                    "After the duration expires, you will automatically re-engage with a comeback message.\n"
+                    "**Invocation Condition:** Call when you want to mute, ignore, or take a break from a "
+                    "channel, group DM, or DM conversation. Use when people are being annoying and you want "
+                    "to stop responding for a while."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "duration_minutes": {"type": "NUMBER", "description": "How many minutes to mute for (1-60, default 5)"},
+                        "comeback_message": {"type": "STRING", "description": "Optional message to send when you unmute and come back"},
+                    },
+                    "required": [],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -65,6 +83,8 @@ class DiscordActionsTool:
             return await self._set_status(args)
         elif name == "getChannelMembers":
             return await self._get_channel_members(args)
+        elif name == "muteChannel":
+            return await self._mute_channel(args)
         return None
 
     async def _send_message(self, args):
@@ -178,3 +198,40 @@ class DiscordActionsTool:
             return {"result": "ok", "type": "channel", "name": channel.name, "members": members, "count": len(members)}
 
         return {"result": "error", "message": "Cannot get members for this channel type"}
+
+    async def _mute_channel(self, args):
+        import asyncio
+        channel = getattr(self.handler, "_current_channel", None)
+        if not channel:
+            return {"result": "error", "message": "No active channel context"}
+
+        channel_id = str(channel.id)
+        duration = min(max(int(args.get("duration_minutes", 5)), 1), 60)
+        comeback = args.get("comeback_message", "")
+
+        # Add to muted set on the bot
+        muted = getattr(self.handler, "_muted_channels", None)
+        if muted is None:
+            self.handler._muted_channels = set()
+            muted = self.handler._muted_channels
+        muted.add(channel_id)
+
+        logger.info(f"Muted channel {channel_id} for {duration} minutes")
+
+        # Schedule unmute
+        async def _unmute():
+            await asyncio.sleep(duration * 60)
+            muted.discard(channel_id)
+            logger.info(f"Unmuted channel {channel_id}")
+            # Send comeback message
+            client = self.handler._discord_client
+            if client and comeback:
+                try:
+                    ch = client.get_channel(int(channel_id))
+                    if ch:
+                        await ch.send(comeback)
+                except Exception as e:
+                    logger.warning(f"Failed to send comeback message: {e}")
+
+        asyncio.create_task(_unmute())
+        return {"result": "ok", "muted": True, "channel_id": channel_id, "duration_minutes": duration}
