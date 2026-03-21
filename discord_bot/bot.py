@@ -1,6 +1,7 @@
 import asyncio
 import io
 import logging
+import random
 import time
 from datetime import datetime
 
@@ -385,13 +386,21 @@ class DiscordBot:
             # Split into multiple messages for natural feel
             parts = self._split_natural(response)
             channel = last_message.channel
+            use_reply = random.random() < 0.3
             for i, part in enumerate(parts):
                 if len(part) > self.config.max_message_length:
-                    for chunk in self._split_message(part, self.config.max_message_length):
-                        await channel.send(chunk)
+                    chunks = self._split_message(part, self.config.max_message_length)
+                    for j, chunk in enumerate(chunks):
+                        if i == 0 and j == 0 and use_reply:
+                            await last_message.reply(chunk, mention_author=False)
+                        else:
+                            await channel.send(chunk)
                         await asyncio.sleep(0.3)
                 else:
-                    await channel.send(part)
+                    if i == 0 and use_reply:
+                        await last_message.reply(part, mention_author=False)
+                    else:
+                        await channel.send(part)
                 if i < len(parts) - 1:
                     # Simulate typing time based on next message length (~15 chars/sec)
                     next_len = len(parts[i + 1])
