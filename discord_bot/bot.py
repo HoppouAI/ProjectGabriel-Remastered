@@ -58,6 +58,7 @@ class DiscordBot:
         # Set up Discord client
         self._client = discord.Client()
         self._tool_handler.set_discord_client(self._client)
+        self._tool_handler._conversations = self._conversations
 
         # Register event handlers
         self._register_events()
@@ -113,6 +114,7 @@ class DiscordBot:
         try:
             dm = await user.create_dm()
             await dm.send(message)
+            self._conversations.add_message(str(dm.id), "assistant", message)
             return {"result": "ok", "sent_to": str(user)}
         except Exception as e:
             return {"result": "error", "message": str(e)}

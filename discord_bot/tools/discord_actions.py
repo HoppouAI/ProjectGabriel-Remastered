@@ -121,6 +121,7 @@ class DiscordActionsTool:
                     channel = client.get_channel(cid)
                     if channel:
                         await channel.send(message)
+                        self._log_sent_message(str(cid), message)
                         return {"result": "ok", "sent_to": f"channel:{cid}"}
                 except (ValueError, Exception):
                     pass
@@ -138,12 +139,18 @@ class DiscordActionsTool:
             if user:
                 dm = await user.create_dm()
                 await dm.send(message)
+                self._log_sent_message(str(dm.id), message)
                 return {"result": "ok", "sent_to": str(user)}
 
             return {"result": "error", "message": f"Could not find user or channel: {target}"}
         except Exception as e:
             logger.error(f"Send message failed: {e}")
             return {"result": "error", "message": str(e)}
+
+    def _log_sent_message(self, channel_id, message):
+        conversations = getattr(self.handler, "_conversations", None)
+        if conversations:
+            conversations.add_message(channel_id, "assistant", message)
 
     async def _add_reaction(self, args):
         client = self.handler._discord_client

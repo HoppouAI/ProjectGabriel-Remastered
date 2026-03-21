@@ -13,6 +13,7 @@ class DiscordToolHandler:
         self._personality_mgr = personality_mgr
         self._personality_prompt = None  # Set by PersonalityTool on switch
         self._discord_client = None  # Set by bot after login
+        self._conversations = None  # Set by bot after init
         self._tools = []
         self._load_tools()
 
