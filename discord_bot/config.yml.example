@@ -18,7 +18,7 @@ gemini:
   backup_keys: []
 
   # Model for the Live session
-  model: "gemini-2.5-flash-preview-05-20"
+  model: "gemini-2.5-flash-native-audio-preview-09-2025"
 
   # Voice for audio responses (transcription is captured for text)
   # Options: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr
