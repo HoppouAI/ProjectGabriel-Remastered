@@ -160,15 +160,6 @@ class BotConfig:
         return self.get("behavior", "auto_respond_dms", default=True)
 
     @property
-    def auto_respond_mentions(self):
-        return self.get("behavior", "auto_respond_mentions", default=True)
-
-    @property
-    def auto_respond_channels(self):
-        raw = self.get("behavior", "auto_respond_channels", default=[])
-        return [str(c) for c in raw] if raw else []
-
-    @property
     def typing_delay_ms(self):
         return self.get("behavior", "typing_delay_ms", default=1500)
 

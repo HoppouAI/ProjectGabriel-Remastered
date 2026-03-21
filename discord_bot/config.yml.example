@@ -79,12 +79,9 @@ behavior:
   # Auto-respond to DMs from anyone (not just authorized users)
   auto_respond_dms: true
 
-  # Auto-respond when mentioned in servers
-  auto_respond_mentions: true
-
-  # Auto-respond in specific channel IDs (empty = disabled)
-  auto_respond_channels: []
-  #  - "1234567890123456789"
+  # In servers, the bot responds ONLY when:
+  #   1. Someone @mentions you
+  #   2. Someone replies to one of your messages
 
   # Typing indicator delay in ms (simulates reading before responding)
   typing_delay_ms: 1500
