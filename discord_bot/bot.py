@@ -331,14 +331,19 @@ class DiscordBot:
             # Strip mass pings
             response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
 
-            max_len = self.config.max_message_length
-            if len(response) <= max_len:
-                await last_message.channel.send(response)
-            else:
-                chunks = self._split_message(response, max_len)
-                for chunk in chunks:
-                    await last_message.channel.send(chunk)
-                    await asyncio.sleep(0.5)
+            # Split into multiple messages for natural feel
+            parts = self._split_natural(response)
+            for i, part in enumerate(parts):
+                if len(part) > self.config.max_message_length:
+                    # Chunk oversized parts at character limit
+                    for chunk in self._split_message(part, self.config.max_message_length):
+                        await last_message.channel.send(chunk)
+                        await asyncio.sleep(0.3)
+                else:
+                    await last_message.channel.send(part)
+                if i < len(parts) - 1:
+                    # Brief delay between messages like a real person
+                    await asyncio.sleep(0.8 + len(part) * 0.005)
 
             self._conversations.add_message(channel_id, "assistant", response)
 
@@ -346,6 +351,35 @@ class DiscordBot:
             logger.warning(f"No permission to send in {channel_id}")
         except Exception as e:
             logger.error(f"Response error: {e}")
+
+    @staticmethod
+    def _split_natural(text):
+        """Split text into multiple messages at natural breakpoints.
+        Splits on double newlines, then on single newlines between
+        sentences, keeping short fragments together."""
+        import re
+        # First split on explicit paragraph breaks
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        if len(paragraphs) > 1:
+            return paragraphs
+
+        # Split on sentence-ending punctuation followed by space
+        parts = re.split(r'(?<=[.!?])\s+(?=[A-Z<@])', text)
+        if len(parts) <= 1:
+            return [text]
+
+        # Merge very short parts together (under ~60 chars)
+        merged = []
+        buf = ""
+        for part in parts:
+            if buf and len(buf) + len(part) + 1 > 120:
+                merged.append(buf)
+                buf = part
+            else:
+                buf = (buf + " " + part).strip() if buf else part
+        if buf:
+            merged.append(buf)
+        return merged if len(merged) > 1 else [text]
 
     @staticmethod
     def _split_message(text, max_len):
