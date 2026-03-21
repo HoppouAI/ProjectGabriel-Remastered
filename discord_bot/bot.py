@@ -141,11 +141,15 @@ class DiscordBot:
 
             # Check if mentioned
             elif self._client.user in message.mentions:
-                if self.config.auto_respond_mentions:
-                    should_respond = True
+                should_respond = True
 
-            # Check if in auto-respond channel
-            elif channel_id in self.config.auto_respond_channels:
+            # Check if reply to our message
+            elif (
+                message.reference
+                and message.reference.resolved
+                and hasattr(message.reference.resolved, "author")
+                and message.reference.resolved.author == self._client.user
+            ):
                 should_respond = True
 
             if not should_respond:
