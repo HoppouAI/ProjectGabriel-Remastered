@@ -54,17 +54,6 @@ class DiscordActionsTool:
                 description="Get the list of members in the current Discord channel, group DM, or server.\n**Invocation Condition:** Call when someone asks who is in the chat, group, channel, or server.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
-            types.FunctionDeclaration(
-                name="toggleDMAutoRespond",
-                description="Toggle whether you auto-respond to all DM/group DM messages or only when mentioned/replied to.\n**Invocation Condition:** Call when asked to stop or start responding to all DMs, or to only respond on ping/mention in DMs.",
-                parameters={
-                    "type": "OBJECT",
-                    "properties": {
-                        "enabled": {"type": "BOOLEAN", "description": "true = respond to all DMs, false = only respond on mention/reply"},
-                    },
-                    "required": ["enabled"],
-                },
-            ),
         ]
 
     async def handle(self, name, args):
@@ -76,8 +65,6 @@ class DiscordActionsTool:
             return await self._set_status(args)
         elif name == "getChannelMembers":
             return await self._get_channel_members(args)
-        elif name == "toggleDMAutoRespond":
-            return self._toggle_dm_auto_respond(args)
         return None
 
     async def _send_message(self, args):
@@ -188,10 +175,3 @@ class DiscordActionsTool:
             return {"result": "ok", "type": "channel", "name": channel.name, "members": members, "count": len(members)}
 
         return {"result": "error", "message": "Cannot get members for this channel type"}
-
-    def _toggle_dm_auto_respond(self, args):
-        enabled = args.get("enabled", True)
-        self.handler.config._data.setdefault("behavior", {})["auto_respond_dms"] = enabled
-        state = "enabled" if enabled else "disabled"
-        logger.info(f"DM auto-respond {state}")
-        return {"result": "ok", "auto_respond_dms": enabled, "message": f"DM auto-respond {state}. {'Responding to all DMs.' if enabled else 'Only responding on mention/reply in DMs.'}"}

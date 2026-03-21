@@ -218,7 +218,6 @@ class GeminiTextSession:
     async def _receive_loop(self):
         """Continuously receive responses from Gemini Live."""
         transcript_buffer = ""
-        tool_called = False
         while not self._closing:
             try:
                 async for response in self._session.receive():
@@ -234,29 +233,22 @@ class GeminiTextSession:
                         if hasattr(transcription, "text") and transcription.text:
                             transcript_buffer += transcription.text
 
-                    # Thinking/thought parts (for logging), capture text parts
+                    # Thinking/thought parts (for logging)
                     if response.server_content and response.server_content.model_turn:
                         for part in response.server_content.model_turn.parts:
                             if getattr(part, "thought", False) and part.text:
                                 logger.debug(f"Discord bot thinking: {part.text[:100]}")
-                            elif hasattr(part, "text") and part.text and not getattr(part, "thought", False):
-                                # Capture regular text parts (model may respond with text after tool calls)
-                                transcript_buffer += part.text
 
                     # Turn complete - deliver accumulated transcription
                     if response.server_content and response.server_content.turn_complete:
-                        text = transcript_buffer.strip()
-                        if not text and tool_called:
-                            # Tool call was the response; signal with sentinel
-                            await self._response_queue.put("[TOOL_ONLY]")
+                        if transcript_buffer.strip():
+                            await self._response_queue.put(transcript_buffer.strip())
                         else:
-                            await self._response_queue.put(text)
+                            await self._response_queue.put("")
                         transcript_buffer = ""
-                        tool_called = False
 
                     # Tool calls
                     if response.tool_call:
-                        tool_called = True
                         try:
                             responses = []
                             for fc in response.tool_call.function_calls:
