@@ -116,6 +116,11 @@ class DiscordBot:
         except Exception as e:
             return {"result": "error", "message": str(e)}
 
+    async def receive_relay(self, text):
+        """Receive a relay message from the VRChat session into the Gemini session."""
+        if self._gemini and self._gemini._connected.is_set():
+            await self._gemini.inject_context(text)
+
     def _register_events(self):
         @self._client.event
         async def on_ready():
