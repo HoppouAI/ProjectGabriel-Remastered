@@ -327,7 +327,9 @@ class DiscordBot:
                 logger.warning(f"Bad response from Gemini: {response}")
                 await last_message.channel.send("-# no response...")
                 return
-                return
+
+            # Strip mass pings
+            response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
 
             max_len = self.config.max_message_length
             if len(response) <= max_len:

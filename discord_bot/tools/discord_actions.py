@@ -77,6 +77,9 @@ class DiscordActionsTool:
         if not target or not message:
             return {"result": "error", "message": "target and message required"}
 
+        # Strip mass pings
+        message = message.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
+
         try:
             # Try as user ID first
             user = None
