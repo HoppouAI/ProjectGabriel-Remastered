@@ -26,6 +26,23 @@ class DiscordTools(BaseTool):
                 },
             ),
             types.FunctionDeclaration(
+                name="relayToDiscord",
+                description=(
+                    "Send a message to your Discord self (your other instance running on Discord). "
+                    "Use this to communicate with your Discord self, ask it to do something, or share context. "
+                    "Be specific and actionable so your Discord self can act immediately.\n"
+                    "**Invocation Condition:** Call when you want to tell your Discord self something, "
+                    "ask it to relay info to Discord users, or coordinate between VRChat and Discord."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "content": {"type": "STRING", "description": "The message to send to your Discord self"},
+                    },
+                    "required": ["content"],
+                },
+            ),
+            types.FunctionDeclaration(
                 name="getDiscordStatus",
                 description="Check if the Discord bot is connected and get its status.\n**Invocation Condition:** Call when asked about Discord bot status or connectivity.",
                 parameters={"type": "OBJECT", "properties": {}, "required": []},
@@ -35,6 +52,8 @@ class DiscordTools(BaseTool):
     async def handle(self, name, args):
         if name == "sendDiscordMessage":
             return await self._send_message(args)
+        elif name == "relayToDiscord":
+            return await self._relay_to_discord(args)
         elif name == "getDiscordStatus":
             return await self._get_status(args)
         return None
@@ -55,6 +74,24 @@ class DiscordTools(BaseTool):
             return result
         except Exception as e:
             logger.error(f"Discord send failed: {e}")
+            return {"result": "error", "message": str(e)}
+
+    async def _relay_to_discord(self, args):
+        content = args.get("content", "")
+        if not content:
+            return {"result": "error", "message": "content required"}
+
+        discord_bot = getattr(self.handler, "discord_bot", None)
+        if not discord_bot:
+            return {"result": "error", "message": "Discord bot not running"}
+
+        try:
+            relay_text = f"[From your VRChat self] {content}"
+            await discord_bot.receive_relay(relay_text)
+            logger.info(f"Relayed to Discord: {content[:80]}")
+            return {"result": "ok", "relayed": True}
+        except Exception as e:
+            logger.error(f"Discord relay failed: {e}")
             return {"result": "error", "message": str(e)}
 
     async def _get_status(self, args):
