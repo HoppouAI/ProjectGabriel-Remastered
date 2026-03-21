@@ -35,6 +35,8 @@ class DiscordBot:
         )
         self._conversations = ConversationStore(self.config.conversations_dir)
         self._cooldowns = {}  # channel_id -> last_response_time
+        self._batch_queues = {}  # channel_id -> list of (message, images) tuples
+        self._batch_tasks = {}  # channel_id -> asyncio.Task (debounce timer)
         self._running = False
         self._start_time = datetime.now()
 
@@ -160,9 +162,34 @@ class DiscordBot:
             last = self._cooldowns.get(channel_id, 0)
             if now - last < self.config.response_cooldown:
                 return
-            self._cooldowns[channel_id] = now
 
-            await self._respond_to_message(message)
+            # Collect images from this message
+            images = []
+            attachment_info = []
+            for att in message.attachments:
+                if att.content_type and att.content_type.startswith("image/"):
+                    try:
+                        img_data = await att.read()
+                        images.append((img_data, att.content_type))
+                        attachment_info.append({"filename": att.filename, "type": att.content_type})
+                    except Exception as e:
+                        logger.warning(f"Failed to read attachment {att.filename}: {e}")
+
+            # Queue this message for batching
+            if channel_id not in self._batch_queues:
+                self._batch_queues[channel_id] = []
+            self._batch_queues[channel_id].append({
+                "message": message,
+                "images": images,
+                "attachment_info": attachment_info,
+            })
+
+            # Cancel existing debounce timer and start a new one
+            if channel_id in self._batch_tasks:
+                self._batch_tasks[channel_id].cancel()
+            self._batch_tasks[channel_id] = asyncio.create_task(
+                self._batch_debounce(channel_id)
+            )
 
     async def _handle_command(self, message):
         """Handle authorized user commands. Returns True if handled."""
@@ -219,13 +246,21 @@ class DiscordBot:
 
         return False
 
-    async def _respond_to_message(self, message):
-        """Process a message through Gemini and respond."""
+    async def _batch_debounce(self, channel_id):
+        """Wait for the batch window, then process all queued messages together."""
+        await asyncio.sleep(self.config.batch_window_ms / 1000.0)
+        batch = self._batch_queues.pop(channel_id, [])
+        self._batch_tasks.pop(channel_id, None)
+        if not batch:
+            return
+        self._cooldowns[channel_id] = time.time()
+        await self._respond_to_batch(channel_id, batch)
+
+    async def _respond_to_batch(self, channel_id, batch):
+        """Process a batch of messages through Gemini and respond."""
         if not self._gemini or not self._gemini._connected.is_set():
             logger.warning("Gemini not connected, skipping response")
             return
-
-        channel_id = str(message.channel.id)
 
         # Build context from conversation history
         context = self._conversations.get_context(
@@ -233,56 +268,49 @@ class DiscordBot:
             count=self.config.context_message_count,
         )
 
-        # Collect image attachments
-        images = []
-        attachment_info = []
-        for att in message.attachments:
-            if att.content_type and att.content_type.startswith("image/"):
-                try:
-                    img_data = await att.read()
-                    images.append((img_data, att.content_type))
-                    attachment_info.append({"filename": att.filename, "type": att.content_type})
-                except Exception as e:
-                    logger.warning(f"Failed to read attachment {att.filename}: {e}")
+        # Combine all messages and images from the batch
+        all_images = []
+        message_lines = []
+        last_message = batch[-1]["message"]  # Use last message for channel/reply context
 
-        # Build the prompt with context
-        user_display = message.author.display_name or message.author.name
         channel_info = ""
-        if isinstance(message.channel, discord.DMChannel):
-            channel_info = f"(DM with {user_display})"
-        elif hasattr(message.channel, "name"):
-            channel_info = f"(#{message.channel.name} in {message.guild.name})"
+        if isinstance(last_message.channel, discord.DMChannel):
+            channel_info = f"(DM)"
+        elif hasattr(last_message.channel, "name"):
+            channel_info = f"(#{last_message.channel.name} in {last_message.guild.name})"
+
+        for entry in batch:
+            msg = entry["message"]
+            user_display = msg.author.display_name or msg.author.name
+            image_note = ""
+            if entry["images"]:
+                all_images.extend(entry["images"])
+                image_note = f" [attached {len(entry['images'])} image(s)]"
+            message_lines.append(f"{user_display}: {msg.content}{image_note}")
+
+            # Log each user message to conversation store
+            self._conversations.add_message(
+                channel_id, "user", msg.content,
+                username=user_display,
+                attachments=entry["attachment_info"] or None,
+            )
 
         prompt_parts = []
         if context:
             prompt_parts.append(f"Recent conversation history {channel_info}:\n{context}\n")
-
-        image_note = ""
-        if images:
-            image_note = f" [attached {len(images)} image(s)]"
-
-        prompt_parts.append(f"{user_display}: {message.content}{image_note}")
-
+        prompt_parts.extend(message_lines)
         full_prompt = "\n".join(prompt_parts)
 
-        # Log user message
-        self._conversations.add_message(
-            channel_id, "user", message.content,
-            username=user_display, attachments=attachment_info or None,
-        )
-
-        # Show typing indicator
+        # Show typing indicator and respond
         try:
-            async with message.channel.typing():
-                # Typing delay to simulate reading
+            async with last_message.channel.typing():
                 delay = self.config.typing_delay_ms / 1000.0
                 if delay > 0:
                     await asyncio.sleep(delay)
 
-                # Send to Gemini and get response
                 try:
                     response = await asyncio.wait_for(
-                        self._gemini.send_message(full_prompt, images=images if images else None),
+                        self._gemini.send_message(full_prompt, images=all_images if all_images else None),
                         timeout=60.0,
                     )
                 except asyncio.TimeoutError:
@@ -293,18 +321,15 @@ class DiscordBot:
                 logger.warning(f"Bad response from Gemini: {response}")
                 return
 
-            # Split long messages
             max_len = self.config.max_message_length
             if len(response) <= max_len:
-                await message.channel.send(response)
+                await last_message.channel.send(response)
             else:
-                # Split at sentence boundaries
                 chunks = self._split_message(response, max_len)
                 for chunk in chunks:
-                    await message.channel.send(chunk)
+                    await last_message.channel.send(chunk)
                     await asyncio.sleep(0.5)
 
-            # Log assistant response
             self._conversations.add_message(channel_id, "assistant", response)
 
         except discord.errors.Forbidden:
