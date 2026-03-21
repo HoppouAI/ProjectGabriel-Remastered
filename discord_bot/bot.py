@@ -30,7 +30,9 @@ class DiscordBot:
         self._client = None
         self._gemini = None
         self._tool_handler = None
-        self._personality = PersonalityManager()
+        self._personality = PersonalityManager(
+            personalities_file="discord_bot/prompts/personalities.yml"
+        )
         self._conversations = ConversationStore(self.config.conversations_dir)
         self._cooldowns = {}  # channel_id -> last_response_time
         self._running = False

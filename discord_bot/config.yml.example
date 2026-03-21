@@ -2,8 +2,11 @@
 # ║       ProjectGabriel Discord Bot Configuration           ║
 # ╚══════════════════════════════════════════════════════════╝
 # Copy this file to config.yml and fill in your values.
-# This bot uses the same prompt/append/personality system as the main AI.
-# Prompts are loaded from config/prompts/ (prompts.yml, appends.yml, personalities.yml).
+#
+# This bot has its own prompt/append/personality files in discord_bot/prompts/:
+#   prompts.yml        -- Named system prompts (copy from prompts.yml.example)
+#   appends.yml        -- Auto-appended instructions (copy from appends.yml.example)
+#   personalities.yml  -- Switchable personality modes (copy from personalities.yml.example)
 
 # Discord self-bot token (your user account token)
 discord_token: "YOUR_DISCORD_TOKEN_HERE"

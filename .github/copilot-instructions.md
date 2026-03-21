@@ -48,20 +48,28 @@ src/
     memory_tools.py      -- Memory tools (saveMemory, searchMemories, deleteMemory, listMemories, recallMemories)
     emotions_tools.py    -- Emotion/animation tools
     discord.py           -- Discord messaging tools for main session
-discord_bot/             -- Discord selfbot module (separate Gemini Live text session)
+discord_bot/             -- Discord selfbot module (separate Gemini Live session)
   __init__.py            -- Package init
   bot.py                 -- Discord client, message handling, admin commands
   config.py              -- Bot-specific YAML config loader
   config.yml             -- Bot config (gitignored, see .example)
   config.yml.example     -- Template bot config
-  gemini_session.py      -- Gemini Live TEXT session (no audio, uses send_client_content)
+  gemini_session.py      -- Gemini Live AUDIO session (transcription captured for text)
   conversation_store.py  -- Per-channel JSON conversation persistence
+  prompts/               -- Discord-specific prompt files (separate from main AI)
+    prompts.yml          -- Named system prompts (gitignored, see .example)
+    prompts.yml.example  -- Template prompts
+    appends.yml          -- Auto-appended instructions (gitignored, see .example)
+    appends.yml.example  -- Template appends
+    personalities.yml    -- Switchable personalities (gitignored, see .example)
+    personalities.yml.example -- Template personalities
   tools/                 -- Bot-specific tool modules
     __init__.py          -- Exports DiscordToolHandler
     handler.py           -- Tool dispatcher for bot session
     memory.py            -- Memory tools (shared with main system, discord_ prefix)
     relay.py             -- Relay messages to main VRChat session
     discord_actions.py   -- Send messages, reactions, set status
+    personalities.py     -- Personality switching tools
     system.py            -- System info tools
   data/                  -- Bot runtime data (gitignored)
     conversations/       -- Per-channel conversation JSON logs
