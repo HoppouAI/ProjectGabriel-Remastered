@@ -14,76 +14,102 @@ MUSIC_FADEOUT_END = 10.0   # AI voice completely muted after this many seconds
 
 
 class _PitchShifter:
-    """Phase vocoder streaming pitch shifter."""
+    """WSOLA-based streaming pitch shifter. Resamples to shift pitch, then
+    uses Waveform Similarity Overlap-Add to correct the speed back to
+    original, preserving waveform shape for natural-sounding voice."""
 
-    def __init__(self, frame_size=2048, hop_size=512):
-        self.frame_size = frame_size
-        self.hop_size = hop_size
-        n_bins = frame_size // 2 + 1
-        self.window = np.hanning(frame_size).astype(np.float64)
-        self.prev_phase = np.zeros(n_bins, dtype=np.float64)
-        self.cum_phase = np.zeros(n_bins, dtype=np.float64)
-        self.omega = 2.0 * np.pi * np.arange(n_bins) * hop_size / frame_size
+    def __init__(self, sample_rate=24000):
+        self.sample_rate = sample_rate
+        self.win_size = 1024
+        self.hop = self.win_size // 2
+        self.search = 128
+        self.window = np.hanning(self.win_size).astype(np.float64)
         self.in_buf = np.zeros(0, dtype=np.float64)
-        self.out_buf = np.zeros(frame_size * 8, dtype=np.float64)
-        self.out_pos = 0
-        self.out_read = 0
-        self._ola_gain = np.sum(self.window ** 2) / hop_size
+        self.out_buf = np.zeros(0, dtype=np.float64)
+        self._prev_tail = np.zeros(self.hop, dtype=np.float64)
 
     def reset(self):
-        n_bins = self.frame_size // 2 + 1
-        self.prev_phase = np.zeros(n_bins, dtype=np.float64)
-        self.cum_phase = np.zeros(n_bins, dtype=np.float64)
         self.in_buf = np.zeros(0, dtype=np.float64)
-        self.out_buf = np.zeros(self.frame_size * 8, dtype=np.float64)
-        self.out_pos = 0
-        self.out_read = 0
+        self.out_buf = np.zeros(0, dtype=np.float64)
+        self._prev_tail = np.zeros(self.hop, dtype=np.float64)
 
     def process(self, chunk: np.ndarray, semitones: float) -> np.ndarray:
+        from scipy.signal import resample
         ratio = 2.0 ** (semitones / 12.0)
         n = len(chunk)
         self.in_buf = np.append(self.in_buf, chunk.astype(np.float64))
+        process_size = max(self.win_size * 4, n * 2)
+        if len(self.in_buf) < process_size:
+            if len(self.out_buf) >= n:
+                result = self.out_buf[:n].copy()
+                self.out_buf = self.out_buf[n:]
+                return result.astype(np.float32)
+            return chunk
 
-        while len(self.in_buf) >= self.frame_size:
-            frame = self.in_buf[:self.frame_size] * self.window
-            spec = np.fft.rfft(frame)
-            mag = np.abs(spec)
-            phase = np.angle(spec)
+        block = self.in_buf[:process_size]
+        self.in_buf = self.in_buf[process_size:]
 
-            dp = phase - self.prev_phase - self.omega
-            dp -= 2.0 * np.pi * np.round(dp / (2.0 * np.pi))
-            self.cum_phase += (self.omega + dp) * ratio
+        resampled_len = max(self.win_size, int(round(len(block) / ratio)))
+        resampled = resample(block, resampled_len)
+        stretched = self._wsola(resampled, len(block))
+        self.out_buf = np.append(self.out_buf, stretched)
 
-            n_bins = len(mag)
-            src = np.arange(n_bins)
-            dst = np.round(src * ratio).astype(int)
-            valid = (dst >= 0) & (dst < n_bins)
-            new_mag = np.zeros(n_bins, dtype=np.float64)
-            np.add.at(new_mag, dst[valid], mag[valid])
-
-            frame_out = np.fft.irfft(new_mag * np.exp(1j * self.cum_phase), n=self.frame_size) * self.window
-
-            end = self.out_pos + self.frame_size
-            if end > len(self.out_buf):
-                self.out_buf = np.append(self.out_buf, np.zeros(self.frame_size * 4))
-            self.out_buf[self.out_pos:end] += frame_out
-
-            self.prev_phase = phase.copy()
-            self.in_buf = self.in_buf[self.hop_size:]
-            self.out_pos += self.hop_size
-
-        available = self.out_pos - self.out_read
-        if available >= n:
-            result = self.out_buf[self.out_read:self.out_read + n].copy()
-            self.out_read += n
-            if self.out_read > self.frame_size * 8:
-                keep = max(0, self.out_pos - self.out_read) + self.frame_size
-                self.out_buf[:keep] = self.out_buf[self.out_read:self.out_read + keep]
-                self.out_buf[keep:] = 0
-                self.out_pos -= self.out_read
-                self.out_read = 0
-            return (result / self._ola_gain).astype(np.float32)
+        if len(self.out_buf) >= n:
+            result = self.out_buf[:n].copy()
+            self.out_buf = self.out_buf[n:]
+            return result.astype(np.float32)
         return chunk
+
+    def _wsola(self, audio, target_len):
+        n = len(audio)
+        if n <= self.win_size:
+            return np.resize(audio, target_len) if target_len > 0 else audio
+        stretch = target_len / n
+        hop_in = self.hop
+        hop_out = max(1, int(round(hop_in * stretch)))
+
+        out_len = target_len + self.win_size
+        output = np.zeros(out_len, dtype=np.float64)
+        norm = np.zeros(out_len, dtype=np.float64)
+
+        pos_in = 0
+        pos_out = 0
+
+        while pos_out + self.win_size <= out_len:
+            best = self._find_best(audio, pos_in, output, pos_out)
+            if best + self.win_size > n:
+                break
+            grain = audio[best:best + self.win_size] * self.window
+            output[pos_out:pos_out + self.win_size] += grain
+            norm[pos_out:pos_out + self.win_size] += self.window
+            pos_in = best + hop_in
+            pos_out += hop_out
+
+        mask = norm > 1e-8
+        output[mask] /= norm[mask]
+        self._prev_tail = output[max(0, min(target_len, len(output)) - self.hop):min(target_len, len(output))].copy()
+        if len(self._prev_tail) < self.hop:
+            self._prev_tail = np.pad(self._prev_tail, (0, self.hop - len(self._prev_tail)))
+        return output[:target_len]
+
+    def _find_best(self, audio, expected, output, out_pos):
+        n = len(audio)
+        lo = max(0, expected - self.search)
+        hi = min(n - self.win_size, expected + self.search)
+        if lo > hi:
+            return max(0, min(expected, n - self.win_size))
+
+        tpl_len = min(self.hop, out_pos)
+        if tpl_len < 16 or out_pos == 0:
+            return max(lo, min(expected, hi))
+
+        template = output[out_pos - tpl_len:out_pos]
+        seg = audio[lo:hi + tpl_len]
+        if len(seg) < tpl_len:
+            return max(lo, min(expected, hi))
+
+        corr = np.correlate(seg, template, mode='valid')
+        return lo + int(np.argmax(corr))
 
 
 class AudioManager:
