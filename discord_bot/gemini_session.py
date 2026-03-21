@@ -52,12 +52,18 @@ class GeminiTextSession:
                 )]
             ),
             tools=self.tool_handler.get_declarations(),
+            input_audio_transcription=transcription_config,
             output_audio_transcription=transcription_config,
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
                         voice_name=self.config.voice
                     )
+                )
+            ),
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    disabled=True
                 )
             ),
             session_resumption=types.SessionResumptionConfig(
@@ -134,21 +140,22 @@ class GeminiTextSession:
         return datetime.now() - self._session_handle_created >= timedelta(hours=SESSION_EXPIRY_HOURS)
 
     async def connect(self):
-        """Connect to Gemini Live and start the receive loop."""
+        """Connect to Gemini Live using async context manager.
+
+        Must be called from run_forever() which manages the session lifecycle.
+        Yields the connected session.
+        """
         if self._is_handle_expired():
             self._clear_session_handle()
 
-        client = genai.Client(api_key=self.config.api_key)
+        self._client = genai.Client(api_key=self.config.api_key)
         live_config = self._build_config()
 
         logger.info(f"Connecting Discord bot to Gemini Live ({self.config.model})...")
-        self._session = await client.aio.live.connect(
+        return self._client.aio.live.connect(
             model=self.config.model,
             config=live_config,
-        ).__aenter__()
-        logger.info("Discord bot connected to Gemini Live")
-        self._connected.set()
-        self._receive_task = asyncio.create_task(self._receive_loop())
+        )
 
     async def disconnect(self):
         """Disconnect from Gemini Live."""
@@ -160,12 +167,7 @@ class GeminiTextSession:
                 await self._receive_task
             except (asyncio.CancelledError, Exception):
                 pass
-        if self._session:
-            try:
-                await self._session.__aexit__(None, None, None)
-            except Exception:
-                pass
-            self._session = None
+        self._session = None
 
     async def send_message(self, text, images=None):
         """Send a message and wait for the complete text response.
@@ -294,9 +296,13 @@ class GeminiTextSession:
             if self._is_handle_expired():
                 self._clear_session_handle()
             try:
-                await self.connect()
-                # Wait for receive loop to end (error or disconnect)
-                await self._receive_task
+                connection = await self.connect()
+                async with connection as session:
+                    self._session = session
+                    logger.info("Discord bot connected to Gemini Live")
+                    self._connected.set()
+                    self._receive_task = asyncio.create_task(self._receive_loop())
+                    await self._receive_task
             except APIError as e:
                 err_str = str(e)
                 if "429" in err_str.lower() or "quota" in err_str.lower():
@@ -324,9 +330,4 @@ class GeminiTextSession:
                 await asyncio.sleep(3)
             finally:
                 self._connected.clear()
-                if self._session:
-                    try:
-                        await self._session.__aexit__(None, None, None)
-                    except Exception:
-                        pass
-                    self._session = None
+                self._session = None
