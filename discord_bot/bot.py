@@ -342,9 +342,11 @@ class DiscordBot:
                 else:
                     await channel.send(part)
                 if i < len(parts) - 1:
-                    # Show typing then pause between messages
+                    # Simulate typing time based on next message length (~15 chars/sec)
+                    next_len = len(parts[i + 1])
+                    typing_delay = 0.5 + next_len * 0.065
                     async with channel.typing():
-                        await asyncio.sleep(0.8 + len(parts[i + 1]) * 0.01)
+                        await asyncio.sleep(min(typing_delay, 8.0))
 
             self._conversations.add_message(channel_id, "assistant", response)
 
