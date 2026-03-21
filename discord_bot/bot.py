@@ -302,6 +302,9 @@ class DiscordBot:
         prompt_parts.extend(message_lines)
         full_prompt = "\n".join(prompt_parts)
 
+        # Store current channel on tool handler for context-aware tools
+        self._tool_handler._current_channel = last_message.channel
+
         # Show typing indicator and respond
         try:
             async with last_message.channel.typing():

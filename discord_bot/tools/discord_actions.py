@@ -49,6 +49,11 @@ class DiscordActionsTool:
                     "required": ["status"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="getChannelMembers",
+                description="Get the list of members in the current Discord channel, group DM, or server.\n**Invocation Condition:** Call when someone asks who is in the chat, group, channel, or server.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
         ]
 
     async def handle(self, name, args):
@@ -58,6 +63,8 @@ class DiscordActionsTool:
             return await self._add_reaction(args)
         elif name == "setDiscordStatus":
             return await self._set_status(args)
+        elif name == "getChannelMembers":
+            return await self._get_channel_members(args)
         return None
 
     async def _send_message(self, args):
@@ -146,3 +153,25 @@ class DiscordActionsTool:
             return {"result": "ok", "status": args.get("status")}
         except Exception as e:
             return {"result": "error", "message": str(e)}
+
+    async def _get_channel_members(self, args):
+        import discord
+        channel = getattr(self.handler, "_current_channel", None)
+        if not channel:
+            return {"result": "error", "message": "No active channel context"}
+
+        members = []
+        if isinstance(channel, discord.DMChannel):
+            if channel.recipient:
+                members.append(channel.recipient.display_name or channel.recipient.name)
+            return {"result": "ok", "type": "DM", "members": members, "count": len(members)}
+        elif isinstance(channel, discord.GroupChannel):
+            for user in channel.recipients:
+                members.append(user.display_name or user.name)
+            return {"result": "ok", "type": "Group DM", "name": channel.name or "unnamed", "members": members, "count": len(members)}
+        elif hasattr(channel, "members"):
+            for member in channel.members:
+                members.append(member.display_name or member.name)
+            return {"result": "ok", "type": "channel", "name": channel.name, "members": members, "count": len(members)}
+
+        return {"result": "error", "message": "Cannot get members for this channel type"}
