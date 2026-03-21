@@ -5,6 +5,7 @@ pyyaml
 pygame
 numpy
 scipy
+pedalboard
 ultralytics
 lap>=0.5.12
 bettercam
