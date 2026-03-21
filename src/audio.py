@@ -4,7 +4,6 @@ import logging
 import os
 import re
 import time
-from scipy.signal import resample
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 import pygame
 
@@ -12,6 +11,79 @@ logger = logging.getLogger(__name__)
 
 MUSIC_FADEOUT_START = 2.0  # Start fading AI voice after this many seconds
 MUSIC_FADEOUT_END = 10.0   # AI voice completely muted after this many seconds
+
+
+class _PitchShifter:
+    """Phase vocoder streaming pitch shifter."""
+
+    def __init__(self, frame_size=2048, hop_size=512):
+        self.frame_size = frame_size
+        self.hop_size = hop_size
+        n_bins = frame_size // 2 + 1
+        self.window = np.hanning(frame_size).astype(np.float64)
+        self.prev_phase = np.zeros(n_bins, dtype=np.float64)
+        self.cum_phase = np.zeros(n_bins, dtype=np.float64)
+        self.omega = 2.0 * np.pi * np.arange(n_bins) * hop_size / frame_size
+        self.in_buf = np.zeros(0, dtype=np.float64)
+        self.out_buf = np.zeros(frame_size * 8, dtype=np.float64)
+        self.out_pos = 0
+        self.out_read = 0
+        self._ola_gain = np.sum(self.window ** 2) / hop_size
+
+    def reset(self):
+        n_bins = self.frame_size // 2 + 1
+        self.prev_phase = np.zeros(n_bins, dtype=np.float64)
+        self.cum_phase = np.zeros(n_bins, dtype=np.float64)
+        self.in_buf = np.zeros(0, dtype=np.float64)
+        self.out_buf = np.zeros(self.frame_size * 8, dtype=np.float64)
+        self.out_pos = 0
+        self.out_read = 0
+
+    def process(self, chunk: np.ndarray, semitones: float) -> np.ndarray:
+        ratio = 2.0 ** (semitones / 12.0)
+        n = len(chunk)
+        self.in_buf = np.append(self.in_buf, chunk.astype(np.float64))
+
+        while len(self.in_buf) >= self.frame_size:
+            frame = self.in_buf[:self.frame_size] * self.window
+            spec = np.fft.rfft(frame)
+            mag = np.abs(spec)
+            phase = np.angle(spec)
+
+            dp = phase - self.prev_phase - self.omega
+            dp -= 2.0 * np.pi * np.round(dp / (2.0 * np.pi))
+            self.cum_phase += (self.omega + dp) * ratio
+
+            n_bins = len(mag)
+            src = np.arange(n_bins)
+            dst = np.round(src * ratio).astype(int)
+            valid = (dst >= 0) & (dst < n_bins)
+            new_mag = np.zeros(n_bins, dtype=np.float64)
+            np.add.at(new_mag, dst[valid], mag[valid])
+
+            frame_out = np.fft.irfft(new_mag * np.exp(1j * self.cum_phase), n=self.frame_size) * self.window
+
+            end = self.out_pos + self.frame_size
+            if end > len(self.out_buf):
+                self.out_buf = np.append(self.out_buf, np.zeros(self.frame_size * 4))
+            self.out_buf[self.out_pos:end] += frame_out
+
+            self.prev_phase = phase.copy()
+            self.in_buf = self.in_buf[self.hop_size:]
+            self.out_pos += self.hop_size
+
+        available = self.out_pos - self.out_read
+        if available >= n:
+            result = self.out_buf[self.out_read:self.out_read + n].copy()
+            self.out_read += n
+            if self.out_read > self.frame_size * 8:
+                keep = max(0, self.out_pos - self.out_read) + self.frame_size
+                self.out_buf[:keep] = self.out_buf[self.out_read:self.out_read + keep]
+                self.out_buf[keep:] = 0
+                self.out_pos -= self.out_read
+                self.out_read = 0
+            return (result / self._ola_gain).astype(np.float32)
+        return chunk
 
 
 class AudioManager:
@@ -31,8 +103,7 @@ class AudioManager:
         self._thinking_sound = None  # Loaded thinking sound
         self._thinking_channel = None  # Channel playing the thinking sound
         self._pitch_semitones = 0.0
-        self._pitch_overlap_in = np.zeros(0, dtype=np.float32)
-        self._pitch_overlap_out = np.zeros(0, dtype=np.float32)
+        self._pitch_shifter = None
         self._setup_devices()
 
     def _setup_devices(self):
@@ -134,43 +205,18 @@ class AudioManager:
             samples *= voice_mult
         
         if self._pitch_semitones != 0.0 and self.config.get("audio", "pitch_shift", "enabled", default=False):
-            samples = self._pitch_shift_chunk(samples)
+            if self._pitch_shifter is None:
+                self._pitch_shifter = _PitchShifter()
+            samples = self._pitch_shifter.process(samples, self._pitch_semitones)
 
         samples = np.clip(samples, -32767, 32767).astype(np.int16)
         return samples.tobytes()
 
-    def _pitch_shift_chunk(self, samples: np.ndarray) -> np.ndarray:
-        """Pitch-shift audio using double FFT resample with overlap for smooth boundaries."""
-        OVERLAP = 128
-        ratio = 2.0 ** (self._pitch_semitones / 12.0)
-        prev_in = self._pitch_overlap_in
-        prev_out = self._pitch_overlap_out
-
-        if len(prev_in) > 0:
-            extended = np.concatenate([prev_in, samples])
-        else:
-            extended = samples
-
-        n = len(extended)
-        inter_len = max(1, int(round(n / ratio)))
-        result = resample(resample(extended.astype(np.float64), inter_len), n).astype(np.float32)
-
-        self._pitch_overlap_in = samples[-OVERLAP:].copy()
-
-        if len(prev_in) > 0:
-            xfade_len = min(len(prev_in), len(result))
-            fade_in = np.linspace(0.0, 1.0, xfade_len, dtype=np.float32)
-            result[:xfade_len] = prev_out[-xfade_len:] * (1.0 - fade_in) + result[:xfade_len] * fade_in
-            result = result[len(prev_in):]
-
-        self._pitch_overlap_out = result[-OVERLAP:].copy() if len(result) >= OVERLAP else result.copy()
-        return result
-
     def set_pitch(self, semitones: float):
         max_st = self.config.get("audio", "pitch_shift", "max_semitones", default=12)
         self._pitch_semitones = max(-max_st, min(max_st, semitones))
-        self._pitch_overlap_in = np.zeros(0, dtype=np.float32)
-        self._pitch_overlap_out = np.zeros(0, dtype=np.float32)
+        if self._pitch_shifter is not None:
+            self._pitch_shifter.reset()
         logger.info(f"Voice pitch set to {self._pitch_semitones:+.1f} semitones")
 
     def get_pitch(self) -> float:
