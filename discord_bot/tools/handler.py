@@ -7,9 +7,11 @@ logger = logging.getLogger(__name__)
 class DiscordToolHandler:
     """Dispatches tool calls for the Discord bot's Gemini session."""
 
-    def __init__(self, config, relay_callback=None):
+    def __init__(self, config, relay_callback=None, personality_mgr=None):
         self.config = config
         self._relay_callback = relay_callback  # async callback to relay to main session
+        self._personality_mgr = personality_mgr
+        self._personality_prompt = None  # Set by PersonalityTool on switch
         self._discord_client = None  # Set by bot after login
         self._tools = []
         self._load_tools()
@@ -19,11 +21,13 @@ class DiscordToolHandler:
         from discord_bot.tools.relay import RelayTool
         from discord_bot.tools.discord_actions import DiscordActionsTool
         from discord_bot.tools.system import DiscordSystemTool
+        from discord_bot.tools.personalities import PersonalityTool
         self._tools = [
             DiscordMemoryTool(self),
             RelayTool(self),
             DiscordActionsTool(self),
             DiscordSystemTool(self),
+            PersonalityTool(self),
         ]
 
     def set_discord_client(self, client):
