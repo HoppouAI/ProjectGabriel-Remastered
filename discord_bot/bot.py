@@ -59,7 +59,6 @@ class DiscordBot:
         self._tool_handler.set_discord_client(self._client)
 
         # Register event handlers
-        self._client.event(self._on_ready())
         self._register_events()
 
         # Start Gemini session in background

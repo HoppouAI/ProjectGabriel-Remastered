@@ -38,10 +38,7 @@ class DiscordToolHandler:
         decls = []
         for tool in self._tools:
             decls.extend(tool.declarations())
-        return [
-            types.Tool(google_search=types.GoogleSearch()),
-            types.Tool(function_declarations=decls),
-        ]
+        return [types.Tool(function_declarations=decls)]
 
     async def handle(self, function_call):
         """Handle a function call from Gemini and return a FunctionResponse."""
