@@ -1,10 +1,12 @@
 import yaml
 import logging
+from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 BOT_DIR = Path(__file__).parent
+PROMPTS_DIR = Path("config/prompts")
 
 
 class BotConfig:
@@ -18,6 +20,22 @@ class BotConfig:
         if backup:
             self._keys.extend(backup)
         self._key_index = 0
+        self._prompts = self._load_prompts()
+        self._appends = self._load_appends()
+
+    def _load_prompts(self) -> dict:
+        prompts_file = PROMPTS_DIR / "prompts.yml"
+        if prompts_file.exists():
+            with open(prompts_file, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        return {}
+
+    def _load_appends(self) -> list:
+        appends_file = PROMPTS_DIR / "appends.yml"
+        if appends_file.exists():
+            with open(appends_file, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or []
+        return []
 
     def get(self, *keys, default=None):
         val = self._data
@@ -58,7 +76,48 @@ class BotConfig:
 
     @property
     def system_prompt(self):
-        return self.get("gemini", "system_prompt", default="You are a friendly AI chatting on Discord.")
+        return self.build_system_instruction()
+
+    def build_system_instruction(self, personality_mgr=None):
+        prompt_name = self.get("gemini", "prompt", default="normal")
+        raw = self._prompts.get(prompt_name, "")
+        if isinstance(raw, dict):
+            base = raw.get("prompt", "")
+        else:
+            base = str(raw) if raw else ""
+        if not base:
+            # Fall back to inline system_prompt if no named prompt found
+            base = self.get("gemini", "system_prompt", default="You are a friendly AI chatting on Discord.")
+            if base:
+                return base
+
+        parts = [base.strip()]
+        personalities_text = ""
+        if personality_mgr:
+            personalities_text = personality_mgr.get_available_text()
+
+        memories_text = ""
+        if self.memory_enabled:
+            try:
+                from src.memory import get_memory_content_for_prompt
+                memories_text = get_memory_content_for_prompt(self.prompt_memory_count)
+            except Exception as e:
+                logger.warning(f"Failed to get memories for prompt: {e}")
+
+        for append in self._appends:
+            if not append.get("enabled", True):
+                continue
+            content = append.get("content", "")
+            content = content.replace("{date}", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            content = content.replace("{available_personalities}", personalities_text)
+            content = content.replace("{memories}", memories_text)
+            parts.append(content.strip())
+
+        return "\n\n".join(parts)
+
+    @property
+    def prompt_memory_count(self):
+        return self.get("memory", "prompt_memory_count", default=10)
 
     @property
     def temperature(self):

@@ -11,6 +11,7 @@ from discord_bot.config import BotConfig
 from discord_bot.gemini_session import GeminiTextSession
 from discord_bot.tools.handler import DiscordToolHandler
 from discord_bot.conversation_store import ConversationStore
+from src.personalities import PersonalityManager
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class DiscordBot:
         self._client = None
         self._gemini = None
         self._tool_handler = None
+        self._personality = PersonalityManager()
         self._conversations = ConversationStore(self.config.conversations_dir)
         self._cooldowns = {}  # channel_id -> last_response_time
         self._running = False
@@ -42,10 +44,11 @@ class DiscordBot:
         self._tool_handler = DiscordToolHandler(
             self.config,
             relay_callback=self._relay_callback,
+            personality_mgr=self._personality,
         )
 
-        # Set up Gemini text session
-        self._gemini = GeminiTextSession(self.config, self._tool_handler)
+        # Set up Gemini session (AUDIO modality with transcription)
+        self._gemini = GeminiTextSession(self.config, self._tool_handler, self._personality)
 
         # Set up Discord client
         self._client = discord.Client()

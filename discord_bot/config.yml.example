@@ -24,7 +24,11 @@ gemini:
   # Options: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr
   voice: "Puck"
 
-  # System prompt for Discord interactions
+  # Which named prompt to use from config/prompts/prompts.yml
+  # Falls back to system_prompt below if the named prompt is not found
+  prompt: "normal"
+
+  # Fallback system prompt (used only if named prompt above is not found in prompts.yml)
   system_prompt: |
     You are a friendly AI chatting on Discord. You respond naturally and in-character
     like a real person would. Keep responses concise and conversational -- Discord

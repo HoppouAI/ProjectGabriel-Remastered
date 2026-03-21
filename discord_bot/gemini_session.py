@@ -23,9 +23,10 @@ class GeminiTextSession:
     need the transcription for Discord messages.
     """
 
-    def __init__(self, config, tool_handler):
+    def __init__(self, config, tool_handler, personality_mgr=None):
         self.config = config
         self.tool_handler = tool_handler
+        self.personality = personality_mgr
         self._session = None
         self._session_handle = None
         self._session_handle_created = None
@@ -46,7 +47,9 @@ class GeminiTextSession:
         config_kwargs = dict(
             response_modalities=["AUDIO"],
             system_instruction=types.Content(
-                parts=[types.Part.from_text(text=self.config.system_prompt)]
+                parts=[types.Part.from_text(
+                    text=self.config.build_system_instruction(self.personality)
+                )]
             ),
             tools=self.tool_handler.get_declarations(),
             output_audio_transcription=transcription_config,
@@ -248,6 +251,17 @@ class GeminiTextSession:
                                 fr = await self.tool_handler.handle(fc)
                                 responses.append(fr)
                             await self._session.send_tool_response(function_responses=responses)
+                            # If a personality switch happened, inject the prompt
+                            if self.tool_handler._personality_prompt:
+                                prompt = self.tool_handler._personality_prompt
+                                self.tool_handler._personality_prompt = None
+                                await self._session.send_client_content(
+                                    turns=types.Content(
+                                        role="user",
+                                        parts=[types.Part.from_text(text=prompt)],
+                                    ),
+                                    turn_complete=False,
+                                )
                         except Exception as e:
                             logger.error(f"Discord tool dispatch error: {e}")
 
