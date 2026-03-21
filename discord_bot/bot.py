@@ -333,17 +333,18 @@ class DiscordBot:
 
             # Split into multiple messages for natural feel
             parts = self._split_natural(response)
+            channel = last_message.channel
             for i, part in enumerate(parts):
                 if len(part) > self.config.max_message_length:
-                    # Chunk oversized parts at character limit
                     for chunk in self._split_message(part, self.config.max_message_length):
-                        await last_message.channel.send(chunk)
+                        await channel.send(chunk)
                         await asyncio.sleep(0.3)
                 else:
-                    await last_message.channel.send(part)
+                    await channel.send(part)
                 if i < len(parts) - 1:
-                    # Brief delay between messages like a real person
-                    await asyncio.sleep(0.8 + len(part) * 0.005)
+                    # Show typing then pause between messages
+                    async with channel.typing():
+                        await asyncio.sleep(0.8 + len(parts[i + 1]) * 0.01)
 
             self._conversations.add_message(channel_id, "assistant", response)
 
