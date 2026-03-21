@@ -163,6 +163,11 @@ class DiscordBot:
             if not should_respond:
                 return
 
+            # Check if channel is muted
+            muted = getattr(self._tool_handler, "_muted_channels", None)
+            if muted and channel_id in muted:
+                return
+
             # Cooldown check
             now = time.time()
             last = self._cooldowns.get(channel_id, 0)
