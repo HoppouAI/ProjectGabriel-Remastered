@@ -77,7 +77,7 @@ async def main():
         if config.vision_debug:
             from vision_server import run_vision_server
             tracker._vision_debug = True
-            run_vision_server(port=config.vision_debug_port, tracker=tracker)
+            run_vision_server(port=config.vision_debug_port, tracker=tracker, app_name=config.app_name)
 
     # Face tracker for looking at people (lazy import to skip heavy deps when disabled)
     face_tracker = None

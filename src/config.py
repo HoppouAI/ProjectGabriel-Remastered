@@ -59,6 +59,10 @@ class Config:
         return val
 
     @property
+    def app_name(self):
+        return self.get("app_name", default="Gabriel")
+
+    @property
     def api_key(self):
         return self._keys[self._key_index]
 

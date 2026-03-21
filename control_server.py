@@ -41,7 +41,7 @@ shared_state = {
 console_logs = deque(maxlen=100)
 websocket_clients: list[WebSocket] = []
 
-app = FastAPI(title="Gabriel Control Panel")
+app = FastAPI(title="Control Panel")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
@@ -177,7 +177,11 @@ def get_full_state() -> dict:
         except Exception:
             pass
 
+    cfg = shared_state.get("config")
+    app_name = cfg.app_name if cfg else "Gabriel"
+
     return {
+        "app_name": app_name,
         "is_connected": is_connected,
         "mic_muted": mic_muted,
         "usage_metadata": usage_metadata,
@@ -714,7 +718,9 @@ async def _on_startup():
 # --- Run ---
 
 def run_control_server(host: str = "0.0.0.0", port: int = 8766):
-    print("Gabriel Control Panel")
+    cfg = shared_state.get("config")
+    name = cfg.app_name if cfg else "Control Panel"
+    print(f"{name} Control Panel")
     print(f"Open http://localhost:{port} in your browser")
     uvicorn.run(app, host=host, port=port, log_level="warning")
 

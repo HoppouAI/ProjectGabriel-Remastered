@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gabriel OBS Overlay</title>
+<title>OBS Overlay</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -201,7 +201,13 @@
   var userFadeOut = parseInt(params.get('userFadeOut') || '5000', 10);
   var googleFont = params.get('googleFont');
 
-  if (label !== null) document.getElementById('label').textContent = label;
+  if (label !== null) {
+    document.getElementById('label').textContent = label;
+  } else {
+    fetch('/api/state').then(function(r) { return r.json(); }).then(function(s) {
+      if (s.app_name) document.getElementById('label').textContent = s.app_name;
+    }).catch(function() {});
+  }
   if (userLabel !== null) document.getElementById('user-label').textContent = userLabel;
   if (hideLabel === 'true' || hideLabel === '1') {
     root.setProperty('--label-display', 'none');

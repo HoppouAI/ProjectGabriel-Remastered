@@ -500,6 +500,12 @@ function connectWS() {
 // --- UI Update ---
 
 function updateUI(state) {
+    // App name
+    if (state.app_name) {
+        document.getElementById('appName').textContent = state.app_name;
+        document.title = state.app_name + ' Control Panel';
+    }
+
     // Connection
     var connDot = document.getElementById('connectionDot');
     var connLabel = document.getElementById('connectionLabel');

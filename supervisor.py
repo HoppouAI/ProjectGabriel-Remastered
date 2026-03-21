@@ -119,8 +119,18 @@ class ProcessSupervisor:
         """Main supervisor loop."""
         _enable_ansi()
 
+        import yaml
+        app_name = "Gabriel"
+        try:
+            with open("config.yml", "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f)
+            app_name = cfg.get("app_name", app_name)
+        except Exception:
+            pass
+
         W = 49
-        t = "P R O J E C T   G A B R I E L"
+        spaced_name = " ".join(app_name.upper())
+        t = f"P R O J E C T   {spaced_name}"
         s = "Real-time VRChat AI"
         print()
         print(f"  {_CYAN}\u2554{'\u2550' * W}\u2557{_RST}")
