@@ -130,8 +130,8 @@ class DiscordBot:
             should_respond = False
             channel_id = str(message.channel.id)
 
-            # Check if DM
-            if isinstance(message.channel, discord.DMChannel):
+            # Check if DM or Group DM
+            if isinstance(message.channel, (discord.DMChannel, discord.GroupChannel)):
                 # Check for admin commands first
                 if str(message.author.id) in self.config.authorized_users:
                     handled = await self._handle_command(message)
@@ -275,7 +275,9 @@ class DiscordBot:
         channel_info = ""
         if isinstance(last_message.channel, discord.DMChannel):
             channel_info = f"(DM)"
-        elif hasattr(last_message.channel, "name"):
+        elif isinstance(last_message.channel, discord.GroupChannel):
+            channel_info = f"(Group DM: {last_message.channel.name or 'unnamed'})"
+        elif hasattr(last_message.channel, "name") and last_message.guild:
             channel_info = f"(#{last_message.channel.name} in {last_message.guild.name})"
 
         for entry in batch:
