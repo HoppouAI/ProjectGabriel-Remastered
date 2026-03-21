@@ -232,16 +232,18 @@ class GeminiTextSession:
                         if hasattr(transcription, "text") and transcription.text:
                             transcript_buffer += transcription.text
 
-                    # Thinking/thought parts (for logging)
+                    # Thinking/thought parts (for logging), capture text parts
                     if response.server_content and response.server_content.model_turn:
                         for part in response.server_content.model_turn.parts:
                             if getattr(part, "thought", False) and part.text:
                                 logger.debug(f"Discord bot thinking: {part.text[:100]}")
+                            elif hasattr(part, "text") and part.text and not getattr(part, "thought", False):
+                                # Capture regular text parts (model may respond with text after tool calls)
+                                transcript_buffer += part.text
 
                     # Turn complete - deliver accumulated transcription
                     if response.server_content and response.server_content.turn_complete:
-                        if transcript_buffer.strip():
-                            await self._response_queue.put(transcript_buffer.strip())
+                        await self._response_queue.put(transcript_buffer.strip() if transcript_buffer.strip() else "")
                         transcript_buffer = ""
 
                     # Tool calls
