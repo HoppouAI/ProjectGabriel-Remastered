@@ -390,3 +390,12 @@ emotions:
 # When disabled, overlay routes and music broadcast are inactive.
 obs:
   enabled: false
+
+# ══════════════════════════════════════════════════════════
+# Discord Selfbot Integration
+# ══════════════════════════════════════════════════════════
+# Uses discord.py-self for a selfbot that has its own Gemini Live
+# session and can respond to messages, relay info to VRChat, etc.
+# Configuration lives in discord_bot/config.yml (separate file).
+discord_bot:
+  enabled: false

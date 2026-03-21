@@ -192,6 +192,11 @@ data/vrcx_id.txt
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+# Discord bot
+discord_bot/config.yml
+discord_bot/data/conversations/
+discord_bot/data/session_handle.txt
 models/yolo26/*.pt
 sfx/music/*.mp3
 sfx/music/*.wav
