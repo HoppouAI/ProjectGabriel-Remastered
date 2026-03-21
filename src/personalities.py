@@ -9,20 +9,21 @@ PERSONALITIES_FILE = Path("config/prompts/personalities.yml")
 
 
 class PersonalityManager:
-    def __init__(self):
+    def __init__(self, personalities_file=None):
+        self._file = Path(personalities_file) if personalities_file else PERSONALITIES_FILE
         self.personalities = {}
         self.current = None
         self.history = []
         self._load()
 
     def _load(self):
-        if PERSONALITIES_FILE.exists():
-            with open(PERSONALITIES_FILE, "r", encoding="utf-8") as f:
+        if self._file.exists():
+            with open(self._file, "r", encoding="utf-8") as f:
                 self.personalities = yaml.safe_load(f) or {}
             logger.info(f"Loaded {len(self.personalities)} personalities")
 
     def _save(self):
-        with open(PERSONALITIES_FILE, "w", encoding="utf-8") as f:
+        with open(self._file, "w", encoding="utf-8") as f:
             yaml.dump(self.personalities, f, default_flow_style=False, allow_unicode=True)
 
     def list_personalities(self):

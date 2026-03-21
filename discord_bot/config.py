@@ -6,7 +6,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 BOT_DIR = Path(__file__).parent
-PROMPTS_DIR = Path("config/prompts")
+PROMPTS_DIR = BOT_DIR / "prompts"
 
 
 class BotConfig:
