@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gabriel - OBS Overlay Configurator</title>
+<title>OBS Overlay Configurator</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -1039,7 +1039,7 @@ body {
     var backdrop = 'blur(' + document.getElementById('opt-backdrop-range').value + 'px)';
     if (document.getElementById('opt-backdrop-range').value === '0') backdrop = 'none';
 
-    var label = document.getElementById('opt-label').value || 'Gabriel';
+    var label = document.getElementById('opt-label').value || defaults['opt-label'];
     var showLabel = document.getElementById('opt-showLabel').checked;
     var labelSize = document.getElementById('opt-labelSize-range').value + 'px';
     var labelColor = document.getElementById('opt-labelColor').value ||
@@ -1223,7 +1223,7 @@ body {
 
     // Label
     var label = document.getElementById('opt-label').value.trim();
-    if (label && label !== 'Gabriel') params.set('label', label);
+    if (label && label !== defaults['opt-label']) params.set('label', label);
 
     if (!document.getElementById('opt-showLabel').checked) params.set('hideLabel', 'true');
 
@@ -1328,7 +1328,19 @@ body {
     if (url) window.open(url, '_blank');
   };
 
-  // Init
+  // Init - fetch app name and apply as default
+  fetch('/api/state').then(function(r) { return r.json(); }).then(function(s) {
+    if (s.app_name && s.app_name !== 'Gabriel') {
+      var name = s.app_name;
+      defaults['opt-label'] = name;
+      var labelInput = document.getElementById('opt-label');
+      if (labelInput.value === 'Gabriel') labelInput.value = name;
+      var prevLabel = document.getElementById('prevLabel');
+      if (prevLabel && prevLabel.textContent === 'Gabriel') prevLabel.textContent = name;
+      var prevUserText = document.getElementById('prevUserText');
+      if (prevUserText) prevUserText.textContent = 'Hey ' + name + ', what\'s up?';
+    }
+  }).catch(function() {});
   updateAll();
 })();
 </script>

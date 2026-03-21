@@ -3,6 +3,9 @@
 # ╚══════════════════════════════════════════════════════════╝
 # Copy this file to config.yml and fill in your values.
 
+# Display name used in the WebUI, console logs, OBS overlays, and chatbox.
+app_name: "Gabriel"
+
 gemini:
   # Primary API key (required) - get from https://aistudio.google.com/apikey
   api_key: "YOUR_GEMINI_API_KEY_HERE"

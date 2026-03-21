@@ -69,6 +69,7 @@ _W = 49
 
 def print_startup_info(config):
     """Print configuration summary and component status."""
+    _kv("App Name", config.app_name, C.B_CYAN)
     _kv("Model", config.model, C.B_YELLOW)
     _kv("Voice", config.voice, C.B_MAGENTA)
     _kv("TTS", config.tts_provider.replace("_", " ").title(), C.B_WHITE)

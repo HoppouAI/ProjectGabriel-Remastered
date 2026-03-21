@@ -28,10 +28,10 @@ _state = {
     "frame_h": 0,
 }
 
-HTML_PAGE = """<!DOCTYPE html>
+_HTML_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
-<title>Gabriel Vision Debug</title>
+<title>{{APP_NAME}} Vision Debug</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #111; color: #eee; font-family: monospace; display: flex; flex-direction: column; align-items: center; height: 100vh; }
@@ -51,7 +51,7 @@ HTML_PAGE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>Gabriel Vision Debug</h1>
+<h1>{{APP_NAME}} Vision Debug</h1>
 <div class="container">
   <img class="stream" src="/vision/stream" alt="YOLO stream" />
   <div class="stats" id="stats">
@@ -97,6 +97,12 @@ poll();
 </html>"""
 
 
+def _build_html(app_name="Gabriel"):
+    import html as _html
+    safe_name = _html.escape(app_name)
+    return _HTML_TEMPLATE.replace("{{APP_NAME}}", safe_name)
+
+
 def update_frame(jpeg_bytes, stats):
     """Called by tracker to push an annotated frame + stats."""
     with _state["lock"]:
@@ -104,7 +110,7 @@ def update_frame(jpeg_bytes, stats):
         _state.update(stats)
 
 
-def run_vision_server(port=8767, tracker=None):
+def run_vision_server(port=8767, tracker=None, app_name="Gabriel"):
     """Start the vision debug server in a background thread."""
     try:
         from fastapi import FastAPI
@@ -115,11 +121,12 @@ def run_vision_server(port=8767, tracker=None):
         return
 
     _state["tracker_ref"] = tracker
-    vapp = FastAPI(title="Gabriel Vision Debug")
+    html_page = _build_html(app_name)
+    vapp = FastAPI(title=f"{app_name} Vision Debug")
 
     @vapp.get("/vision", response_class=HTMLResponse)
     async def vision_page():
-        return HTML_PAGE
+        return html_page
 
     @vapp.get("/vision/data")
     async def vision_data():
