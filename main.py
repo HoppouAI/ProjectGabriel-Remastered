@@ -167,6 +167,25 @@ async def main():
     if control_server:
         asyncio.create_task(control_server.serve())
 
+    # Discord selfbot (optional)
+    discord_bot = None
+    if config.discord_bot_enabled:
+        from discord_bot.bot import DiscordBot
+        from discord_bot.config import BotConfig
+
+        async def _relay_to_main(text):
+            """Relay callback: send Discord activity to main Gemini session."""
+            await session.send_text(text)
+
+        try:
+            bot_config = BotConfig()
+            discord_bot = DiscordBot(config=bot_config, relay_callback=_relay_to_main)
+            session.tool_handler.discord_bot = discord_bot
+            asyncio.create_task(discord_bot.start())
+            logger.info("Discord selfbot starting...")
+        except Exception as e:
+            logger.error(f"Discord bot startup failed: {e}")
+
     while True:
         try:
             await session.run()
@@ -180,6 +199,8 @@ async def main():
             continue
     
     # Cleanup only happens on KeyboardInterrupt
+    if discord_bot:
+        await discord_bot.stop()
     if tts_provider:
         tts_provider.stop()
     if face_tracker:

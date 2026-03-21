@@ -1,0 +1,322 @@
+import asyncio
+import io
+import logging
+import time
+from datetime import datetime
+
+import aiohttp
+import discord
+
+from discord_bot.config import BotConfig
+from discord_bot.gemini_session import GeminiTextSession
+from discord_bot.tools.handler import DiscordToolHandler
+from discord_bot.conversation_store import ConversationStore
+
+logger = logging.getLogger(__name__)
+
+
+class DiscordBot:
+    """Discord selfbot powered by a Gemini Live text session.
+
+    Listens for DMs, mentions, and messages in configured channels.
+    Routes messages through Gemini Live for AI-generated responses.
+    Supports image viewing, memory tools, and relay to the main VRChat session.
+    """
+
+    def __init__(self, config=None, relay_callback=None):
+        self.config = config or BotConfig()
+        self._relay_callback = relay_callback
+        self._client = None
+        self._gemini = None
+        self._tool_handler = None
+        self._conversations = ConversationStore(self.config.conversations_dir)
+        self._cooldowns = {}  # channel_id -> last_response_time
+        self._running = False
+        self._start_time = datetime.now()
+
+    async def start(self):
+        """Start the Discord bot and Gemini session."""
+        self._running = True
+
+        # Set up tool handler
+        self._tool_handler = DiscordToolHandler(
+            self.config,
+            relay_callback=self._relay_callback,
+        )
+
+        # Set up Gemini text session
+        self._gemini = GeminiTextSession(self.config, self._tool_handler)
+
+        # Set up Discord client
+        self._client = discord.Client()
+        self._tool_handler.set_discord_client(self._client)
+
+        # Register event handlers
+        self._client.event(self._on_ready())
+        self._register_events()
+
+        # Start Gemini session in background
+        gemini_task = asyncio.create_task(self._gemini.run_forever())
+
+        # Start Discord client
+        try:
+            await self._client.start(self.config.discord_token)
+        except Exception as e:
+            logger.error(f"Discord client error: {e}")
+        finally:
+            self._running = False
+            gemini_task.cancel()
+            await self._gemini.disconnect()
+
+    async def stop(self):
+        """Stop the bot gracefully."""
+        self._running = False
+        if self._gemini:
+            await self._gemini.disconnect()
+        if self._client and not self._client.is_closed():
+            await self._client.close()
+
+    async def send_message_to_user(self, username_or_id, message):
+        """Send a message to a Discord user. Called from main session tools."""
+        if not self._client or not self._client.is_ready():
+            return {"result": "error", "message": "Discord bot not connected"}
+
+        user = None
+
+        # Try as user ID
+        try:
+            uid = int(username_or_id)
+            user = await self._client.fetch_user(uid)
+        except (ValueError, Exception):
+            pass
+
+        # Try as username across guilds
+        if not user:
+            for guild in self._client.guilds:
+                for member in guild.members:
+                    if member.name == username_or_id or str(member) == username_or_id:
+                        user = member
+                        break
+                if user:
+                    break
+
+        if not user:
+            return {"result": "error", "message": f"User not found: {username_or_id}"}
+
+        try:
+            dm = await user.create_dm()
+            await dm.send(message)
+            return {"result": "ok", "sent_to": str(user)}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    def _register_events(self):
+        @self._client.event
+        async def on_ready():
+            logger.info(f"Discord bot logged in as {self._client.user}")
+
+        @self._client.event
+        async def on_message(message):
+            # Ignore own messages
+            if message.author == self._client.user:
+                return
+
+            should_respond = False
+            channel_id = str(message.channel.id)
+
+            # Check if DM
+            if isinstance(message.channel, discord.DMChannel):
+                # Check for admin commands first
+                if str(message.author.id) in self.config.authorized_users:
+                    handled = await self._handle_command(message)
+                    if handled:
+                        return
+                if self.config.auto_respond_dms:
+                    should_respond = True
+
+            # Check if mentioned
+            elif self._client.user in message.mentions:
+                if self.config.auto_respond_mentions:
+                    should_respond = True
+
+            # Check if in auto-respond channel
+            elif channel_id in self.config.auto_respond_channels:
+                should_respond = True
+
+            if not should_respond:
+                return
+
+            # Cooldown check
+            now = time.time()
+            last = self._cooldowns.get(channel_id, 0)
+            if now - last < self.config.response_cooldown:
+                return
+            self._cooldowns[channel_id] = now
+
+            await self._respond_to_message(message)
+
+    async def _handle_command(self, message):
+        """Handle authorized user commands. Returns True if handled."""
+        content = message.content.strip()
+        if not content.startswith("!"):
+            return False
+
+        parts = content[1:].split(maxsplit=1)
+        cmd = parts[0].lower()
+        arg = parts[1] if len(parts) > 1 else ""
+
+        if cmd == "status":
+            uptime = datetime.now() - self._start_time
+            h, r = divmod(int(uptime.total_seconds()), 3600)
+            m, s = divmod(r, 60)
+            connected = "Yes" if self._gemini and self._gemini._connected.is_set() else "No"
+            await message.channel.send(
+                f"**Bot Status**\n"
+                f"Uptime: {h}h {m}m {s}s\n"
+                f"Gemini Connected: {connected}\n"
+                f"Guilds: {len(self._client.guilds)}"
+            )
+            return True
+
+        elif cmd == "say":
+            if arg:
+                await message.channel.send(arg)
+            return True
+
+        elif cmd == "relay":
+            if arg and self._relay_callback:
+                await self._relay_callback(f"DISCORD ACTIVITY: [Admin Command] {arg}")
+                await message.channel.send("Relayed to VRChat session.")
+            return True
+
+        elif cmd == "reload":
+            try:
+                self.config = BotConfig()
+                await message.channel.send("Config reloaded.")
+            except Exception as e:
+                await message.channel.send(f"Reload failed: {e}")
+            return True
+
+        elif cmd == "help":
+            await message.channel.send(
+                "**Admin Commands**\n"
+                "`!status` - Bot status\n"
+                "`!say <text>` - Send a message as the bot\n"
+                "`!relay <text>` - Relay message to VRChat AI\n"
+                "`!reload` - Reload config\n"
+                "`!help` - This help"
+            )
+            return True
+
+        return False
+
+    async def _respond_to_message(self, message):
+        """Process a message through Gemini and respond."""
+        if not self._gemini or not self._gemini._connected.is_set():
+            logger.warning("Gemini not connected, skipping response")
+            return
+
+        channel_id = str(message.channel.id)
+
+        # Build context from conversation history
+        context = self._conversations.get_context(
+            channel_id,
+            count=self.config.context_message_count,
+        )
+
+        # Collect image attachments
+        images = []
+        attachment_info = []
+        for att in message.attachments:
+            if att.content_type and att.content_type.startswith("image/"):
+                try:
+                    img_data = await att.read()
+                    images.append((img_data, att.content_type))
+                    attachment_info.append({"filename": att.filename, "type": att.content_type})
+                except Exception as e:
+                    logger.warning(f"Failed to read attachment {att.filename}: {e}")
+
+        # Build the prompt with context
+        user_display = message.author.display_name or message.author.name
+        channel_info = ""
+        if isinstance(message.channel, discord.DMChannel):
+            channel_info = f"(DM with {user_display})"
+        elif hasattr(message.channel, "name"):
+            channel_info = f"(#{message.channel.name} in {message.guild.name})"
+
+        prompt_parts = []
+        if context:
+            prompt_parts.append(f"Recent conversation history {channel_info}:\n{context}\n")
+
+        image_note = ""
+        if images:
+            image_note = f" [attached {len(images)} image(s)]"
+
+        prompt_parts.append(f"{user_display}: {message.content}{image_note}")
+
+        full_prompt = "\n".join(prompt_parts)
+
+        # Log user message
+        self._conversations.add_message(
+            channel_id, "user", message.content,
+            username=user_display, attachments=attachment_info or None,
+        )
+
+        # Show typing indicator
+        try:
+            async with message.channel.typing():
+                # Typing delay to simulate reading
+                delay = self.config.typing_delay_ms / 1000.0
+                if delay > 0:
+                    await asyncio.sleep(delay)
+
+                # Send to Gemini and get response
+                try:
+                    response = await asyncio.wait_for(
+                        self._gemini.send_message(full_prompt, images=images if images else None),
+                        timeout=60.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Gemini response timed out")
+                    return
+
+            if not response or response.startswith("[Error:"):
+                logger.warning(f"Bad response from Gemini: {response}")
+                return
+
+            # Split long messages
+            max_len = self.config.max_message_length
+            if len(response) <= max_len:
+                await message.channel.send(response)
+            else:
+                # Split at sentence boundaries
+                chunks = self._split_message(response, max_len)
+                for chunk in chunks:
+                    await message.channel.send(chunk)
+                    await asyncio.sleep(0.5)
+
+            # Log assistant response
+            self._conversations.add_message(channel_id, "assistant", response)
+
+        except discord.errors.Forbidden:
+            logger.warning(f"No permission to send in {channel_id}")
+        except Exception as e:
+            logger.error(f"Response error: {e}")
+
+    @staticmethod
+    def _split_message(text, max_len):
+        """Split a long message into chunks at sentence boundaries."""
+        chunks = []
+        while len(text) > max_len:
+            # Find last sentence-ending punctuation before max_len
+            split_at = max_len
+            for sep in [". ", "! ", "? ", "\n", ", ", " "]:
+                idx = text.rfind(sep, 0, max_len)
+                if idx > max_len // 2:
+                    split_at = idx + len(sep)
+                    break
+            chunks.append(text[:split_at].rstrip())
+            text = text[split_at:].lstrip()
+        if text:
+            chunks.append(text)
+        return chunks

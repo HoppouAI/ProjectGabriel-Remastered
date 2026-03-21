@@ -1,0 +1,97 @@
+# ╔══════════════════════════════════════════════════════════╗
+# ║          ProjectGabriel Discord Bot Configuration        ║
+# ╚══════════════════════════════════════════════════════════╝
+# Copy this file to config.yml and fill in your values.
+
+# Discord self-bot token (your user account token)
+discord_token: "YOUR_DISCORD_TOKEN_HERE"
+
+# User IDs authorized to use admin commands in DMs
+# These users can run !status, !reload, !say, etc.
+authorized_users:
+  - "123456789012345678"
+  # - "987654321098765432"
+
+# Gemini configuration for the Discord bot's own Live session
+gemini:
+  api_key: "YOUR_GEMINI_API_KEY_HERE"
+  backup_keys: []
+
+  # Model for the text-based Live session
+  model: "gemini-2.5-flash-preview-05-20"
+
+  # System prompt for Discord interactions
+  system_prompt: |
+    You are a friendly AI chatting on Discord. You respond naturally and in-character
+    like a real person would. Keep responses concise and conversational -- Discord
+    messages should feel human, not robotic. Use casual language, emojis when
+    appropriate, and match the energy of whoever you're talking to.
+
+    You have access to memory tools to remember things about people and conversations.
+    You can also relay important information to the main VRChat AI session.
+
+    Guidelines:
+    - Keep messages short (1-3 sentences usually)
+    - Don't start messages with "Sure!" or "Of course!"
+    - Use lowercase casually when appropriate
+    - React naturally to images people send
+    - Remember details about people you talk to
+
+  # Generation parameters
+  temperature: 1.0
+  top_p: null
+  top_k: null
+  max_output_tokens: 1024
+
+  # Thinking configuration
+  thinking:
+    budget: 2048
+    include_thoughts: false
+
+  # Context window compression (keeps long conversations manageable)
+  context_window_compression:
+    enabled: true
+    trigger_tokens: 100000
+    target_tokens: 50000
+
+# Bot behavior settings
+behavior:
+  # Auto-respond to DMs from anyone (not just authorized users)
+  auto_respond_dms: true
+
+  # Auto-respond when mentioned in servers
+  auto_respond_mentions: true
+
+  # Auto-respond in specific channel IDs (empty = disabled)
+  auto_respond_channels: []
+  #  - "1234567890123456789"
+
+  # Typing indicator delay (simulate reading before responding)
+  typing_delay_ms: 1500
+
+  # Max message length before splitting
+  max_message_length: 2000
+
+  # Rate limit: minimum seconds between responses in the same channel
+  response_cooldown: 2.0
+
+  # How many recent messages to include as context when responding
+  context_message_count: 15
+
+# Memory system (uses the main ProjectGabriel memory system)
+memory:
+  enabled: true
+  # Prefix for Discord bot memories to distinguish from VRChat memories
+  key_prefix: "discord_"
+
+# Relay messages back to the main VRChat Gemini session
+relay:
+  enabled: true
+
+# Conversation logging
+conversations:
+  enabled: true
+  save_dir: "discord_bot/data/conversations"
+
+# Logging
+log_level: "INFO"
