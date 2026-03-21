@@ -1,7 +1,12 @@
+import json
 import logging
+import time as _time
+from pathlib import Path
 from google.genai import types
 
 logger = logging.getLogger(__name__)
+
+MUTES_FILE = Path(__file__).parent.parent / "data" / "mutes.json"
 
 
 class DiscordActionsTool:
@@ -216,14 +221,18 @@ class DiscordActionsTool:
             muted = self.handler._muted_channels
         muted.add(channel_id)
 
+        # Persist to file
+        expires_at = _time.time() + duration * 60
+        self._save_mute(channel_id, expires_at, comeback)
+
         logger.info(f"Muted channel {channel_id} for {duration} minutes")
 
         # Schedule unmute
         async def _unmute():
             await asyncio.sleep(duration * 60)
             muted.discard(channel_id)
+            self._remove_mute(channel_id)
             logger.info(f"Unmuted channel {channel_id}")
-            # Send comeback message
             client = self.handler._discord_client
             if client and comeback:
                 try:
@@ -235,3 +244,42 @@ class DiscordActionsTool:
 
         asyncio.create_task(_unmute())
         return {"result": "ok", "muted": True, "channel_id": channel_id, "duration_minutes": duration}
+
+    @staticmethod
+    def _save_mute(channel_id, expires_at, comeback):
+        MUTES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        mutes = {}
+        if MUTES_FILE.exists():
+            try:
+                mutes = json.loads(MUTES_FILE.read_text())
+            except Exception:
+                pass
+        mutes[channel_id] = {"expires_at": expires_at, "comeback": comeback}
+        MUTES_FILE.write_text(json.dumps(mutes))
+
+    @staticmethod
+    def _remove_mute(channel_id):
+        if not MUTES_FILE.exists():
+            return
+        try:
+            mutes = json.loads(MUTES_FILE.read_text())
+            mutes.pop(channel_id, None)
+            MUTES_FILE.write_text(json.dumps(mutes))
+        except Exception:
+            pass
+
+    @staticmethod
+    def load_persisted_mutes():
+        """Load mutes from file, returning {channel_id: {expires_at, comeback}} for active mutes."""
+        if not MUTES_FILE.exists():
+            return {}
+        try:
+            mutes = json.loads(MUTES_FILE.read_text())
+            now = _time.time()
+            active = {k: v for k, v in mutes.items() if v["expires_at"] > now}
+            # Clean up expired entries
+            if len(active) != len(mutes):
+                MUTES_FILE.write_text(json.dumps(active))
+            return active
+        except Exception:
+            return {}

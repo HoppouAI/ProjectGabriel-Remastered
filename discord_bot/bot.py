@@ -122,12 +122,43 @@ class DiscordBot:
         if self._gemini and self._gemini._connected.is_set():
             await self._gemini.inject_context(text)
 
+    def _restore_mutes(self):
+        from discord_bot.tools.discord_actions import DiscordActionsTool
+        active = DiscordActionsTool.load_persisted_mutes()
+        if not active:
+            return
+        if not hasattr(self._tool_handler, "_muted_channels"):
+            self._tool_handler._muted_channels = set()
+        muted = self._tool_handler._muted_channels
+        now = time.time()
+        for channel_id, data in active.items():
+            muted.add(channel_id)
+            remaining = data["expires_at"] - now
+            comeback = data.get("comeback", "")
+
+            async def _unmute(cid=channel_id, msg=comeback, secs=remaining):
+                await asyncio.sleep(max(secs, 0))
+                muted.discard(cid)
+                DiscordActionsTool._remove_mute(cid)
+                logger.info(f"Unmuted restored channel {cid}")
+                if self._client and msg:
+                    try:
+                        ch = self._client.get_channel(int(cid))
+                        if ch:
+                            await ch.send(msg)
+                    except Exception as e:
+                        logger.warning(f"Failed to send comeback message: {e}")
+
+            asyncio.create_task(_unmute())
+        logger.info(f"Restored {len(active)} persisted mute(s)")
+
     def _register_events(self):
         @self._client.event
         async def on_ready():
             logger.info(f"Discord bot logged in as {self._client.user}")
             if self._gemini:
                 self._gemini.discord_username = self._client.user.name
+            self._restore_mutes()
 
         @self._client.event
         async def on_message(message):
