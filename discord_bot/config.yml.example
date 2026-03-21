@@ -86,6 +86,11 @@ behavior:
   # Typing indicator delay in ms (simulates reading before responding)
   typing_delay_ms: 1500
 
+  # Batch window in ms -- when multiple messages arrive rapidly in the same channel,
+  # they are combined into a single prompt. This is how long to wait for more messages
+  # before processing the batch. Higher = more messages combined, but slower response.
+  batch_window_ms: 3000
+
   # Max Discord message length before splitting into multiple messages
   max_message_length: 2000
 

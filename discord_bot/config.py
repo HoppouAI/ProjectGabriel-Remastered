@@ -164,6 +164,10 @@ class BotConfig:
         return self.get("behavior", "typing_delay_ms", default=1500)
 
     @property
+    def batch_window_ms(self):
+        return self.get("behavior", "batch_window_ms", default=3000)
+
+    @property
     def max_message_length(self):
         return self.get("behavior", "max_message_length", default=2000)
 
