@@ -17,8 +17,12 @@ gemini:
   api_key: "YOUR_GEMINI_API_KEY_HERE"
   backup_keys: []
 
-  # Model for the text-based Live session
+  # Model for the Live session
   model: "gemini-2.5-flash-preview-05-20"
+
+  # Voice for audio responses (transcription is captured for text)
+  # Options: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr
+  voice: "Puck"
 
   # System prompt for Discord interactions
   system_prompt: |

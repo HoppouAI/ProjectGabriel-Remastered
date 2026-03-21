@@ -53,6 +53,10 @@ class BotConfig:
         return self.get("gemini", "model", default="gemini-2.5-flash-preview-05-20")
 
     @property
+    def voice(self):
+        return self.get("gemini", "voice", default="Puck")
+
+    @property
     def system_prompt(self):
         return self.get("gemini", "system_prompt", default="You are a friendly AI chatting on Discord.")
 
