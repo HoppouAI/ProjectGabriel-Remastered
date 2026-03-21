@@ -50,7 +50,7 @@ class BotConfig:
 
     @property
     def model(self):
-        return self.get("gemini", "model", default="gemini-2.5-flash-preview-05-20")
+        return self.get("gemini", "model", default="gemini-2.5-flash-native-audio-preview-09-2025")
 
     @property
     def voice(self):
