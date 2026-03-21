@@ -37,6 +37,7 @@ class DiscordBot:
         self._cooldowns = {}  # channel_id -> last_response_time
         self._batch_queues = {}  # channel_id -> list of (message, images) tuples
         self._batch_tasks = {}  # channel_id -> asyncio.Task (debounce timer)
+        self._response_tasks = {}  # channel_id -> asyncio.Task (current response)
         self._running = False
         self._start_time = datetime.now()
 
@@ -264,8 +265,14 @@ class DiscordBot:
         self._batch_tasks.pop(channel_id, None)
         if not batch:
             return
+        # Cancel any in-progress response for this channel (interrupt)
+        existing = self._response_tasks.get(channel_id)
+        if existing and not existing.done():
+            existing.cancel()
+            logger.info(f"Interrupted ongoing response in {channel_id}")
         self._cooldowns[channel_id] = time.time()
-        await self._respond_to_batch(channel_id, batch)
+        task = asyncio.create_task(self._respond_to_batch(channel_id, batch))
+        self._response_tasks[channel_id] = task
 
     async def _respond_to_batch(self, channel_id, batch):
         """Process a batch of messages through Gemini and respond."""
@@ -360,6 +367,8 @@ class DiscordBot:
 
             self._conversations.add_message(channel_id, "assistant", response)
 
+        except asyncio.CancelledError:
+            logger.info(f"Response interrupted in {channel_id}")
         except discord.errors.Forbidden:
             logger.warning(f"No permission to send in {channel_id}")
         except Exception as e:
