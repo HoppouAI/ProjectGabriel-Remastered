@@ -335,6 +335,10 @@ class DiscordBot:
                     except asyncio.TimeoutError:
                         logger.warning(f"Gemini response timed out (attempt {attempt + 1}/3)")
                         continue
+                    # Tool-only response (model acted via tool call, no text to send)
+                    if response == "[TOOL_ONLY]":
+                        logger.info("Model responded via tool call only")
+                        return
                     if response and not response.startswith("[Error:"):
                         break
                     logger.warning(f"Empty/bad response from Gemini (attempt {attempt + 1}/3): {response}")

@@ -218,6 +218,7 @@ class GeminiTextSession:
     async def _receive_loop(self):
         """Continuously receive responses from Gemini Live."""
         transcript_buffer = ""
+        tool_called = False
         while not self._closing:
             try:
                 async for response in self._session.receive():
@@ -244,11 +245,18 @@ class GeminiTextSession:
 
                     # Turn complete - deliver accumulated transcription
                     if response.server_content and response.server_content.turn_complete:
-                        await self._response_queue.put(transcript_buffer.strip() if transcript_buffer.strip() else "")
+                        text = transcript_buffer.strip()
+                        if not text and tool_called:
+                            # Tool call was the response; signal with sentinel
+                            await self._response_queue.put("[TOOL_ONLY]")
+                        else:
+                            await self._response_queue.put(text)
                         transcript_buffer = ""
+                        tool_called = False
 
                     # Tool calls
                     if response.tool_call:
+                        tool_called = True
                         try:
                             responses = []
                             for fc in response.tool_call.function_calls:
