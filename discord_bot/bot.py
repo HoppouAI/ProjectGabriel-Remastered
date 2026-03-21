@@ -141,15 +141,6 @@ class DiscordBot:
                         return
                 if self.config.auto_respond_dms:
                     should_respond = True
-                elif self._client.user in message.mentions:
-                    should_respond = True
-                elif (
-                    message.reference
-                    and message.reference.resolved
-                    and hasattr(message.reference.resolved, "author")
-                    and message.reference.resolved.author == self._client.user
-                ):
-                    should_respond = True
 
             # Check if mentioned
             elif self._client.user in message.mentions:
@@ -331,11 +322,6 @@ class DiscordBot:
                     )
                 except asyncio.TimeoutError:
                     logger.warning("Gemini response timed out")
-
-                # Tool-only response (model acted via tool call, no text to send)
-                if response == "[TOOL_ONLY]":
-                    logger.info("Model responded via tool call only")
-                    return
 
             if not response or response.startswith("[Error:"):
                 logger.warning(f"Bad response from Gemini: {response}")
