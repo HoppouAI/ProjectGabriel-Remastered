@@ -120,6 +120,8 @@ class DiscordBot:
         @self._client.event
         async def on_ready():
             logger.info(f"Discord bot logged in as {self._client.user}")
+            if self._gemini:
+                self._gemini.discord_username = self._client.user.name
 
         @self._client.event
         async def on_message(message):

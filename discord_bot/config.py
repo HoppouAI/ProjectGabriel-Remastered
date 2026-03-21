@@ -78,7 +78,7 @@ class BotConfig:
     def system_prompt(self):
         return self.build_system_instruction()
 
-    def build_system_instruction(self, personality_mgr=None):
+    def build_system_instruction(self, personality_mgr=None, discord_username=None):
         prompt_name = self.get("gemini", "prompt", default="normal")
         raw = self._prompts.get(prompt_name, "")
         if isinstance(raw, dict):
@@ -111,6 +111,7 @@ class BotConfig:
             content = content.replace("{date}", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             content = content.replace("{available_personalities}", personalities_text)
             content = content.replace("{memories}", memories_text)
+            content = content.replace("{discord_username}", discord_username or "unknown")
             parts.append(content.strip())
 
         return "\n\n".join(parts)

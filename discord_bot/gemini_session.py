@@ -27,6 +27,7 @@ class GeminiTextSession:
         self.config = config
         self.tool_handler = tool_handler
         self.personality = personality_mgr
+        self.discord_username = None
         self._session = None
         self._session_handle = None
         self._session_handle_created = None
@@ -48,7 +49,7 @@ class GeminiTextSession:
             response_modalities=["AUDIO"],
             system_instruction=types.Content(
                 parts=[types.Part.from_text(
-                    text=self.config.build_system_instruction(self.personality)
+                    text=self.config.build_system_instruction(self.personality, discord_username=self.discord_username)
                 )]
             ),
             tools=self.tool_handler.get_declarations(),
