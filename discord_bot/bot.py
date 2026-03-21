@@ -169,11 +169,13 @@ class DiscordBot:
             if muted and channel_id in muted:
                 return
 
-            # Cooldown check
-            now = time.time()
-            last = self._cooldowns.get(channel_id, 0)
-            if now - last < self.config.response_cooldown:
-                return
+            # Cooldown check (skip if there's an active response to interrupt)
+            active_response = self._response_tasks.get(channel_id)
+            if not (active_response and not active_response.done()):
+                now = time.time()
+                last = self._cooldowns.get(channel_id, 0)
+                if now - last < self.config.response_cooldown:
+                    return
 
             # Collect images from this message
             images = []
@@ -270,7 +272,6 @@ class DiscordBot:
         if existing and not existing.done():
             existing.cancel()
             logger.info(f"Interrupted ongoing response in {channel_id}")
-        self._cooldowns[channel_id] = time.time()
         task = asyncio.create_task(self._respond_to_batch(channel_id, batch))
         self._response_tasks[channel_id] = task
 
@@ -366,6 +367,7 @@ class DiscordBot:
                         await asyncio.sleep(min(typing_delay, 8.0))
 
             self._conversations.add_message(channel_id, "assistant", response)
+            self._cooldowns[channel_id] = time.time()
 
         except asyncio.CancelledError:
             logger.info(f"Response interrupted in {channel_id}")
