@@ -224,7 +224,11 @@ class DiscordBot:
                 if att.content_type and att.content_type.startswith("image/"):
                     try:
                         img_data = await att.read()
-                        images.append((img_data, att.content_type))
+                        mime = att.content_type
+                        # Extract first frame from GIFs
+                        if "gif" in mime:
+                            img_data, mime = self._gif_to_png(img_data)
+                        images.append((img_data, mime))
                         attachment_info.append({"filename": att.filename, "type": att.content_type})
                         break
                     except Exception as e:
@@ -560,6 +564,16 @@ class DiscordBot:
             logger.warning(f"No permission to send in {channel_id}")
         except Exception as e:
             logger.error(f"Response error: {e}")
+
+    @staticmethod
+    def _gif_to_png(gif_bytes):
+        """Extract the first frame of a GIF and return it as PNG bytes."""
+        from PIL import Image
+        img = Image.open(io.BytesIO(gif_bytes))
+        img = img.convert("RGBA")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue(), "image/png"
 
     @staticmethod
     def _split_natural(text):
