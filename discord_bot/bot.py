@@ -234,6 +234,27 @@ class DiscordBot:
                     except Exception as e:
                         logger.warning(f"Failed to read attachment {att.filename}: {e}")
 
+            # Check embeds for Tenor/Giphy GIFs if no attachment image found
+            if not images:
+                for embed in message.embeds:
+                    url = None
+                    if embed.type == "gifv" and embed.thumbnail and embed.thumbnail.url:
+                        url = embed.thumbnail.url
+                    elif embed.type == "image" and embed.image and embed.image.url:
+                        url = embed.image.url
+                    elif embed.thumbnail and embed.thumbnail.url:
+                        url = embed.thumbnail.url
+                    if url:
+                        try:
+                            img_data, mime = await self._download_image(url)
+                            if "gif" in mime:
+                                img_data, mime = self._gif_to_png(img_data)
+                            images.append((img_data, mime))
+                            attachment_info.append({"filename": "embed_image", "type": mime})
+                            break
+                        except Exception as e:
+                            logger.warning(f"Failed to download embed image: {e}")
+
             # Queue this message for batching
             if channel_id not in self._batch_queues:
                 self._batch_queues[channel_id] = []
@@ -574,6 +595,16 @@ class DiscordBot:
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         return buf.getvalue(), "image/png"
+
+    @staticmethod
+    async def _download_image(url):
+        """Download an image from a URL and return (bytes, mime_type)."""
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                data = await resp.read()
+                ct = resp.content_type or "image/png"
+                return data, ct
 
     @staticmethod
     def _split_natural(text):
