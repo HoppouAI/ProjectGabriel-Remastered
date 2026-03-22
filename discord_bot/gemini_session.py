@@ -310,7 +310,7 @@ class GeminiTextSession:
                         try:
                             responses = []
                             for fc in response.tool_call.function_calls:
-                                logger.info(f"Discord tool call: {fc.name}")
+                                logger.info(f"Discord tool call: {fc.name}({dict(fc.args) if fc.args else {}})")
                                 fr = await self.tool_handler.handle(fc)
                                 responses.append(fr)
                             await self._session.send_tool_response(function_responses=responses)

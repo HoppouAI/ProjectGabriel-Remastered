@@ -80,13 +80,14 @@ class DiscordActionsTool:
             types.FunctionDeclaration(
                 name="createGroupChat",
                 description=(
-                    "Create a new group DM with specified users.\n"
+                    "Create a new group DM with specified users. Requires at least 2 users. "
+                    "All users must be friends with this account. Use their user IDs (from message metadata) whenever possible.\n"
                     "**Invocation Condition:** Call when asked to create or start a new group chat with people."
                 ),
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "user_ids": {"type": "STRING", "description": "Comma-separated user IDs or usernames to add to the group"},
+                        "user_ids": {"type": "STRING", "description": "Comma-separated user IDs or usernames of ALL users to add (minimum 2)"},
                     },
                     "required": ["user_ids"],
                 },
@@ -377,8 +378,8 @@ class DiscordActionsTool:
 
         raw_ids = args.get("user_ids", "")
         identifiers = [uid.strip() for uid in raw_ids.split(",") if uid.strip()]
-        if not identifiers:
-            return {"result": "error", "message": "No users provided"}
+        if len(identifiers) < 2:
+            return {"result": "error", "message": "Need at least 2 users to create a group chat. Provide comma-separated user IDs or usernames."}
 
         users = []
         for ident in identifiers:
