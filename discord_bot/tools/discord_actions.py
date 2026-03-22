@@ -137,6 +137,15 @@ class DiscordActionsTool:
                     "required": ["user_id"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="listGroupChats",
+                description=(
+                    "List your active group DMs with their IDs and members.\n"
+                    "**Invocation Condition:** Call when you need to find a group chat ID, "
+                    "or when asked about your group DMs."
+                ),
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
         ]
 
     async def handle(self, name, args):
@@ -158,6 +167,8 @@ class DiscordActionsTool:
             return await self._remove_from_group(args)
         elif name == "viewProfile":
             return await self._view_profile(args)
+        elif name == "listGroupChats":
+            return await self._list_group_chats(args)
         return None
 
     async def _send_message(self, args):
@@ -449,6 +460,25 @@ class DiscordActionsTool:
             return info
         except Exception as e:
             return {"result": "error", "message": str(e)}
+
+    async def _list_group_chats(self, args):
+        import discord
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        groups = []
+        for ch in client.private_channels:
+            if isinstance(ch, discord.GroupChannel):
+                members = [u.display_name or u.name for u in ch.recipients]
+                groups.append({
+                    "id": str(ch.id),
+                    "name": ch.name or "unnamed",
+                    "members": members,
+                    "owner_id": str(ch.owner_id) if ch.owner_id else None,
+                })
+
+        return {"result": "ok", "groups": groups, "count": len(groups)}
 
     @staticmethod
     def _save_mute(channel_id, expires_at, comeback):
