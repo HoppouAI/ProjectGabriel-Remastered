@@ -483,11 +483,11 @@ class DiscordBot:
             if entry["images"]:
                 all_images.extend(entry["images"])
                 image_note = f" [attached {len(entry['images'])} image(s)]"
-            message_lines.append(f"{user_display} (ID:{msg.author.id}): {msg.content}{image_note}")
+            message_lines.append(f"{user_display} (ID:{msg.author.id}): {msg.clean_content}{image_note}")
 
             # Log each user message to conversation store
             self._conversations.add_message(
-                channel_id, "user", msg.content,
+                channel_id, "user", msg.clean_content,
                 username=user_display,
                 attachments=entry["attachment_info"] or None,
             )
