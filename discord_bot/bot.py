@@ -39,6 +39,7 @@ class DiscordBot:
         self._batch_queues = {}  # channel_id -> list of (message, images) tuples
         self._batch_tasks = {}  # channel_id -> asyncio.Task (debounce timer)
         self._response_tasks = {}  # channel_id -> asyncio.Task (current response)
+        self._response_lock = asyncio.Lock()  # Serialize Gemini interactions across channels
         self._disabled = False  # Global disable toggle
         self._running = False
         self._start_time = datetime.now()
@@ -494,64 +495,64 @@ class DiscordBot:
 
         new_message = f"[CHANNEL: {channel_info}]\n" + "\n".join(message_lines)
 
-        # Store current channel on tool handler for context-aware tools
-        self._tool_handler._current_channel = last_message.channel
-
-        # Show typing indicator and respond
+        # Serialize Gemini interactions -- only one channel at a time
         try:
-            async with last_message.channel.typing():
-                delay = self.config.typing_delay_ms / 1000.0
-                if delay > 0:
-                    await asyncio.sleep(delay)
+            async with self._response_lock:
+                # Set current channel inside lock so tools target the right channel
+                self._tool_handler._current_channel = last_message.channel
 
-                response = None
-                try:
-                    response = await asyncio.wait_for(
-                        self._gemini.send_with_context(
-                            context_turns,
-                            new_message,
-                            images=all_images if all_images else None,
-                        ),
-                        timeout=60.0,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("Gemini response timed out")
+                async with last_message.channel.typing():
+                    delay = self.config.typing_delay_ms / 1000.0
+                    if delay > 0:
+                        await asyncio.sleep(delay)
 
-            if not response or response.startswith("[Error:"):
-                logger.warning(f"Bad response from Gemini: {response}")
-                await last_message.channel.send("-# no response...")
-                return
+                    response = None
+                    try:
+                        response = await asyncio.wait_for(
+                            self._gemini.send_with_context(
+                                context_turns,
+                                new_message,
+                                images=all_images if all_images else None,
+                            ),
+                            timeout=60.0,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("Gemini response timed out")
 
-            # Strip mass pings
-            response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
+                if not response or response.startswith("[Error:"):
+                    logger.warning(f"Bad response from Gemini: {response}")
+                    await last_message.channel.send("-# no response...")
+                    return
 
-            # Split into multiple messages for natural feel
-            parts = self._split_natural(response)
-            channel = last_message.channel
-            use_reply = random.random() < 0.3
-            for i, part in enumerate(parts):
-                if len(part) > self.config.max_message_length:
-                    chunks = self._split_message(part, self.config.max_message_length)
-                    for j, chunk in enumerate(chunks):
-                        if i == 0 and j == 0 and use_reply:
-                            await last_message.reply(chunk, mention_author=False)
-                        else:
-                            await channel.send(chunk)
-                        await asyncio.sleep(0.3)
-                else:
-                    if i == 0 and use_reply:
-                        await last_message.reply(part, mention_author=False)
+                # Strip mass pings
+                response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
+
+                # Split into multiple messages for natural feel
+                parts = self._split_natural(response)
+                channel = last_message.channel
+                use_reply = random.random() < 0.3
+                for i, part in enumerate(parts):
+                    if len(part) > self.config.max_message_length:
+                        chunks = self._split_message(part, self.config.max_message_length)
+                        for j, chunk in enumerate(chunks):
+                            if i == 0 and j == 0 and use_reply:
+                                await last_message.reply(chunk, mention_author=False)
+                            else:
+                                await channel.send(chunk)
+                            await asyncio.sleep(0.3)
                     else:
-                        await channel.send(part)
-                if i < len(parts) - 1:
-                    # Simulate typing time based on next message length (~15 chars/sec)
-                    next_len = len(parts[i + 1])
-                    typing_delay = 0.5 + next_len * 0.065
-                    async with channel.typing():
-                        await asyncio.sleep(min(typing_delay, 8.0))
+                        if i == 0 and use_reply:
+                            await last_message.reply(part, mention_author=False)
+                        else:
+                            await channel.send(part)
+                    if i < len(parts) - 1:
+                        next_len = len(parts[i + 1])
+                        typing_delay = 0.5 + next_len * 0.065
+                        async with channel.typing():
+                            await asyncio.sleep(min(typing_delay, 8.0))
 
-            self._conversations.add_message(channel_id, "assistant", response)
-            self._cooldowns[channel_id] = time.time()
+                self._conversations.add_message(channel_id, "assistant", response)
+                self._cooldowns[channel_id] = time.time()
 
         except asyncio.CancelledError:
             logger.info(f"Response interrupted in {channel_id}")
