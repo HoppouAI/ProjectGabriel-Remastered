@@ -184,14 +184,21 @@ class GeminiTextSession:
         if not self._session:
             raise RuntimeError("Not connected to Gemini Live")
 
-        parts = []
+        # Send first image as a video frame via realtime input
         if images:
             img_data, mime_type = images[0]
-            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
-        parts.append(types.Part.from_text(text=text))
+            await self._session.send_realtime_input(
+                activity_start=types.ActivityStart()
+            )
+            await self._session.send_realtime_input(
+                video=types.Blob(data=img_data, mime_type=mime_type)
+            )
+            await self._session.send_realtime_input(
+                activity_end=types.ActivityEnd()
+            )
 
         await self._session.send_client_content(
-            turns=types.Content(role="user", parts=parts),
+            turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
             turn_complete=True,
         )
 
@@ -229,13 +236,20 @@ class GeminiTextSession:
                 turn_complete=False,
             )
 
-        # Send first image + text as inline parts (1 image limit for Live API)
-        parts = []
+        # Send first image as a video frame via realtime input
         if images:
             img_data, mime_type = images[0]
-            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
-        parts.append(types.Part.from_text(text=text))
+            await self._session.send_realtime_input(
+                activity_start=types.ActivityStart()
+            )
+            await self._session.send_realtime_input(
+                video=types.Blob(data=img_data, mime_type=mime_type)
+            )
+            await self._session.send_realtime_input(
+                activity_end=types.ActivityEnd()
+            )
 
+        # Send the text message and trigger a response
         await self._session.send_client_content(
             turns=types.Content(role="user", parts=parts),
             turn_complete=True,
