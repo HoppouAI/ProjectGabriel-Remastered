@@ -174,21 +174,16 @@ class DiscordBot:
             should_respond = False
             channel_id = str(message.channel.id)
 
-            # Check if DM or Group DM
+            # Check for admin commands in DMs/Group DMs
             if isinstance(message.channel, (discord.DMChannel, discord.GroupChannel)):
-                # Check for admin commands first
                 if str(message.author.id) in self.config.authorized_users:
                     handled = await self._handle_command(message)
                     if handled:
                         return
-                if self.config.auto_respond_dms:
-                    should_respond = True
 
-            # Check if mentioned
-            elif self._client.user in message.mentions:
+            # Check if mentioned or replied to (works in all channel types)
+            if self._client.user in message.mentions:
                 should_respond = True
-
-            # Check if reply to our message
             elif (
                 message.reference
                 and message.reference.resolved
@@ -196,6 +191,10 @@ class DiscordBot:
                 and message.reference.resolved.author == self._client.user
             ):
                 should_respond = True
+            # Auto-respond in DMs/Group DMs (no mention needed)
+            elif isinstance(message.channel, (discord.DMChannel, discord.GroupChannel)):
+                if self.config.auto_respond_dms:
+                    should_respond = True
 
             if not should_respond:
                 return
