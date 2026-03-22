@@ -129,5 +129,15 @@ conversations:
   enabled: true
   save_dir: "discord_bot/data/conversations"
 
+# ══════════════════════════════════════════════════════════
+# Embed Webhook
+# ══════════════════════════════════════════════════════════
+# Webhook URL used to render rich embeds for admin commands.
+# Create a webhook in a private channel, paste the URL here.
+# The bot will post embeds via the webhook, then forward them
+# to the channel where the admin command was run.
+# Leave empty to use plain text for admin command output.
+embed_webhook_url: ""
+
 # Logging level: DEBUG, INFO, WARNING, ERROR
 log_level: "INFO"

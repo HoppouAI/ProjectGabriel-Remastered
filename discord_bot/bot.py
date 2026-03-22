@@ -158,6 +158,85 @@ class DiscordBot:
             asyncio.create_task(_unmute())
         logger.info(f"Restored {len(active)} persisted mute(s)")
 
+    async def _send_embed(self, destination, title, description=None, fields=None, color=0x5865F2):
+        """Send a rich embed to a channel via webhook forwarding.
+
+        Posts an embed to a webhook channel, then forwards the message to the
+        destination. Falls back to plain text if no webhook is configured.
+
+        Args:
+            destination: Channel to send the embed to
+            title: Embed title
+            description: Optional description text
+            fields: Optional list of (name, value, inline) tuples
+            color: Embed color (default: Discord blurple)
+
+        Returns:
+            The sent/forwarded message, or None on failure
+        """
+        webhook_url = self.config.embed_webhook_url
+        if not webhook_url:
+            # Fallback to plain text
+            lines = [f"**{title}**"]
+            if description:
+                lines.append(description)
+            if fields:
+                for name, value, _ in fields:
+                    lines.append(f"**{name}:** {value}")
+            return await destination.send("\n".join(lines))
+
+        # Build embed payload for webhook
+        embed_data = {"title": title, "color": color}
+        if description:
+            embed_data["description"] = description
+        if fields:
+            embed_data["fields"] = [
+                {"name": name, "value": value, "inline": inline}
+                for name, value, inline in fields
+            ]
+
+        payload = {"embeds": [embed_data]}
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Post embed via webhook (wait=true returns the message)
+                async with session.post(f"{webhook_url}?wait=true", json=payload) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"Webhook post failed: {resp.status}")
+                        # Fallback to plain text
+                        lines = [f"**{title}**"]
+                        if description:
+                            lines.append(description)
+                        if fields:
+                            for name, value, _ in fields:
+                                lines.append(f"**{name}:** {value}")
+                        return await destination.send("\n".join(lines))
+                    data = await resp.json()
+
+            # Fetch the webhook message from Discord and forward it
+            webhook_msg_id = int(data["id"])
+            webhook_channel_id = int(data["channel_id"])
+            webhook_channel = self._client.get_channel(webhook_channel_id)
+            if webhook_channel:
+                webhook_msg = await webhook_channel.fetch_message(webhook_msg_id)
+                forwarded = await webhook_msg.forward(destination)
+                # Delete the original webhook message to keep the channel clean
+                try:
+                    await webhook_msg.delete()
+                except Exception:
+                    pass
+                return forwarded
+        except Exception as e:
+            logger.warning(f"Embed forwarding failed: {e}")
+            # Final fallback
+            lines = [f"**{title}**"]
+            if description:
+                lines.append(description)
+            if fields:
+                for name, value, _ in fields:
+                    lines.append(f"**{name}:** {value}")
+            return await destination.send("\n".join(lines))
+
     def _register_events(self):
         @self._client.event
         async def on_ready():
@@ -292,14 +371,13 @@ class DiscordBot:
             m, s = divmod(r, 60)
             connected = "Yes" if self._gemini and self._gemini._connected.is_set() else "No"
             muted = getattr(self._tool_handler, "_muted_channels", set())
-            await message.channel.send(
-                f"**Bot Status**\n"
-                f"Uptime: {h}h {m}m {s}s\n"
-                f"Gemini Connected: {connected}\n"
-                f"Guilds: {len(self._client.guilds)}\n"
-                f"Enabled: {'No' if self._disabled else 'Yes'}\n"
-                f"Muted Channels: {len(muted)}"
-            )
+            await self._send_embed(message.channel, "Bot Status", fields=[
+                ("Uptime", f"{h}h {m}m {s}s", True),
+                ("Gemini Connected", connected, True),
+                ("Guilds", str(len(self._client.guilds)), True),
+                ("Enabled", "No" if self._disabled else "Yes", True),
+                ("Muted Channels", str(len(muted)), True),
+            ], color=0x57F287 if not self._disabled else 0xED4245)
             return True
 
         elif cmd == "enable":
@@ -373,21 +451,20 @@ class DiscordBot:
             return True
 
         elif cmd == "help":
-            await message.channel.send(
-                "**Admin Commands**\n"
-                "`!status` - Bot status & info\n"
-                "`!enable` / `!disable` - Toggle bot responses\n"
-                "`!say <text>` - Send a message as the bot\n"
-                "`!relay <text>` - Relay message to VRChat AI\n"
-                "`!mute <channel_id> [minutes|perm]` - Mute a channel\n"
-                "`!unmute <channel_id>` - Unmute a channel\n"
-                "`!mutes` - List active mutes\n"
-                "`!reconnect` - Reconnect Gemini session\n"
-                "`!personality [name]` - View/switch personality\n"
-                "`!clear [channel_id]` - Clear conversation history\n"
-                "`!reload` - Reload config\n"
-                "`!help` - This help"
-            )
+            await self._send_embed(message.channel, "Admin Commands", fields=[
+                ("`!status`", "Bot status & info", False),
+                ("`!enable` / `!disable`", "Toggle bot responses", False),
+                ("`!say <text>`", "Send a message as the bot", False),
+                ("`!relay <text>`", "Relay message to VRChat AI", False),
+                ("`!mute <channel_id> [minutes|perm]`", "Mute a channel", False),
+                ("`!unmute <channel_id>`", "Unmute a channel", False),
+                ("`!mutes`", "List active mutes", False),
+                ("`!reconnect`", "Reconnect Gemini session", False),
+                ("`!personality [name]`", "View/switch personality", False),
+                ("`!clear [channel_id]`", "Clear conversation history", False),
+                ("`!reload`", "Reload config", False),
+                ("`!help`", "This help", False),
+            ], color=0x5865F2)
             return True
 
         return False
@@ -451,19 +528,19 @@ class DiscordBot:
         from discord_bot.tools.discord_actions import DiscordActionsTool
         active = DiscordActionsTool.load_persisted_mutes()
         if not active:
-            await message.channel.send("No active mutes.")
+            await self._send_embed(message.channel, "Active Mutes", description="No active mutes.", color=0x57F287)
             return True
 
-        lines = []
+        fields = []
         now = time.time()
         for cid, data in active.items():
             remaining = data["expires_at"] - now
             if remaining > 364 * 24 * 3600:
-                lines.append(f"`{cid}` - permanent")
+                fields.append((f"`{cid}`", "Permanent", False))
             else:
                 mins = int(remaining / 60)
-                lines.append(f"`{cid}` - {mins}m remaining")
-        await message.channel.send("**Active Mutes**\n" + "\n".join(lines))
+                fields.append((f"`{cid}`", f"{mins}m remaining", False))
+        await self._send_embed(message.channel, "Active Mutes", fields=fields, color=0xFEE75C)
         return True
 
     async def _batch_debounce(self, channel_id):

@@ -203,3 +203,7 @@ class BotConfig:
     @property
     def log_level(self):
         return self.get("log_level", default="INFO")
+
+    @property
+    def embed_webhook_url(self):
+        return self.get("embed_webhook_url", default="")
