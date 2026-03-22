@@ -578,11 +578,17 @@ class DiscordBot:
         elif hasattr(last_message.channel, "name") and last_message.guild:
             channel_info = f"#{last_message.channel.name} in {last_message.guild.name}"
 
-        context_turns = self._conversations.get_turns(
-            channel_id,
-            count=self.config.context_message_count,
-            channel_info=channel_info,
-        )
+        # Only fetch context turns for fresh sessions (no session handle)
+        # Resumed sessions already have context from the Gemini server
+        needs_context = not self._gemini._session_resumed
+        if needs_context:
+            context_turns = self._conversations.get_turns(
+                channel_id,
+                count=self.config.context_message_count,
+                channel_info=channel_info,
+            )
+        else:
+            context_turns = None
 
         for entry in batch:
             msg = entry["message"]
@@ -615,14 +621,21 @@ class DiscordBot:
 
                     response = None
                     try:
-                        response = await asyncio.wait_for(
-                            self._gemini.send_with_context(
+                        if context_turns:
+                            coro = self._gemini.send_with_context(
                                 context_turns,
                                 new_message,
                                 images=all_images if all_images else None,
-                            ),
-                            timeout=60.0,
-                        )
+                            )
+                        else:
+                            coro = self._gemini.send_message(
+                                new_message,
+                                images=all_images if all_images else None,
+                            )
+                        response = await asyncio.wait_for(coro, timeout=60.0)
+                        # After first successful context send, mark session as having context
+                        if context_turns:
+                            self._gemini._session_resumed = True
                     except asyncio.TimeoutError:
                         logger.warning("Gemini response timed out")
 

@@ -40,6 +40,7 @@ class GeminiTextSession:
         self._receive_task = None
         self._reconnect_lock = asyncio.Lock()
         self._closing = False
+        self._session_resumed = False
         self._load_session_handle()
 
     def _build_config(self):
@@ -356,10 +357,14 @@ class GeminiTextSession:
             if self._is_handle_expired():
                 self._clear_session_handle()
             try:
+                self._session_resumed = bool(self._session_handle)
                 connection = await self.connect()
                 async with connection as session:
                     self._session = session
-                    logger.info("Discord bot connected to Gemini Live")
+                    if self._session_resumed:
+                        logger.info("Discord bot resumed Gemini Live session")
+                    else:
+                        logger.info("Discord bot connected to Gemini Live (fresh session)")
                     self._connected.set()
                     self._receive_task = asyncio.create_task(self._receive_loop())
                     await self._receive_task
