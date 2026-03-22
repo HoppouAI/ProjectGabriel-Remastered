@@ -175,7 +175,7 @@ class GeminiTextSession:
 
         Args:
             text: The text message to send
-            images: Optional list of (bytes, mime_type) tuples for image content
+            images: Optional list of (bytes, mime_type) tuples (only first is used)
 
         Returns:
             The complete text response from the model
@@ -184,16 +184,16 @@ class GeminiTextSession:
         if not self._session:
             raise RuntimeError("Not connected to Gemini Live")
 
-        # Send images via realtime input (Live API video frame method)
+        # Build content parts (limit to 1 image to avoid Live API errors)
+        parts = []
         if images:
-            for img_data, mime_type in images:
-                await self._session.send_realtime_input(
-                    video=types.Blob(data=img_data, mime_type=mime_type)
-                )
+            img_data, mime_type = images[0]
+            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
+        parts.append(types.Part.from_text(text=text))
 
-        # Send text as client content (conversation turn)
+        # Send as client content (conversation turn)
         await self._session.send_client_content(
-            turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
+            turns=types.Content(role="user", parts=parts),
             turn_complete=True,
         )
 
@@ -205,12 +205,11 @@ class GeminiTextSession:
         """Send conversation context as structured turns, then the new message.
 
         Uses incremental content updates to give the model proper turn structure.
-        Images are sent via send_realtime_input as video frames (Live API method).
 
         Args:
             context_turns: List of dicts with 'role' ('user'/'model') and 'text'
             text: The new message text to send
-            images: Optional list of (bytes, mime_type) tuples for image content
+            images: Optional list of (bytes, mime_type) tuples (only first is used)
 
         Returns:
             The complete text response from the model
@@ -232,16 +231,16 @@ class GeminiTextSession:
                 turn_complete=False,
             )
 
-        # Send images via realtime input (Live API video frame method)
+        # Build the new message parts (limit to 1 image to avoid Live API errors)
+        parts = []
         if images:
-            for img_data, mime_type in images:
-                await self._session.send_realtime_input(
-                    video=types.Blob(data=img_data, mime_type=mime_type)
-                )
+            img_data, mime_type = images[0]
+            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
+        parts.append(types.Part.from_text(text=text))
 
-        # Send the text message and trigger a response
+        # Send the new message and trigger a response
         await self._session.send_client_content(
-            turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
+            turns=types.Content(role="user", parts=parts),
             turn_complete=True,
         )
 
