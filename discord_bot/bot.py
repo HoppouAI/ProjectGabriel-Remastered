@@ -40,6 +40,7 @@ class DiscordBot:
         self._batch_tasks = {}  # channel_id -> asyncio.Task (debounce timer)
         self._response_tasks = {}  # channel_id -> asyncio.Task (current response)
         self._response_lock = asyncio.Lock()  # Serialize Gemini interactions across channels
+        self._followup_tasks = {}  # channel_id -> asyncio.Task (left-on-read timers)
         self._disabled = False  # Global disable toggle
         self._running = False
         self._start_time = datetime.now()
@@ -262,6 +263,11 @@ class DiscordBot:
                 "images": images,
                 "attachment_info": attachment_info,
             })
+
+            # Cancel pending left-on-read follow-up for this channel
+            followup = self._followup_tasks.pop(channel_id, None)
+            if followup and not followup.done():
+                followup.cancel()
 
             # Cancel existing debounce timer and start a new one
             if channel_id in self._batch_tasks:
@@ -555,20 +561,21 @@ class DiscordBot:
                 parts = self._split_natural(response)
                 channel = last_message.channel
                 use_reply = random.random() < 0.3
+                last_sent = None
                 for i, part in enumerate(parts):
                     if len(part) > self.config.max_message_length:
                         chunks = self._split_message(part, self.config.max_message_length)
                         for j, chunk in enumerate(chunks):
                             if i == 0 and j == 0 and use_reply:
-                                await last_message.reply(chunk, mention_author=False)
+                                last_sent = await last_message.reply(chunk, mention_author=False)
                             else:
-                                await channel.send(chunk)
+                                last_sent = await channel.send(chunk)
                             await asyncio.sleep(0.3)
                     else:
                         if i == 0 and use_reply:
-                            await last_message.reply(part, mention_author=False)
+                            last_sent = await last_message.reply(part, mention_author=False)
                         else:
-                            await channel.send(part)
+                            last_sent = await channel.send(part)
                     if i < len(parts) - 1:
                         next_len = len(parts[i + 1])
                         typing_delay = 0.5 + next_len * 0.065
@@ -578,12 +585,67 @@ class DiscordBot:
                 self._conversations.add_message(channel_id, "assistant", response)
                 self._cooldowns[channel_id] = time.time()
 
+                # Schedule left-on-read follow-up
+                if last_sent:
+                    old = self._followup_tasks.pop(channel_id, None)
+                    if old and not old.done():
+                        old.cancel()
+                    self._followup_tasks[channel_id] = asyncio.create_task(
+                        self._followup_on_read(channel_id, last_sent, last_message.author)
+                    )
+
         except asyncio.CancelledError:
             logger.info(f"Response interrupted in {channel_id}")
         except discord.errors.Forbidden:
             logger.warning(f"No permission to send in {channel_id}")
         except Exception as e:
             logger.error(f"Response error: {e}")
+
+    async def _followup_on_read(self, channel_id, bot_message, user):
+        """Wait 5-15 minutes, then send a follow-up if no one responded."""
+        delay = random.randint(300, 900)  # 5-15 minutes
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+
+        # Check if still valid (not disabled, not muted)
+        if self._disabled:
+            return
+        muted = getattr(self._tool_handler, "_muted_channels", None)
+        if muted and channel_id in muted:
+            return
+        if not self._gemini or not self._gemini._connected.is_set():
+            return
+
+        user_display = user.display_name or user.name
+        minutes = delay // 60
+        prompt = (
+            f"[CHANNEL: left-on-read followup]\n"
+            f"{user_display} (ID:{user.id}) has not responded to your last message for "
+            f"{minutes} minutes. Send a short follow-up message complaining about being "
+            f"left on read. Ping them using <@{user.id}>. Be dramatic, funny, or annoyed "
+            f"about being ignored. Keep it to 1-2 sentences max."
+        )
+
+        try:
+            async with self._response_lock:
+                self._tool_handler._current_channel = bot_message.channel
+                response = await asyncio.wait_for(
+                    self._gemini.send_message(prompt),
+                    timeout=30.0,
+                )
+
+            if response and not response.startswith("[Error:"):
+                response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
+                await bot_message.reply(response, mention_author=False)
+                self._conversations.add_message(channel_id, "assistant", response)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"Follow-up failed in {channel_id}: {e}")
+        finally:
+            self._followup_tasks.pop(channel_id, None)
 
     @staticmethod
     def _gif_to_png(gif_bytes):
