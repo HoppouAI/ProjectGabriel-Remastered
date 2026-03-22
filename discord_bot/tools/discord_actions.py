@@ -119,6 +119,22 @@ class DiscordActionsTool:
                     "required": ["user_id"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="viewProfile",
+                description=(
+                    "View a Discord user's profile including bio, badges, account creation date, "
+                    "mutual servers, and connected accounts.\n"
+                    "**Invocation Condition:** Call when asked about someone's Discord profile, bio, "
+                    "badges, join date, or when you want to learn about a user."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_id": {"type": "STRING", "description": "The user ID or username to look up"},
+                    },
+                    "required": ["user_id"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -138,6 +154,8 @@ class DiscordActionsTool:
             return await self._add_to_group(args)
         elif name == "removeFromGroup":
             return await self._remove_from_group(args)
+        elif name == "viewProfile":
+            return await self._view_profile(args)
         return None
 
     async def _send_message(self, args):
@@ -382,6 +400,41 @@ class DiscordActionsTool:
         try:
             await channel.remove_recipients(user)
             return {"result": "ok", "removed": user.name, "group_id": str(channel.id)}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _view_profile(self, args):
+        ident = args.get("user_id", "").strip()
+        if not ident:
+            return {"result": "error", "message": "No user provided"}
+
+        user, err = await self._resolve_user(ident)
+        if err:
+            return {"result": "error", "message": err}
+
+        try:
+            profile = await user.profile(with_mutual_guilds=True, with_mutual_friends=True)
+            info = {
+                "result": "ok",
+                "username": user.name,
+                "display_name": user.display_name,
+                "id": str(user.id),
+                "created_at": user.created_at.strftime("%B %d, %Y"),
+                "bot": user.bot,
+            }
+            if profile.bio:
+                info["bio"] = profile.bio
+            if profile.badges:
+                info["badges"] = [str(b) for b in profile.badges]
+            if profile.premium_since:
+                info["nitro_since"] = profile.premium_since.strftime("%B %d, %Y")
+            if profile.mutual_guilds:
+                info["mutual_servers"] = [g.guild.name if hasattr(g, "guild") else str(g) for g in profile.mutual_guilds]
+            if profile.mutual_friends:
+                info["mutual_friends"] = [f.name for f in profile.mutual_friends]
+            if profile.connections:
+                info["connections"] = [{"type": c.type, "name": c.name} for c in profile.connections]
+            return info
         except Exception as e:
             return {"result": "error", "message": str(e)}
 
