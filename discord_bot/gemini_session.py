@@ -175,7 +175,7 @@ class GeminiTextSession:
 
         Args:
             text: The text message to send
-            images: Optional list of (bytes, mime_type) tuples
+            images: Optional list of (bytes, mime_type) tuples (only first used)
 
         Returns:
             The complete text response from the model
@@ -184,24 +184,17 @@ class GeminiTextSession:
         if not self._session:
             raise RuntimeError("Not connected to Gemini Live")
 
-        # Send each image as a separate content turn
+        parts = []
         if images:
-            for img_data, mime_type in images:
-                await self._session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[types.Part.from_bytes(data=img_data, mime_type=mime_type)],
-                    ),
-                    turn_complete=False,
-                )
+            img_data, mime_type = images[0]
+            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
+        parts.append(types.Part.from_text(text=text))
 
-        # Send text as client content
         await self._session.send_client_content(
-            turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
+            turns=types.Content(role="user", parts=parts),
             turn_complete=True,
         )
 
-        # Wait for complete response
         response_text = await self._response_queue.get()
         return response_text
 
@@ -236,20 +229,15 @@ class GeminiTextSession:
                 turn_complete=False,
             )
 
-        # Send each image as a separate content turn
+        # Send first image + text as inline parts (1 image limit for Live API)
+        parts = []
         if images:
-            for img_data, mime_type in images:
-                await self._session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[types.Part.from_bytes(data=img_data, mime_type=mime_type)],
-                    ),
-                    turn_complete=False,
-                )
+            img_data, mime_type = images[0]
+            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
+        parts.append(types.Part.from_text(text=text))
 
-        # Send the text message and trigger a response
         await self._session.send_client_content(
-            turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
+            turns=types.Content(role="user", parts=parts),
             turn_complete=True,
         )
 
