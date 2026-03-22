@@ -391,6 +391,15 @@ class DiscordActionsTool:
                 if user.display_name and (user.display_name.lower() == lower or lower in user.display_name.lower()):
                     return user, None
 
+        # Query guild member lists via API (handles uncached members)
+        for guild in client.guilds:
+            try:
+                results = await guild.query_members(query=identifier, limit=5)
+                if results:
+                    return results[0], None
+            except Exception:
+                pass
+
         return None, f"Could not find user: {identifier}. Use getChannelMembers to find exact user IDs."
 
     async def _create_group_chat(self, args):
