@@ -77,6 +77,48 @@ class DiscordActionsTool:
                     "required": [],
                 },
             ),
+            types.FunctionDeclaration(
+                name="createGroupChat",
+                description=(
+                    "Create a new group DM with specified users.\n"
+                    "**Invocation Condition:** Call when asked to create or start a new group chat with people."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_ids": {"type": "STRING", "description": "Comma-separated user IDs to add to the group"},
+                    },
+                    "required": ["user_ids"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="addToGroup",
+                description=(
+                    "Add a user to the current group DM.\n"
+                    "**Invocation Condition:** Call when asked to add someone to the current group chat."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_id": {"type": "STRING", "description": "The user ID to add to the group"},
+                    },
+                    "required": ["user_id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="removeFromGroup",
+                description=(
+                    "Remove a user from the current group DM. You must be the group owner to remove people.\n"
+                    "**Invocation Condition:** Call when asked to remove or kick someone from the current group chat."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_id": {"type": "STRING", "description": "The user ID to remove from the group"},
+                    },
+                    "required": ["user_id"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -90,6 +132,12 @@ class DiscordActionsTool:
             return await self._get_channel_members(args)
         elif name == "muteChannel":
             return await self._mute_channel(args)
+        elif name == "createGroupChat":
+            return await self._create_group_chat(args)
+        elif name == "addToGroup":
+            return await self._add_to_group(args)
+        elif name == "removeFromGroup":
+            return await self._remove_from_group(args)
         return None
 
     async def _send_message(self, args):
@@ -251,6 +299,66 @@ class DiscordActionsTool:
 
         asyncio.create_task(_unmute())
         return {"result": "ok", "muted": True, "channel_id": channel_id, "duration_minutes": duration}
+
+    async def _create_group_chat(self, args):
+        import discord
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        raw_ids = args.get("user_ids", "")
+        user_ids = [uid.strip() for uid in raw_ids.split(",") if uid.strip()]
+        if not user_ids:
+            return {"result": "error", "message": "No user IDs provided"}
+
+        users = []
+        for uid in user_ids:
+            try:
+                user = await client.fetch_user(int(uid))
+                users.append(user)
+            except Exception as e:
+                return {"result": "error", "message": f"Could not find user {uid}: {e}"}
+
+        try:
+            group = await client.create_group(*users)
+            return {"result": "ok", "group_id": str(group.id), "members": [u.name for u in users]}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _add_to_group(self, args):
+        import discord
+        channel = getattr(self.handler, "_current_channel", None)
+        if not channel or not isinstance(channel, discord.GroupChannel):
+            return {"result": "error", "message": "Current channel is not a group DM"}
+
+        client = self.handler._discord_client
+        uid = args.get("user_id", "").strip()
+        if not uid:
+            return {"result": "error", "message": "No user ID provided"}
+
+        try:
+            user = await client.fetch_user(int(uid))
+            await channel.add_recipients(user)
+            return {"result": "ok", "added": user.name, "group_id": str(channel.id)}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _remove_from_group(self, args):
+        import discord
+        channel = getattr(self.handler, "_current_channel", None)
+        if not channel or not isinstance(channel, discord.GroupChannel):
+            return {"result": "error", "message": "Current channel is not a group DM"}
+
+        uid = args.get("user_id", "").strip()
+        if not uid:
+            return {"result": "error", "message": "No user ID provided"}
+
+        try:
+            user = await self.handler._discord_client.fetch_user(int(uid))
+            await channel.remove_recipients(user)
+            return {"result": "ok", "removed": user.name, "group_id": str(channel.id)}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
 
     @staticmethod
     def _save_mute(channel_id, expires_at, comeback):
