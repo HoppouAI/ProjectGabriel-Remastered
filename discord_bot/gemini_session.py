@@ -184,16 +184,18 @@ class GeminiTextSession:
         if not self._session:
             raise RuntimeError("Not connected to Gemini Live")
 
-        # Stream images as video frames (max 1 fps per Live API)
+        # Send each image as a separate content turn
         if images:
-            for i, (img_data, mime_type) in enumerate(images):
-                await self._session.send_realtime_input(
-                    video=types.Blob(data=img_data, mime_type=mime_type)
+            for img_data, mime_type in images:
+                await self._session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part.from_bytes(data=img_data, mime_type=mime_type)],
+                    ),
+                    turn_complete=False,
                 )
-                if i < len(images) - 1:
-                    await asyncio.sleep(1.0)
 
-        # Send as client content (conversation turn)
+        # Send text as client content
         await self._session.send_client_content(
             turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
             turn_complete=True,
@@ -234,14 +236,16 @@ class GeminiTextSession:
                 turn_complete=False,
             )
 
-        # Stream images as video frames (max 1 fps per Live API)
+        # Send each image as a separate content turn
         if images:
-            for i, (img_data, mime_type) in enumerate(images):
-                await self._session.send_realtime_input(
-                    video=types.Blob(data=img_data, mime_type=mime_type)
+            for img_data, mime_type in images:
+                await self._session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part.from_bytes(data=img_data, mime_type=mime_type)],
+                    ),
+                    turn_complete=False,
                 )
-                if i < len(images) - 1:
-                    await asyncio.sleep(1.0)
 
         # Send the text message and trigger a response
         await self._session.send_client_content(
