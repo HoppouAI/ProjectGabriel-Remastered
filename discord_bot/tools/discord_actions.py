@@ -94,13 +94,14 @@ class DiscordActionsTool:
             types.FunctionDeclaration(
                 name="addToGroup",
                 description=(
-                    "Add a user to the current group DM.\n"
-                    "**Invocation Condition:** Call when asked to add someone to the current group chat."
+                    "Add a user to a group DM.\n"
+                    "**Invocation Condition:** Call when asked to add someone to a group chat."
                 ),
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "user_id": {"type": "STRING", "description": "The user ID or username to add to the group"},
+                        "user_id": {"type": "STRING", "description": "The user ID or username to add"},
+                        "group_id": {"type": "STRING", "description": "The group channel ID (optional, defaults to current channel)"},
                     },
                     "required": ["user_id"],
                 },
@@ -108,13 +109,14 @@ class DiscordActionsTool:
             types.FunctionDeclaration(
                 name="removeFromGroup",
                 description=(
-                    "Remove a user from the current group DM. You must be the group owner to remove people.\n"
-                    "**Invocation Condition:** Call when asked to remove or kick someone from the current group chat."
+                    "Remove a user from a group DM. You must be the group owner to remove people.\n"
+                    "**Invocation Condition:** Call when asked to remove or kick someone from a group chat."
                 ),
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "user_id": {"type": "STRING", "description": "The user ID or username to remove from the group"},
+                        "user_id": {"type": "STRING", "description": "The user ID or username to remove"},
+                        "group_id": {"type": "STRING", "description": "The group channel ID (optional, defaults to current channel)"},
                     },
                     "required": ["user_id"],
                 },
@@ -365,9 +367,14 @@ class DiscordActionsTool:
 
     async def _add_to_group(self, args):
         import discord
-        channel = getattr(self.handler, "_current_channel", None)
+        channel = None
+        group_id = args.get("group_id", "").strip()
+        if group_id:
+            channel = self.handler._discord_client.get_channel(int(group_id))
+        if not channel:
+            channel = getattr(self.handler, "_current_channel", None)
         if not channel or not isinstance(channel, discord.GroupChannel):
-            return {"result": "error", "message": "Current channel is not a group DM"}
+            return {"result": "error", "message": "Target is not a group DM. Provide a valid group_id."}
 
         ident = args.get("user_id", "").strip()
         if not ident:
@@ -385,9 +392,14 @@ class DiscordActionsTool:
 
     async def _remove_from_group(self, args):
         import discord
-        channel = getattr(self.handler, "_current_channel", None)
+        channel = None
+        group_id = args.get("group_id", "").strip()
+        if group_id:
+            channel = self.handler._discord_client.get_channel(int(group_id))
+        if not channel:
+            channel = getattr(self.handler, "_current_channel", None)
         if not channel or not isinstance(channel, discord.GroupChannel):
-            return {"result": "error", "message": "Current channel is not a group DM"}
+            return {"result": "error", "message": "Target is not a group DM. Provide a valid group_id."}
 
         ident = args.get("user_id", "").strip()
         if not ident:
