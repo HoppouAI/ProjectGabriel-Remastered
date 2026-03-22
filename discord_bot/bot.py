@@ -216,7 +216,7 @@ class DiscordBot:
                 if now - last < self.config.response_cooldown:
                     return
 
-            # Collect images from this message
+            # Collect first image from this message (Live API 1-image limit)
             images = []
             attachment_info = []
             for att in message.attachments:
@@ -225,6 +225,7 @@ class DiscordBot:
                         img_data = await att.read()
                         images.append((img_data, att.content_type))
                         attachment_info.append({"filename": att.filename, "type": att.content_type})
+                        break
                     except Exception as e:
                         logger.warning(f"Failed to read attachment {att.filename}: {e}")
 
