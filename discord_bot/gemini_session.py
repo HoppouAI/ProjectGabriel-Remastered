@@ -251,7 +251,7 @@ class GeminiTextSession:
 
         # Send the text message and trigger a response
         await self._session.send_client_content(
-            turns=types.Content(role="user", parts=parts),
+            turns=types.Content(role="user", parts=[types.Part.from_text(text=text)]),
             turn_complete=True,
         )
 
