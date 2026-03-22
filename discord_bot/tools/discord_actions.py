@@ -146,6 +146,21 @@ class DiscordActionsTool:
                 ),
                 parameters={"type": "OBJECT", "properties": {}},
             ),
+            types.FunctionDeclaration(
+                name="transferGroupOwnership",
+                description=(
+                    "Transfer ownership of a group DM to another member. You must be the current owner.\n"
+                    "**Invocation Condition:** Call when asked to transfer or give group ownership to someone."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_id": {"type": "STRING", "description": "The user ID or username to transfer ownership to"},
+                        "group_id": {"type": "STRING", "description": "The group channel ID (optional, defaults to current channel)"},
+                    },
+                    "required": ["user_id"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -169,6 +184,8 @@ class DiscordActionsTool:
             return await self._view_profile(args)
         elif name == "listGroupChats":
             return await self._list_group_chats(args)
+        elif name == "transferGroupOwnership":
+            return await self._transfer_ownership(args)
         return None
 
     async def _send_message(self, args):
@@ -479,6 +496,31 @@ class DiscordActionsTool:
                 })
 
         return {"result": "ok", "groups": groups, "count": len(groups)}
+
+    async def _transfer_ownership(self, args):
+        import discord
+        channel = None
+        group_id = args.get("group_id", "").strip()
+        if group_id:
+            channel = self.handler._discord_client.get_channel(int(group_id))
+        if not channel:
+            channel = getattr(self.handler, "_current_channel", None)
+        if not channel or not isinstance(channel, discord.GroupChannel):
+            return {"result": "error", "message": "Target is not a group DM. Provide a valid group_id."}
+
+        ident = args.get("user_id", "").strip()
+        if not ident:
+            return {"result": "error", "message": "No user provided"}
+
+        user, err = await self._resolve_user(ident)
+        if err:
+            return {"result": "error", "message": err}
+
+        try:
+            await channel.edit(owner=user)
+            return {"result": "ok", "new_owner": user.name, "group_id": str(channel.id)}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
 
     @staticmethod
     def _save_mute(channel_id, expires_at, comeback):
