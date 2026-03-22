@@ -201,6 +201,53 @@ class GeminiTextSession:
         response_text = await self._response_queue.get()
         return response_text
 
+    async def send_with_context(self, context_turns, text, images=None):
+        """Send conversation context as structured turns, then the new message.
+
+        Uses incremental content updates to give the model proper turn structure.
+
+        Args:
+            context_turns: List of dicts with 'role' ('user'/'model') and 'text'
+            text: The new message text to send
+            images: Optional list of (bytes, mime_type) tuples for image content
+
+        Returns:
+            The complete text response from the model
+        """
+        await self._connected.wait()
+        if not self._session:
+            raise RuntimeError("Not connected to Gemini Live")
+
+        # Send conversation history as structured turns
+        if context_turns:
+            turns = []
+            for turn in context_turns:
+                turns.append(types.Content(
+                    role=turn["role"],
+                    parts=[types.Part.from_text(text=turn["text"])],
+                ))
+            await self._session.send_client_content(
+                turns=turns,
+                turn_complete=False,
+            )
+
+        # Build the new message parts
+        parts = []
+        if images:
+            for img_data, mime_type in images:
+                parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
+        parts.append(types.Part.from_text(text=text))
+
+        # Send the new message and trigger a response
+        await self._session.send_client_content(
+            turns=types.Content(role="user", parts=parts),
+            turn_complete=True,
+        )
+
+        # Wait for complete response
+        response_text = await self._response_queue.get()
+        return response_text
+
     async def inject_context(self, text):
         """Inject context into the session without expecting a response.
         Used for loading conversation history on startup."""
