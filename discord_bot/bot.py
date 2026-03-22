@@ -455,16 +455,10 @@ class DiscordBot:
             logger.warning("Gemini not connected, skipping response")
             return
 
-        # Build context from conversation history
-        context = self._conversations.get_context(
-            channel_id,
-            count=self.config.context_message_count,
-        )
-
-        # Combine all messages and images from the batch
+        # Build structured context turns from conversation history
         all_images = []
         message_lines = []
-        last_message = batch[-1]["message"]  # Use last message for channel/reply context
+        last_message = batch[-1]["message"]
 
         channel_info = ""
         if isinstance(last_message.channel, discord.DMChannel):
@@ -474,6 +468,12 @@ class DiscordBot:
             channel_info = f"Group DM: {last_message.channel.name or 'unnamed'}"
         elif hasattr(last_message.channel, "name") and last_message.guild:
             channel_info = f"#{last_message.channel.name} in {last_message.guild.name}"
+
+        context_turns = self._conversations.get_turns(
+            channel_id,
+            count=self.config.context_message_count,
+            channel_info=channel_info,
+        )
 
         for entry in batch:
             msg = entry["message"]
@@ -491,12 +491,7 @@ class DiscordBot:
                 attachments=entry["attachment_info"] or None,
             )
 
-        prompt_parts = []
-        prompt_parts.append(f"[CHANNEL: {channel_info}]")
-        if context:
-            prompt_parts.append(f"Recent conversation history in this channel:\n{context}\n")
-        prompt_parts.extend(message_lines)
-        full_prompt = "\n".join(prompt_parts)
+        new_message = f"[CHANNEL: {channel_info}]\n" + "\n".join(message_lines)
 
         # Store current channel on tool handler for context-aware tools
         self._tool_handler._current_channel = last_message.channel
@@ -511,7 +506,11 @@ class DiscordBot:
                 response = None
                 try:
                     response = await asyncio.wait_for(
-                        self._gemini.send_message(full_prompt, images=all_images if all_images else None),
+                        self._gemini.send_with_context(
+                            context_turns,
+                            new_message,
+                            images=all_images if all_images else None,
+                        ),
                         timeout=60.0,
                     )
                 except asyncio.TimeoutError:

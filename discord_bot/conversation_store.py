@@ -96,6 +96,54 @@ class ConversationStore:
                 parts.append(f"[Tool: {entry.get('name', '?')}]")
         return "\n".join(parts)
 
+    def get_turns(self, channel_id, count=15, channel_info=""):
+        """Get recent messages as structured turns for incremental content updates.
+
+        Returns a list of dicts with 'role' ('user'/'model') and 'text'.
+        Consecutive same-role messages are merged.
+        """
+        channel_id = str(channel_id)
+        if channel_id not in self._conversations:
+            self.load(channel_id)
+
+        entries = self._conversations.get(channel_id, [])[-count:]
+        if not entries:
+            return []
+
+        turns = []
+        for entry in entries:
+            role = entry.get("role", "user")
+            content = entry.get("content", "")
+            username = entry.get("username", "")
+
+            if role == "user":
+                prefix = f"{username}: " if username else ""
+                text = f"{prefix}{content}"
+                gemini_role = "user"
+            elif role == "assistant":
+                text = content
+                gemini_role = "model"
+            elif role == "tool_call":
+                text = f"[Tool call: {entry.get('name', '?')}]"
+                gemini_role = "model"
+            else:
+                continue
+
+            # Merge consecutive same-role turns
+            if turns and turns[-1]["role"] == gemini_role:
+                turns[-1]["text"] += f"\n{text}"
+            else:
+                turns.append({"role": gemini_role, "text": text})
+
+        # Prepend channel info to first user turn if present
+        if channel_info and turns:
+            for turn in turns:
+                if turn["role"] == "user":
+                    turn["text"] = f"[CHANNEL: {channel_info}]\n{turn['text']}"
+                    break
+
+        return turns
+
     def _save_async(self, channel_id):
         with self._lock:
             entries = list(self._conversations.get(channel_id, []))
