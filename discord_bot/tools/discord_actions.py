@@ -86,7 +86,7 @@ class DiscordActionsTool:
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "user_ids": {"type": "STRING", "description": "Comma-separated user IDs to add to the group"},
+                        "user_ids": {"type": "STRING", "description": "Comma-separated user IDs or usernames to add to the group"},
                     },
                     "required": ["user_ids"],
                 },
@@ -100,7 +100,7 @@ class DiscordActionsTool:
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "user_id": {"type": "STRING", "description": "The user ID to add to the group"},
+                        "user_id": {"type": "STRING", "description": "The user ID or username to add to the group"},
                     },
                     "required": ["user_id"],
                 },
@@ -114,7 +114,7 @@ class DiscordActionsTool:
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "user_id": {"type": "STRING", "description": "The user ID to remove from the group"},
+                        "user_id": {"type": "STRING", "description": "The user ID or username to remove from the group"},
                     },
                     "required": ["user_id"],
                 },
@@ -300,6 +300,27 @@ class DiscordActionsTool:
         asyncio.create_task(_unmute())
         return {"result": "ok", "muted": True, "channel_id": channel_id, "duration_minutes": duration}
 
+    async def _resolve_user(self, identifier):
+        """Resolve a user by ID or username. Returns (user, error_msg)."""
+        client = self.handler._discord_client
+        identifier = identifier.strip()
+
+        # Try as user ID
+        try:
+            uid = int(identifier)
+            user = await client.fetch_user(uid)
+            return user, None
+        except (ValueError, Exception):
+            pass
+
+        # Try as username across guilds
+        for guild in client.guilds:
+            for member in guild.members:
+                if member.name == identifier or (member.display_name and member.display_name.lower() == identifier.lower()):
+                    return member, None
+
+        return None, f"Could not find user: {identifier}"
+
     async def _create_group_chat(self, args):
         import discord
         client = self.handler._discord_client
@@ -307,17 +328,16 @@ class DiscordActionsTool:
             return {"result": "error", "message": "Discord client not connected"}
 
         raw_ids = args.get("user_ids", "")
-        user_ids = [uid.strip() for uid in raw_ids.split(",") if uid.strip()]
-        if not user_ids:
-            return {"result": "error", "message": "No user IDs provided"}
+        identifiers = [uid.strip() for uid in raw_ids.split(",") if uid.strip()]
+        if not identifiers:
+            return {"result": "error", "message": "No users provided"}
 
         users = []
-        for uid in user_ids:
-            try:
-                user = await client.fetch_user(int(uid))
-                users.append(user)
-            except Exception as e:
-                return {"result": "error", "message": f"Could not find user {uid}: {e}"}
+        for ident in identifiers:
+            user, err = await self._resolve_user(ident)
+            if err:
+                return {"result": "error", "message": err}
+            users.append(user)
 
         try:
             group = await client.create_group(*users)
@@ -331,13 +351,15 @@ class DiscordActionsTool:
         if not channel or not isinstance(channel, discord.GroupChannel):
             return {"result": "error", "message": "Current channel is not a group DM"}
 
-        client = self.handler._discord_client
-        uid = args.get("user_id", "").strip()
-        if not uid:
-            return {"result": "error", "message": "No user ID provided"}
+        ident = args.get("user_id", "").strip()
+        if not ident:
+            return {"result": "error", "message": "No user provided"}
+
+        user, err = await self._resolve_user(ident)
+        if err:
+            return {"result": "error", "message": err}
 
         try:
-            user = await client.fetch_user(int(uid))
             await channel.add_recipients(user)
             return {"result": "ok", "added": user.name, "group_id": str(channel.id)}
         except Exception as e:
@@ -349,12 +371,15 @@ class DiscordActionsTool:
         if not channel or not isinstance(channel, discord.GroupChannel):
             return {"result": "error", "message": "Current channel is not a group DM"}
 
-        uid = args.get("user_id", "").strip()
-        if not uid:
-            return {"result": "error", "message": "No user ID provided"}
+        ident = args.get("user_id", "").strip()
+        if not ident:
+            return {"result": "error", "message": "No user provided"}
+
+        user, err = await self._resolve_user(ident)
+        if err:
+            return {"result": "error", "message": err}
 
         try:
-            user = await self.handler._discord_client.fetch_user(int(uid))
             await channel.remove_recipients(user)
             return {"result": "ok", "removed": user.name, "group_id": str(channel.id)}
         except Exception as e:
