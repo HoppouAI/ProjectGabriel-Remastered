@@ -468,11 +468,12 @@ class DiscordBot:
 
         channel_info = ""
         if isinstance(last_message.channel, discord.DMChannel):
-            channel_info = f"(DM)"
+            recipient = last_message.channel.recipient
+            channel_info = f"DM with {recipient.display_name or recipient.name}" if recipient else "DM"
         elif isinstance(last_message.channel, discord.GroupChannel):
-            channel_info = f"(Group DM: {last_message.channel.name or 'unnamed'})"
+            channel_info = f"Group DM: {last_message.channel.name or 'unnamed'}"
         elif hasattr(last_message.channel, "name") and last_message.guild:
-            channel_info = f"(#{last_message.channel.name} in {last_message.guild.name})"
+            channel_info = f"#{last_message.channel.name} in {last_message.guild.name}"
 
         for entry in batch:
             msg = entry["message"]
@@ -491,8 +492,9 @@ class DiscordBot:
             )
 
         prompt_parts = []
+        prompt_parts.append(f"[CHANNEL: {channel_info}]")
         if context:
-            prompt_parts.append(f"Recent conversation history {channel_info}:\n{context}\n")
+            prompt_parts.append(f"Recent conversation history in this channel:\n{context}\n")
         prompt_parts.extend(message_lines)
         full_prompt = "\n".join(prompt_parts)
 
