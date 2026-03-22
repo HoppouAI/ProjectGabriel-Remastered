@@ -350,7 +350,7 @@ class DiscordActionsTool:
         return {"result": "ok", "muted": True, "channel_id": channel_id, "duration_minutes": duration}
 
     async def _resolve_user(self, identifier):
-        """Resolve a user by ID or username. Returns (user, error_msg)."""
+        """Resolve a user by ID, username, or partial match. Returns (user, error_msg)."""
         client = self.handler._discord_client
         identifier = identifier.strip()
 
@@ -362,13 +362,36 @@ class DiscordActionsTool:
         except (ValueError, Exception):
             pass
 
-        # Try as username across guilds
+        lower = identifier.lower()
+
+        # Exact match first
         for guild in client.guilds:
             for member in guild.members:
-                if member.name == identifier or (member.display_name and member.display_name.lower() == identifier.lower()):
+                if member.name.lower() == lower or (member.display_name and member.display_name.lower() == lower):
                     return member, None
 
-        return None, f"Could not find user: {identifier}"
+        # Partial/contains match
+        for guild in client.guilds:
+            for member in guild.members:
+                if lower in member.name.lower() or (member.display_name and lower in member.display_name.lower()):
+                    return member, None
+
+        # Also check DM channels and friends
+        for channel in client.private_channels:
+            if hasattr(channel, "recipients"):
+                for user in channel.recipients:
+                    if user.name.lower() == lower or lower in user.name.lower():
+                        return user, None
+                    if user.display_name and (user.display_name.lower() == lower or lower in user.display_name.lower()):
+                        return user, None
+            elif hasattr(channel, "recipient") and channel.recipient:
+                user = channel.recipient
+                if user.name.lower() == lower or lower in user.name.lower():
+                    return user, None
+                if user.display_name and (user.display_name.lower() == lower or lower in user.display_name.lower()):
+                    return user, None
+
+        return None, f"Could not find user: {identifier}. Use getChannelMembers to find exact user IDs."
 
     async def _create_group_chat(self, args):
         import discord
