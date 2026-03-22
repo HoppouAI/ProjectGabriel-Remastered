@@ -216,7 +216,7 @@ class DiscordBot:
                 if now - last < self.config.response_cooldown:
                     return
 
-            # Collect images from this message
+            # Collect first image from this message (Live API supports 1 image per turn)
             images = []
             attachment_info = []
             for att in message.attachments:
@@ -225,6 +225,7 @@ class DiscordBot:
                         img_data = await att.read()
                         images.append((img_data, att.content_type))
                         attachment_info.append({"filename": att.filename, "type": att.content_type})
+                        break  # Only take the first image
                     except Exception as e:
                         logger.warning(f"Failed to read attachment {att.filename}: {e}")
 
@@ -480,7 +481,8 @@ class DiscordBot:
             user_display = msg.author.display_name or msg.author.name
             image_note = ""
             if entry["images"]:
-                all_images.extend(entry["images"])
+                if not all_images:  # Only take one image total
+                    all_images.extend(entry["images"])
                 image_note = f" [attached {len(entry['images'])} image(s)]"
             message_lines.append(f"{user_display} (ID:{msg.author.id}): {msg.content}{image_note}")
 
