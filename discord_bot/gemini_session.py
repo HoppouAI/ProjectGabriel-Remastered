@@ -184,6 +184,13 @@ class GeminiTextSession:
         if not self._session:
             raise RuntimeError("Not connected to Gemini Live")
 
+        # Drain stale responses from previous timeouts/cancellations
+        while not self._response_queue.empty():
+            try:
+                self._response_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
         parts = []
         if images:
             img_data, mime_type = images[0]
@@ -214,6 +221,13 @@ class GeminiTextSession:
         await self._connected.wait()
         if not self._session:
             raise RuntimeError("Not connected to Gemini Live")
+
+        # Drain stale responses from previous timeouts/cancellations
+        while not self._response_queue.empty():
+            try:
+                self._response_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
 
         # Send conversation history as structured turns
         if context_turns:
