@@ -7,6 +7,7 @@ from google.genai import types
 logger = logging.getLogger(__name__)
 
 MUTES_FILE = Path(__file__).parent.parent / "data" / "mutes.json"
+USER_CACHE_FILE = Path(__file__).parent.parent / "data" / "user_cache.json"
 
 
 class DiscordActionsTool:
@@ -14,6 +15,30 @@ class DiscordActionsTool:
 
     def __init__(self, handler):
         self.handler = handler
+        self._user_cache = self._load_user_cache()
+
+    @staticmethod
+    def _load_user_cache():
+        """Load cached user ID -> name mappings from disk."""
+        if USER_CACHE_FILE.exists():
+            try:
+                return json.loads(USER_CACHE_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    def _save_user_cache(self):
+        USER_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        USER_CACHE_FILE.write_text(json.dumps(self._user_cache, indent=2), encoding="utf-8")
+
+    def _cache_user(self, user):
+        """Cache a resolved user's ID and names."""
+        uid = str(user.id)
+        self._user_cache[uid] = {
+            "name": user.name,
+            "display_name": getattr(user, "display_name", None) or user.name,
+        }
+        self._save_user_cache()
 
     def declarations(self):
         return [
@@ -358,22 +383,37 @@ class DiscordActionsTool:
         try:
             uid = int(identifier)
             user = await client.fetch_user(uid)
+            self._cache_user(user)
             return user, None
         except (ValueError, Exception):
             pass
 
         lower = identifier.lower()
 
+        # Check persistent cache for name matches
+        for uid, info in self._user_cache.items():
+            cached_name = info.get("name", "").lower()
+            cached_display = info.get("display_name", "").lower()
+            if lower == cached_name or lower == cached_display or lower in cached_name or lower in cached_display:
+                try:
+                    user = await client.fetch_user(int(uid))
+                    self._cache_user(user)
+                    return user, None
+                except Exception:
+                    pass
+
         # Exact match first
         for guild in client.guilds:
             for member in guild.members:
                 if member.name.lower() == lower or (member.display_name and member.display_name.lower() == lower):
+                    self._cache_user(member)
                     return member, None
 
         # Partial/contains match
         for guild in client.guilds:
             for member in guild.members:
                 if lower in member.name.lower() or (member.display_name and lower in member.display_name.lower()):
+                    self._cache_user(member)
                     return member, None
 
         # Also check DM channels and friends
@@ -381,14 +421,18 @@ class DiscordActionsTool:
             if hasattr(channel, "recipients"):
                 for user in channel.recipients:
                     if user.name.lower() == lower or lower in user.name.lower():
+                        self._cache_user(user)
                         return user, None
                     if user.display_name and (user.display_name.lower() == lower or lower in user.display_name.lower()):
+                        self._cache_user(user)
                         return user, None
             elif hasattr(channel, "recipient") and channel.recipient:
                 user = channel.recipient
                 if user.name.lower() == lower or lower in user.name.lower():
+                    self._cache_user(user)
                     return user, None
                 if user.display_name and (user.display_name.lower() == lower or lower in user.display_name.lower()):
+                    self._cache_user(user)
                     return user, None
 
         # Query guild member lists via API (handles uncached members)
@@ -396,6 +440,7 @@ class DiscordActionsTool:
             try:
                 results = await guild.query_members(query=identifier, limit=5)
                 if results:
+                    self._cache_user(results[0])
                     return results[0], None
             except Exception:
                 pass
