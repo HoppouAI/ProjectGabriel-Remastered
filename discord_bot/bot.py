@@ -415,6 +415,8 @@ class DiscordBot:
             if self._gemini:
                 await message.channel.send("Reconnecting Gemini session...")
                 await self._gemini.disconnect()
+                self._gemini._closing = False
+                asyncio.create_task(self._gemini.run_forever())
             return True
 
         elif cmd == "personality":
