@@ -14,8 +14,11 @@ MUSIC_FADEOUT_END = 10.0   # AI voice completely muted after this many seconds
 
 
 class _PitchShifter:
-    """Pedalboard-based streaming pitch shifter using Spotify's high-quality
-    time-stretch algorithm for smooth, artifact-free voice pitch shifting."""
+    """Pedalboard-based streaming pitch shifter. Batches small chunks into
+    larger blocks for stable Rubber Band processing, with silence warmup
+    to keep the output buffer always filled."""
+    _BLOCK = 4096
+    _MAX_BUF = 20480
 
     def __init__(self, sample_rate=24000):
         from pedalboard import Pedalboard, PitchShift
@@ -23,13 +26,30 @@ class _PitchShifter:
         self._semitones = 0.0
         self._shift = PitchShift(semitones=0.0)
         self._board = Pedalboard([self._shift])
-        self._out_buf = np.zeros(0, dtype=np.float32)
+        self._in_pending: list[np.ndarray] = []
+        self._in_len = 0
+        self._out_parts: list[np.ndarray] = []
+        self._out_ready = 0
+        self._warmup()
+
+    def _warmup(self):
+        for _ in range(4):
+            silence = np.zeros((1, self._BLOCK), dtype=np.float32)
+            result = self._board(silence, self.sample_rate)
+            out = result[0] * 32767.0
+            if len(out) > 0:
+                self._out_parts.append(out)
+                self._out_ready += len(out)
 
     def reset(self):
         from pedalboard import Pedalboard, PitchShift
         self._shift = PitchShift(semitones=self._semitones)
         self._board = Pedalboard([self._shift])
-        self._out_buf = np.zeros(0, dtype=np.float32)
+        self._in_pending.clear()
+        self._in_len = 0
+        self._out_parts.clear()
+        self._out_ready = 0
+        self._warmup()
 
     def process(self, chunk: np.ndarray, semitones: float) -> np.ndarray:
         if semitones != self._semitones:
@@ -37,15 +57,38 @@ class _PitchShifter:
             self._shift.semitones = semitones
         n = len(chunk)
         audio = chunk.astype(np.float32) / 32767.0
-        audio_2d = audio.reshape(1, -1)
-        result = self._board(audio_2d, self.sample_rate)
-        processed = result[0] * 32767.0
-        self._out_buf = np.append(self._out_buf, processed)
-        if len(self._out_buf) >= n:
-            out = self._out_buf[:n].copy()
-            self._out_buf = self._out_buf[n:]
+        self._in_pending.append(audio)
+        self._in_len += len(audio)
+        if self._in_len >= self._BLOCK:
+            block = np.concatenate(self._in_pending)
+            self._in_pending.clear()
+            self._in_len = 0
+            result = self._board(block.reshape(1, -1), self.sample_rate)
+            processed = result[0] * 32767.0
+            self._out_parts.append(processed)
+            self._out_ready += len(processed)
+        if self._out_ready >= n:
+            combined = np.concatenate(self._out_parts)
+            drain = n
+            if len(combined) > self._MAX_BUF:
+                extra = len(combined) - self._MAX_BUF
+                drain = n + extra
+                if drain > len(combined):
+                    drain = len(combined)
+            out = combined[:drain]
+            if drain != n:
+                x_old = np.linspace(0, 1, drain)
+                x_new = np.linspace(0, 1, n)
+                out = np.interp(x_new, x_old, out)
+            leftover = combined[drain:]
+            if len(leftover) > 0:
+                self._out_parts = [leftover]
+                self._out_ready = len(leftover)
+            else:
+                self._out_parts.clear()
+                self._out_ready = 0
             return out
-        return chunk
+        return np.zeros(n, dtype=np.float32)
 
 
 class AudioManager:
