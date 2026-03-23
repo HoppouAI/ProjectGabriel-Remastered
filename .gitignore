@@ -223,3 +223,4 @@ config/voices.yml
 /voices
 /dev
 discord_bot/data/user_cache.json
+discord_bot/data/mutes.json
