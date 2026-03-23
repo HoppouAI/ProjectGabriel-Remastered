@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 import random
+import re
 import time
 from datetime import datetime
 
@@ -644,6 +645,8 @@ class DiscordBot:
                     await last_message.channel.send("-# no response...")
                     return
 
+                # Strip channel tag the model may echo back
+                response = re.sub(r'^\[CHANNEL:[^\]]*\]\s*', '', response)
                 # Strip mass pings
                 response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
 
@@ -727,6 +730,7 @@ class DiscordBot:
                 )
 
             if response and not response.startswith("[Error:"):
+                response = re.sub(r'^\[CHANNEL:[^\]]*\]\s*', '', response)
                 response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
                 await bot_message.reply(response, mention_author=False)
                 self._conversations.add_message(channel_id, "assistant", response)
