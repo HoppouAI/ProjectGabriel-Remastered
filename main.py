@@ -120,6 +120,7 @@ async def main():
     instance_monitor = InstanceMonitor()
     instance_monitor.start()
     session.tool_handler.instance_monitor = instance_monitor
+    shared_state["instance_monitor"] = instance_monitor
 
     # VRChat API for avatar switching (background login)
     vrchat_api = None
@@ -179,7 +180,8 @@ async def main():
 
         try:
             bot_config = BotConfig()
-            discord_bot = DiscordBot(config=bot_config, relay_callback=_relay_to_main)
+            discord_bot = DiscordBot(config=bot_config, relay_callback=_relay_to_main,
+                                     instance_monitor=instance_monitor)
             session.tool_handler.discord_bot = discord_bot
             asyncio.create_task(discord_bot.start())
             logger.info("Discord selfbot starting...")

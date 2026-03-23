@@ -180,6 +180,18 @@ def get_full_state() -> dict:
     cfg = shared_state.get("config")
     app_name = cfg.app_name if cfg else "Gabriel"
 
+    vrchat_info = None
+    im = shared_state.get("instance_monitor")
+    if im:
+        location = im.current_location
+        players = im.get_players()
+        vrchat_info = {
+            "is_in_world": bool(location),
+            "location": location or None,
+            "player_count": len(players),
+            "players": [p.get("name", "Unknown") for p in players],
+        }
+
     return {
         "app_name": app_name,
         "is_connected": is_connected,
@@ -191,6 +203,7 @@ def get_full_state() -> dict:
         "current_personality": current_personality,
         "music_progress": music_progress,
         "recent_memories": recent_memories,
+        "vrchat": vrchat_info,
     }
 
 
