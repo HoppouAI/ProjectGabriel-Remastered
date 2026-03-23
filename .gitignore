@@ -222,3 +222,4 @@ config/voices.yml
 /sfx/music/srt
 /voices
 /dev
+discord_bot/data/user_cache.json
