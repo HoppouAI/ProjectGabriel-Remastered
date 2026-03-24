@@ -120,7 +120,6 @@ async def main():
     instance_monitor = InstanceMonitor()
     instance_monitor.start()
     session.tool_handler.instance_monitor = instance_monitor
-    shared_state["instance_monitor"] = instance_monitor
 
     # VRChat API for avatar switching (background login)
     vrchat_api = None
@@ -166,6 +165,11 @@ async def main():
     # Start control panel as async task in same event loop
     control_server = setup_control_server(session, audio, personality, memory_system, get_emotion_system, config)
     if control_server:
+        try:
+            from control_server import shared_state
+            shared_state["instance_monitor"] = instance_monitor
+        except ImportError:
+            pass
         asyncio.create_task(control_server.serve())
 
     # Discord selfbot (optional)
