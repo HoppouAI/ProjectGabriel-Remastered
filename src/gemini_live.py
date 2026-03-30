@@ -151,6 +151,7 @@ class GeminiLiveSession:
         self._session_handle_created = None
         self._handle_fail_count = 0
         self._resumption_fail_streak = 0  # Consecutive session resumption failures across fresh sessions
+        self._connection_start_time = 0  # When the current session connected
         self._rate_limit_backoff = 0
         self._tool_call_pending = False
         self._out_queue = asyncio.Queue(maxsize=5)
@@ -427,7 +428,7 @@ class GeminiLiveSession:
                         self.config.build_system_instruction(self.personality)
                     )
                     self._session = session
-                    self._handle_fail_count = 0
+                    self._connection_start_time = time.time()
                     self._rate_limit_backoff = 0
                     self._last_interaction_time = time.time()
                     self._idle_engagement_sent = False
@@ -521,11 +522,21 @@ class GeminiLiveSession:
                     logger.warning(f"WebSocket close ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
                     self._notify_chatbox_error()
+                    # Check if session crashed quickly (within 15s) - likely handle issue
+                    session_was_short = self._connection_start_time > 0 and (time.time() - self._connection_start_time) < 15
                     # 1007 (invalid argument) - clear handle immediately, it's been rejected
                     if "1007" in err_str and self._session_handle:
                         logger.warning("1007 invalid argument - clearing session handle immediately")
                         self._resumption_fail_streak += 1
                         self._clear_session_handle()
+                    # 1011 (internal error) with short session - handle likely corrupted
+                    elif "1011" in err_str and self._session_handle and session_was_short:
+                        self._handle_fail_count += 1
+                        logger.warning(f"1011 internal error after short session (attempt {self._handle_fail_count}/2)")
+                        if self._handle_fail_count >= 2:
+                            logger.warning("Clearing session handle - repeated quick crashes")
+                            self._resumption_fail_streak += 1
+                            self._clear_session_handle()
                     elif "1008" in err_str and self._session_handle:
                         self._handle_fail_count += 1
                         if self._handle_fail_count >= 2:
@@ -562,11 +573,21 @@ class GeminiLiveSession:
                 logger.warning(f"WebSocket closed (code={code}, reason={reason[:80]}), reconnecting...")
                 _broadcast_console("error", f"WebSocket closed: {code} {reason[:60]}")
                 self._notify_chatbox_error()
+                # Check if session crashed quickly (within 15s) - likely handle issue
+                session_was_short = self._connection_start_time > 0 and (time.time() - self._connection_start_time) < 15
                 # 1007 (invalid argument) - clear handle immediately
                 if code == 1007 and self._session_handle:
                     logger.warning("1007 invalid argument - clearing session handle immediately")
                     self._resumption_fail_streak += 1
                     self._clear_session_handle()
+                # 1011 (internal error) with short session - handle likely corrupted
+                elif code == 1011 and self._session_handle and session_was_short:
+                    self._handle_fail_count += 1
+                    logger.warning(f"1011 internal error after short session (attempt {self._handle_fail_count}/2)")
+                    if self._handle_fail_count >= 2:
+                        logger.warning("Clearing session handle - repeated quick crashes")
+                        self._resumption_fail_streak += 1
+                        self._clear_session_handle()
                 elif code == 1008 and self._session_handle:
                     self._handle_fail_count += 1
                     if self._handle_fail_count >= 2:
