@@ -524,11 +524,16 @@ class GeminiLiveSession:
                     self._notify_chatbox_error()
                     # Check if session crashed quickly (within 15s) - likely handle issue
                     session_was_short = self._connection_start_time > 0 and (time.time() - self._connection_start_time) < 15
-                    # 1007 (invalid argument) - clear handle immediately, it's been rejected
+                    # 1007 (invalid argument) - retry with handle, only clear after 3 failures
                     if "1007" in err_str and self._session_handle:
-                        logger.warning("1007 invalid argument - clearing session handle immediately")
-                        self._resumption_fail_streak += 1
-                        self._clear_session_handle()
+                        self._handle_fail_count += 1
+                        logger.warning(f"1007 invalid argument (attempt {self._handle_fail_count}/3, keeping handle)")
+                        if self._handle_fail_count >= 3:
+                            logger.warning("Clearing session handle after 3 consecutive 1007 errors")
+                            self._resumption_fail_streak += 1
+                            self._clear_session_handle()
+                        await asyncio.sleep(3)
+                        continue
                     # 1011 (internal error) with short session - handle likely corrupted
                     elif "1011" in err_str and self._session_handle and session_was_short:
                         self._handle_fail_count += 1
@@ -575,11 +580,16 @@ class GeminiLiveSession:
                 self._notify_chatbox_error()
                 # Check if session crashed quickly (within 15s) - likely handle issue
                 session_was_short = self._connection_start_time > 0 and (time.time() - self._connection_start_time) < 15
-                # 1007 (invalid argument) - clear handle immediately
+                # 1007 (invalid argument) - retry with handle, only clear after 3 failures
                 if code == 1007 and self._session_handle:
-                    logger.warning("1007 invalid argument - clearing session handle immediately")
-                    self._resumption_fail_streak += 1
-                    self._clear_session_handle()
+                    self._handle_fail_count += 1
+                    logger.warning(f"1007 invalid argument (attempt {self._handle_fail_count}/3, keeping handle)")
+                    if self._handle_fail_count >= 3:
+                        logger.warning("Clearing session handle after 3 consecutive 1007 errors")
+                        self._resumption_fail_streak += 1
+                        self._clear_session_handle()
+                    await asyncio.sleep(3)
+                    continue
                 # 1011 (internal error) with short session - handle likely corrupted
                 elif code == 1011 and self._session_handle and session_was_short:
                     self._handle_fail_count += 1
