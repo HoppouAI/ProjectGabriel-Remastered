@@ -29,7 +29,8 @@ def get_tool_declarations(config=None):
                 parameters=decl["parameters"],
             ))
 
-    return [
-        types.Tool(google_search=types.GoogleSearch()),
-        types.Tool(function_declarations=function_decls),
-    ]
+    tools = []
+    if config and config.google_search_enabled:
+        tools.append(types.Tool(google_search=types.GoogleSearch()))
+    tools.append(types.Tool(function_declarations=function_decls))
+    return tools

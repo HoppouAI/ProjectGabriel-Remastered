@@ -18,6 +18,9 @@ gemini:
   #  - "BACKUP_KEY_3"
 
   # Gemini Live model - must support native audio
+  # Options: "gemini-3.1-flash-live-preview" (latest, lower latency)
+  #          "gemini-2.5-flash-native-audio-preview-09-2025" (legacy)
+  #          "gemini-2.5-flash-native-audio-preview-12-2025" (legacy)
   model: "gemini-2.5-flash-native-audio-preview-09-2025"
 
   # System prompt -- select a named prompt from config/prompts/prompts.yml
@@ -58,18 +61,30 @@ gemini:
   # Requires a model that supports thinking (e.g. gemini-2.5-flash-native-audio-preview-12-2025).
   # Dynamic thinking is enabled by default on supported models.
   thinking:
-    # Thinking token budget - guides how many tokens the model uses to think.
+    # For 2.5 models: thinking token budget - guides how many tokens the model uses to think.
     # Higher = more thorough but slower responses. Set to 0 to disable thinking.
     # null = use model default (dynamic thinking)
     budget: null
+
+    # For 3.1 models: thinking level controls thinking depth.
+    # Options: "minimal" (lowest latency), "low", "medium", "high"
+    # Default is "minimal" for 3.1 models. Ignored for 2.5 models.
+    # level: "low"
 
     # Whether to include thought summaries in server responses.
     # Useful for debugging what the model is reasoning about.
     include_thoughts: false
 
-  # ── Advanced Live Features (require v1alpha API, auto-fallback if unsupported) ──
+  # ── Advanced Live Features (require v1alpha API, 2.5 models only, auto-fallback if unsupported) ──
+  # These are NOT supported on 3.1 models and will be automatically skipped.
   # enable_affective_dialog: true   # Emotional/expressive responses
   # proactivity: null                # Model proactivity level (float), null = default
+
+  # ── Google Search Grounding ──
+  # Enable Google Search tool for the model to look up current information.
+  # Auto-detection: if not set, enabled for 2.5 models, disabled for 3.1 (quota issues).
+  # Set explicitly to override: true = always on, false = always off.
+  # google_search: true
 
   # ── Context Window Compression ──
   # Prevents session termination when context gets too large.
