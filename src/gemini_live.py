@@ -168,6 +168,8 @@ class GeminiLiveSession:
         self._idle_engagement_sent = False  # Only send one engagement prompt per idle period
         self._pending_finalize_task = None
         self._wanderer = None  # Set externally from main.py
+        self._save_audio = False  # Set externally via --save-audio flag
+        self._audio_recording = bytearray()  # Accumulated audio for WAV export
         self._usage_metadata = {
             "prompt_tokens": 0,
             "response_tokens": 0,
@@ -203,6 +205,26 @@ class GeminiLiveSession:
         if self._chatbox_error_shown and self.osc:
             self._chatbox_error_shown = False
             self.osc.send_chatbox("Resolved, ready to chat!")
+
+    def save_audio_to_wav(self):
+        """Save accumulated audio recording to a WAV file."""
+        if not self._audio_recording:
+            logger.info("No audio recorded, skipping WAV save")
+            return
+        import wave
+        from datetime import datetime
+        data_dir = Path("data")
+        data_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        wav_path = data_dir / f"gemini_output_{timestamp}.wav"
+        sample_rate = self.config.receive_sample_rate
+        with wave.open(str(wav_path), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # 16-bit
+            wf.setframerate(sample_rate)
+            wf.writeframes(bytes(self._audio_recording))
+        duration = len(self._audio_recording) / (sample_rate * 2)
+        logger.info(f"Saved {duration:.1f}s of audio to {wav_path}")
 
     def set_mic_muted(self, muted: bool):
         """Set mic mute state."""
@@ -875,6 +897,8 @@ class GeminiLiveSession:
                     return
                 audio_data = self.audio.process_output_audio(audio_data)
                 if audio_data:
+                    if self._save_audio:
+                        self._audio_recording.extend(audio_data)
                     await asyncio.to_thread(output_stream.write, audio_data)
             except asyncio.CancelledError:
                 return
