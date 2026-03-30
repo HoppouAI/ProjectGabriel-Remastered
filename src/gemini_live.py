@@ -150,6 +150,7 @@ class GeminiLiveSession:
         self._session_handle = None
         self._session_handle_created = None
         self._handle_fail_count = 0
+        self._resumption_fail_streak = 0  # Consecutive session resumption failures across fresh sessions
         self._rate_limit_backoff = 0
         self._tool_call_pending = False
         self._out_queue = asyncio.Queue(maxsize=5)
@@ -294,7 +295,11 @@ class GeminiLiveSession:
             ) if self._session_handle else types.SessionResumptionConfig(),
         )
 
-        if self._session_handle:
+        # Skip session resumption if it keeps failing
+        if self._resumption_fail_streak >= 3:
+            config_kwargs["session_resumption"] = types.SessionResumptionConfig()
+            logger.warning(f"Session resumption disabled (failed {self._resumption_fail_streak} times in a row)")
+        elif self._session_handle:
             logger.debug(f"Config includes session handle: {self._session_handle[:24]}...")
         else:
             logger.debug("Config requesting new session handle (no existing handle)")
@@ -322,6 +327,9 @@ class GeminiLiveSession:
             if self.config.compression_trigger_tokens is not None:
                 cw_kwargs["trigger_tokens"] = self.config.compression_trigger_tokens
             config_kwargs["context_window_compression"] = types.ContextWindowCompressionConfig(**cw_kwargs)
+            trigger = self.config.compression_trigger_tokens or "default"
+            target = self.config.compression_target_tokens or "default"
+            logger.info(f"Context compression enabled (trigger={trigger}, target={target})")
 
         # Thinking configuration
         thinking_budget = self.config.thinking_budget
@@ -357,9 +365,10 @@ class GeminiLiveSession:
         self._session_handle = handle
         self._session_handle_created = datetime.now()
         self._handle_fail_count = 0
+        self._resumption_fail_streak = 0
         data = {"handle": handle, "created": self._session_handle_created.isoformat()}
         SESSION_HANDLE_FILE.write_text(json.dumps(data), encoding="utf-8")
-        logger.info("Saved new session handle")
+        logger.debug("Saved new session handle")
 
     def _clear_session_handle(self):
         self._session_handle = None
@@ -398,6 +407,8 @@ class GeminiLiveSession:
                     live_config = self._build_config(skip_alpha_features=self._alpha_fallback_failed)
                 if self._session_handle:
                     logger.info(f"Connecting to Gemini Live with session resumption...")
+                elif self._resumption_fail_streak >= 3:
+                    logger.info(f"Connecting to Gemini Live ({self.config.model}) [resumption disabled after {self._resumption_fail_streak} failures]...")
                 else:
                     logger.info(f"Connecting to Gemini Live ({self.config.model})...")
 
@@ -408,6 +419,9 @@ class GeminiLiveSession:
                     logger.info("Connected to Gemini Live")
                     _broadcast_console("info", f"Connected to Gemini Live ({self.config.model})")
                     self._notify_chatbox_resolved()
+                    # Reset resumption fail streak on successful connection
+                    if self._resumption_fail_streak > 0 and self._resumption_fail_streak < 3:
+                        self._resumption_fail_streak = 0
                     self._conv_logger = ConversationLogger()
                     self._conv_logger.set_system_instruction(
                         self.config.build_system_instruction(self.personality)
@@ -507,13 +521,16 @@ class GeminiLiveSession:
                     logger.warning(f"WebSocket close ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
                     self._notify_chatbox_error()
-                    # 1007 (invalid argument) and 1008 (policy violation) - clear handle after 2 hits
-                    if "1007" in err_str or "1008" in err_str:
+                    # 1007 (invalid argument) - clear handle immediately, it's been rejected
+                    if "1007" in err_str and self._session_handle:
+                        logger.warning("1007 invalid argument - clearing session handle immediately")
+                        self._resumption_fail_streak += 1
+                        self._clear_session_handle()
+                    elif "1008" in err_str and self._session_handle:
                         self._handle_fail_count += 1
-                        has_handle = "with handle" if self._session_handle else "no handle"
-                        logger.warning(f"1007/1008 error ({has_handle}, attempt {self._handle_fail_count}/2)")
-                        if self._handle_fail_count >= 2 and self._session_handle:
-                            logger.warning("Clearing session handle after 2 consecutive 1007/1008 errors")
+                        if self._handle_fail_count >= 2:
+                            logger.warning("Clearing session handle after 2 consecutive 1008 errors")
+                            self._resumption_fail_streak += 1
                             self._clear_session_handle()
                     elif self._session_handle:
                         self._handle_fail_count += 1
@@ -545,13 +562,16 @@ class GeminiLiveSession:
                 logger.warning(f"WebSocket closed (code={code}, reason={reason[:80]}), reconnecting...")
                 _broadcast_console("error", f"WebSocket closed: {code} {reason[:60]}")
                 self._notify_chatbox_error()
-                # 1007/1008 - clear handle after 2 consecutive failures
-                if code in (1007, 1008):
+                # 1007 (invalid argument) - clear handle immediately
+                if code == 1007 and self._session_handle:
+                    logger.warning("1007 invalid argument - clearing session handle immediately")
+                    self._resumption_fail_streak += 1
+                    self._clear_session_handle()
+                elif code == 1008 and self._session_handle:
                     self._handle_fail_count += 1
-                    has_handle = "with handle" if self._session_handle else "no handle"
-                    logger.warning(f"1007/1008 error ({has_handle}, attempt {self._handle_fail_count}/2)")
-                    if self._handle_fail_count >= 2 and self._session_handle:
-                        logger.warning("Clearing session handle after 2 consecutive 1007/1008 errors")
+                    if self._handle_fail_count >= 2:
+                        logger.warning("Clearing session handle after 2 consecutive 1008 errors")
+                        self._resumption_fail_streak += 1
                         self._clear_session_handle()
                 elif self._session_handle:
                     self._handle_fail_count += 1
@@ -994,17 +1014,24 @@ class GeminiLiveSession:
                     # Track usage metadata if available
                     if hasattr(response, "usage_metadata") and response.usage_metadata:
                         um = response.usage_metadata
-                        if hasattr(um, "prompt_token_count"):
+                        prev_prompt = self._usage_metadata.get("prompt_tokens", 0)
+                        if hasattr(um, "prompt_token_count") and um.prompt_token_count:
                             self._usage_metadata["prompt_tokens"] = um.prompt_token_count
-                        if hasattr(um, "response_token_count"):
+                            # Detect context compression (prompt tokens decreased significantly)
+                            if prev_prompt > 0 and um.prompt_token_count < prev_prompt * 0.8:
+                                logger.info(f"Context compressed: {prev_prompt} -> {um.prompt_token_count} prompt tokens")
+                                _broadcast_console("info", f"Context compressed: {prev_prompt} -> {um.prompt_token_count} tokens")
+                        if hasattr(um, "response_token_count") and um.response_token_count:
                             self._usage_metadata["response_tokens"] = um.response_token_count
-                        if hasattr(um, "total_token_count"):
+                        if hasattr(um, "total_token_count") and um.total_token_count:
                             self._usage_metadata["total_tokens"] = um.total_token_count
 
                     if response.go_away:
                         logger.warning(
                             f"Server disconnecting in {response.go_away.time_left}"
                         )
+                        _broadcast_console("info", f"GoAway received, reconnecting in {response.go_away.time_left}")
+                        self._reconnect_requested = True
 
                     if (
                         hasattr(response, "session_resumption_update")
