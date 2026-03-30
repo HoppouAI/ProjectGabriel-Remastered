@@ -1053,10 +1053,22 @@ class GeminiLiveSession:
                         self._input_transcript_buffer = ""
                         try:
                             responses = []
+                            malformed = False
                             for fc in response.tool_call.function_calls:
                                 logger.info(f"Tool call: {fc.name}")
-                                args_dict = dict(fc.args) if fc.args else {}
-                                args_str = json.dumps(args_dict)
+                                try:
+                                    args_dict = dict(fc.args) if fc.args else {}
+                                    args_str = json.dumps(args_dict)
+                                except (TypeError, ValueError) as e:
+                                    # Malformed function call -- invalid JSON args from model
+                                    logger.warning(f"Malformed tool call args for {fc.name}: {e}")
+                                    _broadcast_console("error", f"Malformed tool call: {fc.name} ({e})")
+                                    malformed = True
+                                    responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name,
+                                        response={"result": "error", "message": "malformed arguments, please retry"},
+                                    ))
+                                    continue
                                 _broadcast_console("tool_call", f"{fc.name}({args_str[:100]})")
                                 self._usage_metadata["tool_calls"] += 1
                                 self._conv_logger.add_tool_call(fc.name, args_dict)
@@ -1067,6 +1079,12 @@ class GeminiLiveSession:
                                 self._conv_logger.add_tool_response(fc.name, result_dict)
                                 responses.append(fr)
                             await session.send_tool_response(function_responses=responses)
+                            # Nudge model to recover after malformed tool call
+                            if malformed:
+                                logger.info("Sending recovery nudge after malformed tool call")
+                                await session.send_realtime_input(
+                                    text="System update - your last tool call had malformed arguments. Please try again."
+                                )
                         finally:
                             self._tool_call_pending = False
 
