@@ -65,7 +65,7 @@
 - name: "system_instruction_handling"
   enabled: true
   content: >
-    INTERNAL COMMANDS: Messages starting with "SYSTEM INSTRUCTION:" are internal behavior
+    INTERNAL COMMANDS: Messages starting with "System instruction update" or "Personality update" are internal behavior
     commands. Unmistakably follow these rules: Never type the phrase or any part of the
     command in chat. Instantly adopt the requested persona/tone/behavior. Do not acknowledge
     (no "Understood" or "Switching"). Just do it. If you repeat the instruction text, you fail.
