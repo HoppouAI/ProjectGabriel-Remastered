@@ -227,6 +227,9 @@ class GeminiLiveSession:
         
         Per Gemini Live best practices: sendClientContent with turnComplete=True
         while the model is speaking will interrupt it mid-speech.
+        
+        For 3.1 models: send_client_content is only for initial history seeding.
+        Mid-session text updates must use send_realtime_input(text=...) instead.
         """
         if not self._session:
             return
@@ -236,10 +239,43 @@ class GeminiLiveSession:
                 break
             await asyncio.sleep(0.1)
         try:
-            await self._session.send_client_content(turns=turns, turn_complete=turn_complete)
+            if self.config.is_31_model:
+                # 3.1 models: extract text from turns and send via realtime input
+                text = self._extract_text_from_turns(turns)
+                if text:
+                    await self._session.send_realtime_input(text=text)
+            else:
+                await self._session.send_client_content(turns=turns, turn_complete=turn_complete)
         except Exception as e:
             logger.error(f"Failed to send client content: {e}")
             raise
+
+    @staticmethod
+    def _extract_text_from_turns(turns):
+        """Extract text content from turns (Content object or dict) for realtime input."""
+        if hasattr(turns, "parts"):
+            # types.Content object
+            for part in turns.parts:
+                if hasattr(part, "text") and part.text:
+                    return part.text
+        elif isinstance(turns, dict):
+            for part in turns.get("parts", []):
+                if isinstance(part, dict) and "text" in part:
+                    return part["text"]
+        elif isinstance(turns, list):
+            # List of turns - combine text from all
+            texts = []
+            for turn in turns:
+                if hasattr(turn, "parts"):
+                    for part in turn.parts:
+                        if hasattr(part, "text") and part.text:
+                            texts.append(part.text)
+                elif isinstance(turn, dict):
+                    for part in turn.get("parts", []):
+                        if isinstance(part, dict) and "text" in part:
+                            texts.append(part["text"])
+            return " ".join(texts) if texts else None
+        return None
 
     def _schedule_user_finalize(self):
         """Schedule delayed finalization of user transcript to catch late events."""
@@ -261,7 +297,9 @@ class GeminiLiveSession:
             self._pending_finalize_task = None
 
     def _needs_alpha_api(self):
-        """Check if any v1alpha-only features are enabled."""
+        """Check if any v1alpha-only features are enabled. 3.1 models don't support v1alpha features."""
+        if self.config.is_31_model:
+            return False
         return (self.config.enable_affective_dialog is not None 
                 or self.config.proactivity is not None)
 
@@ -333,7 +371,7 @@ class GeminiLiveSession:
             config_kwargs["top_k"] = self.config.top_k
         if self.config.max_output_tokens is not None:
             config_kwargs["max_output_tokens"] = self.config.max_output_tokens
-        if not skip_alpha_features:
+        if not skip_alpha_features and not self.config.is_31_model:
             if self.config.enable_affective_dialog is not None:
                 config_kwargs["enable_affective_dialog"] = self.config.enable_affective_dialog
             if self.config.proactivity is not None:
@@ -353,15 +391,28 @@ class GeminiLiveSession:
             logger.info(f"Context compression enabled (trigger={trigger}, target={target})")
 
         # Thinking configuration
-        thinking_budget = self.config.thinking_budget
-        include_thoughts = self.config.thinking_include_thoughts
-        if thinking_budget is not None or include_thoughts:
-            thinking_kwargs = {}
-            if thinking_budget is not None:
-                thinking_kwargs["thinking_budget"] = thinking_budget
-            if include_thoughts:
-                thinking_kwargs["include_thoughts"] = True
-            config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
+        if self.config.is_31_model:
+            # 3.1 models use thinking_level (minimal/low/medium/high) instead of budget
+            thinking_level = self.config.thinking_level
+            include_thoughts = self.config.thinking_include_thoughts
+            if thinking_level is not None or include_thoughts:
+                thinking_kwargs = {}
+                if thinking_level is not None:
+                    thinking_kwargs["thinking_level"] = thinking_level
+                if include_thoughts:
+                    thinking_kwargs["include_thoughts"] = True
+                config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
+        else:
+            # 2.5 models use thinking_budget (token count)
+            thinking_budget = self.config.thinking_budget
+            include_thoughts = self.config.thinking_include_thoughts
+            if thinking_budget is not None or include_thoughts:
+                thinking_kwargs = {}
+                if thinking_budget is not None:
+                    thinking_kwargs["thinking_budget"] = thinking_budget
+                if include_thoughts:
+                    thinking_kwargs["include_thoughts"] = True
+                config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
 
         return types.LiveConnectConfig(**config_kwargs)
 
@@ -426,6 +477,13 @@ class GeminiLiveSession:
                 else:
                     client = genai.Client(api_key=self.config.api_key)
                     live_config = self._build_config(skip_alpha_features=self._alpha_fallback_failed)
+                # Log model family info on first connect
+                if self.config.is_31_model:
+                    logger.info("Using 3.1 model (thinkingLevel, realtime text injection, no affective/proactive)")
+                    if not self.config.google_search_enabled:
+                        logger.info("Google Search auto-disabled for 3.1 model")
+                else:
+                    logger.info("Using 2.5 model (thinkingBudget, send_client_content, v1alpha features available)")
                 if self._session_handle:
                     # If last connect attempt failed before reaching onopen, handle is likely bad
                     if not self._last_connect_succeeded:
@@ -516,6 +574,7 @@ class GeminiLiveSession:
 
                 # Rate limiting - check expired handle first, then rotate key
                 if "429" in err_lower or "quota" in err_lower or "rate" in err_lower:
+                    logger.warning(f"Rate limit error details: {err_str[:200]}")
                     if self._session_handle and self._is_session_handle_expired():
                         logger.warning("Rate limited with expired session handle, clearing handle")
                         _broadcast_console("info", "Expired session handle causing rate limit, clearing")

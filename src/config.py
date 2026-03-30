@@ -167,12 +167,28 @@ class Config:
         return self.get("gemini", "proactivity")
 
     @property
+    def google_search_enabled(self):
+        val = self.get("gemini", "google_search")
+        if val is None:
+            return not self.is_31_model
+        return val
+
+    @property
     def thinking_budget(self):
         return self.get("gemini", "thinking", "budget")
 
     @property
+    def thinking_level(self):
+        return self.get("gemini", "thinking", "level")
+
+    @property
     def thinking_include_thoughts(self):
         return self.get("gemini", "thinking", "include_thoughts", default=False)
+
+    @property
+    def is_31_model(self):
+        """Check if current model is a Gemini 3.1 Live model."""
+        return "3.1" in self.model and "live" in self.model.lower()
 
     @property
     def compression_enabled(self):
