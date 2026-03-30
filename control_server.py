@@ -342,7 +342,7 @@ async def send_system_instruction(data: TextInput):
         await session.send_client_content_safe(
             turns=types.Content(
                 role="user",
-                parts=[types.Part.from_text(text=f"SYSTEM INSTRUCTION: {data.text}")],
+                parts=[types.Part.from_text(text=f"System instruction update - {data.text}")],
             ),
             turn_complete=True,
         )
@@ -362,7 +362,7 @@ async def switch_personality(data: PersonalityInput):
         result = personality_mgr.switch(data.personality)
         if "personality_prompt" in result and session and hasattr(session, "_session") and session._session:
             from google.genai import types
-            prompt_text = f"SYSTEM INSTRUCTION: {result['personality_prompt']}"
+            prompt_text = result["personality_prompt"]
             await session.send_client_content_safe(
                 turns=types.Content(
                     role="user",
