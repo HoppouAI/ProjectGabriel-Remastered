@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import logging
 from src.cli import setup_logging, print_startup_info
@@ -53,7 +54,7 @@ def setup_control_server(session, audio, personality, memory, get_emotion_fn, co
         return None
 
 
-async def main():
+async def main(save_audio=False):
     loop = asyncio.get_running_loop()
     _orig_handler = loop.get_exception_handler()
     def _suppress_proactor_write_assert(loop, context):
@@ -114,6 +115,7 @@ async def main():
         logger.info("Using Chirp 3 HD TTS provider (Gemini audio will be discarded)")
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
+    session._save_audio = save_audio
 
     # Instance monitor for player list (VRChat log parsing)
     from src.instance_monitor import InstanceMonitor
@@ -205,6 +207,8 @@ async def main():
             continue
     
     # Cleanup only happens on KeyboardInterrupt
+    if save_audio:
+        session.save_audio_to_wav()
     if discord_bot:
         await discord_bot.stop()
     if tts_provider:
@@ -220,4 +224,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="ProjectGabriel - VRChat AI")
+    parser.add_argument("--save-audio", action="store_true",
+                        help="Save Gemini voice output to a .wav file on exit")
+    args = parser.parse_args()
+    asyncio.run(main(save_audio=args.save_audio))
