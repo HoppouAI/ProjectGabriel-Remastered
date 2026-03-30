@@ -854,7 +854,7 @@ class GeminiLiveSession:
                     )
                 elif msg_type == "video":
                     await session.send_realtime_input(
-                        media=types.Blob(data=data, mime_type="image/jpeg")
+                        video=types.Blob(data=data, mime_type="image/jpeg")
                     )
             except asyncio.CancelledError:
                 return
