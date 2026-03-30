@@ -297,7 +297,8 @@ class GeminiLiveSession:
             self._pending_finalize_task = None
 
     def _needs_alpha_api(self):
-        """Check if any v1alpha-only features are enabled. 3.1 models don't support v1alpha features."""
+        """Check if any v1alpha-only features are enabled (affective dialog, proactivity).
+        3.1 models don't support these features but still use v1alpha API version."""
         if self.config.is_31_model:
             return False
         return (self.config.enable_affective_dialog is not None 
@@ -467,15 +468,16 @@ class GeminiLiveSession:
                 self._clear_session_handle()
             try:
                 use_alpha = self._needs_alpha_api() and not self._alpha_fallback_failed
+                # Always use v1alpha API version for Live API (required for video, etc.)
+                # The use_alpha flag only controls whether to include alpha-only CONFIG features
+                client = genai.Client(
+                    api_key=self.config.api_key,
+                    http_options={"api_version": "v1alpha"},
+                )
                 if use_alpha:
-                    client = genai.Client(
-                        api_key=self.config.api_key,
-                        http_options={"api_version": "v1alpha"},
-                    )
                     live_config = self._build_config()
-                    logger.info("Using v1alpha API for affective dialog / proactivity")
+                    logger.info("Using v1alpha API with affective dialog / proactivity")
                 else:
-                    client = genai.Client(api_key=self.config.api_key)
                     live_config = self._build_config(skip_alpha_features=self._alpha_fallback_failed)
                 # Log model family info on first connect
                 if self.config.is_31_model:
