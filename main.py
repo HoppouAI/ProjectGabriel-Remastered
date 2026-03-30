@@ -197,7 +197,7 @@ async def main(save_audio=False):
     while True:
         try:
             await session.run()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             logger.info("Shutting down...")
             break
         except Exception as e:
@@ -206,7 +206,7 @@ async def main(save_audio=False):
             await asyncio.sleep(3)
             continue
     
-    # Cleanup only happens on KeyboardInterrupt
+    # Cleanup
     if save_audio:
         session.save_audio_to_wav()
     if discord_bot:
@@ -228,4 +228,7 @@ if __name__ == "__main__":
     parser.add_argument("--save-audio", action="store_true",
                         help="Save Gemini voice output to a .wav file on exit")
     args = parser.parse_args()
-    asyncio.run(main(save_audio=args.save_audio))
+    try:
+        asyncio.run(main(save_audio=args.save_audio))
+    except KeyboardInterrupt:
+        pass
