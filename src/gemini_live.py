@@ -152,6 +152,7 @@ class GeminiLiveSession:
         self._handle_fail_count = 0
         self._resumption_fail_streak = 0  # Consecutive session resumption failures across fresh sessions
         self._connection_start_time = 0  # When the current session connected
+        self._last_connect_succeeded = True  # Track if last connect attempt reached onopen
         self._rate_limit_backoff = 0
         self._tool_call_pending = False
         self._out_queue = asyncio.Queue(maxsize=5)
@@ -220,6 +221,25 @@ class GeminiLiveSession:
                 logger.info(f"Sent text to model: {text[:50]}...")
             except Exception as e:
                 logger.error(f"Failed to send text: {e}")
+
+    async def send_client_content_safe(self, turns, turn_complete=True):
+        """Send client content, waiting until the model stops speaking to avoid interruptions.
+        
+        Per Gemini Live best practices: sendClientContent with turnComplete=True
+        while the model is speaking will interrupt it mid-speech.
+        """
+        if not self._session:
+            return
+        # Wait up to 30s for model to finish speaking
+        for _ in range(300):
+            if not self._speaking:
+                break
+            await asyncio.sleep(0.1)
+        try:
+            await self._session.send_client_content(turns=turns, turn_complete=turn_complete)
+        except Exception as e:
+            logger.error(f"Failed to send client content: {e}")
+            raise
 
     def _schedule_user_finalize(self):
         """Schedule delayed finalization of user transcript to catch late events."""
@@ -407,16 +427,24 @@ class GeminiLiveSession:
                     client = genai.Client(api_key=self.config.api_key)
                     live_config = self._build_config(skip_alpha_features=self._alpha_fallback_failed)
                 if self._session_handle:
-                    logger.info(f"Connecting to Gemini Live with session resumption...")
+                    # If last connect attempt failed before reaching onopen, handle is likely bad
+                    if not self._last_connect_succeeded:
+                        logger.warning("Last connect failed before onopen, clearing stale handle")
+                        self._resumption_fail_streak += 1
+                        self._clear_session_handle()
+                    else:
+                        logger.info(f"Connecting to Gemini Live with session resumption...")
                 elif self._resumption_fail_streak >= 3:
                     logger.info(f"Connecting to Gemini Live ({self.config.model}) [resumption disabled after {self._resumption_fail_streak} failures]...")
                 else:
                     logger.info(f"Connecting to Gemini Live ({self.config.model})...")
 
+                self._last_connect_succeeded = False
                 async with client.aio.live.connect(
                     model=self.config.model,
                     config=live_config,
                 ) as session:
+                    self._last_connect_succeeded = True
                     logger.info("Connected to Gemini Live")
                     _broadcast_console("info", f"Connected to Gemini Live ({self.config.model})")
                     self._notify_chatbox_resolved()
@@ -721,9 +749,9 @@ class GeminiLiveSession:
                 logger.info(f"Idle for {IDLE_ENGAGEMENT_SECONDS}s, sending engagement prompt")
                 _broadcast_console("info", "Sending idle engagement prompt")
                 await self.send_text(
-                    "[System: You have been idle for a while. "
-                    "Try to engage nearby people in conversation - "
-                    "say something interesting, ask a question, or make an observation to get someone to talk to you.]"
+                    "System update - You have been idle for a while. "
+                    "Try to engage nearby people in conversation. "
+                    "Say something interesting, ask a question, or make an observation to get someone to talk to you."
                 )
 
     async def _listen_audio_loop(self, input_stream):
@@ -1058,10 +1086,17 @@ class GeminiLiveSession:
                             self._usage_metadata["total_tokens"] = um.total_token_count
 
                     if response.go_away:
+                        time_left = response.go_away.time_left
                         logger.warning(
-                            f"Server disconnecting in {response.go_away.time_left}"
+                            f"Server disconnecting in {time_left}"
                         )
-                        _broadcast_console("info", f"GoAway received, reconnecting in {response.go_away.time_left}")
+                        _broadcast_console("info", f"GoAway received, saving state and reconnecting in {time_left}")
+                        # Save current transcript before reconnecting
+                        if self._transcript_buffer.strip():
+                            self._conv_logger.add_assistant_message(self._transcript_buffer)
+                            self._transcript_buffer = ""
+                        self._conv_logger.finalize_user_message()
+                        self._conv_logger._save_async()
                         self._reconnect_requested = True
 
                     if (

@@ -339,7 +339,7 @@ async def send_system_instruction(data: TextInput):
         raise HTTPException(status_code=400, detail="No active live session")
     try:
         from google.genai import types
-        await session._session.send_client_content(
+        await session.send_client_content_safe(
             turns=types.Content(
                 role="user",
                 parts=[types.Part.from_text(text=f"SYSTEM INSTRUCTION: {data.text}")],
@@ -363,7 +363,7 @@ async def switch_personality(data: PersonalityInput):
         if "personality_prompt" in result and session and hasattr(session, "_session") and session._session:
             from google.genai import types
             prompt_text = f"SYSTEM INSTRUCTION: {result['personality_prompt']}"
-            await session._session.send_client_content(
+            await session.send_client_content_safe(
                 turns=types.Content(
                     role="user",
                     parts=[types.Part.from_text(text=prompt_text)],
