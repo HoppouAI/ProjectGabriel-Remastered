@@ -779,6 +779,49 @@ async function togglePinMemory(key, pin) {
     }
 }
 
+function openMemCreateModal() {
+    document.getElementById('memCreateKey').value = '';
+    document.getElementById('memCreateCategory').value = 'general';
+    document.getElementById('memCreateType').value = 'long_term';
+    document.getElementById('memCreateContent').value = '';
+    document.getElementById('memCreateModal').classList.add('active');
+}
+
+function closeMemCreateModal() {
+    document.getElementById('memCreateModal').classList.remove('active');
+}
+
+async function submitCreateMemory() {
+    var key = document.getElementById('memCreateKey').value.trim();
+    var content = document.getElementById('memCreateContent').value.trim();
+    if (!key) { showToast('Key is required', 'error'); return; }
+    if (!content) { showToast('Content is required', 'error'); return; }
+
+    var body = {
+        key: key,
+        content: content,
+        category: document.getElementById('memCreateCategory').value.trim() || 'general',
+        memory_type: document.getElementById('memCreateType').value,
+    };
+    try {
+        var resp = await fetch('/api/memories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+            var err = await resp.json();
+            throw new Error(err.detail || 'Create failed');
+        }
+        showToast('Memory created', 'success');
+        closeMemCreateModal();
+        loadMemories();
+        loadMemoryStats();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
 // --- Init ---
 
 function init() {
