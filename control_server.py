@@ -224,6 +224,12 @@ class PersonalityInput(BaseModel):
 class EmotionInput(BaseModel):
     emotion: str
 
+class MemoryCreateInput(BaseModel):
+    key: str
+    content: str
+    category: str = "general"
+    memory_type: str = "long_term"
+
 class MemoryUpdateInput(BaseModel):
     content: str | None = None
     category: str | None = None
@@ -598,6 +604,20 @@ async def list_memories(
     if not res.get("success"):
         raise HTTPException(status_code=500, detail=res.get("message", "Unknown error"))
     return {"memories": res.get("memories", []), "count": res.get("count", 0)}
+
+
+@app.post("/api/memories")
+async def create_memory(body: MemoryCreateInput):
+    mgr = _get_memory_mgr()
+    res = mgr.save(
+        key=body.key,
+        content=body.content,
+        category=body.category,
+        memory_type=body.memory_type,
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message", "Create failed"))
+    return {"result": "ok", "key": res.get("key")}
 
 
 @app.get("/api/memories/stats")

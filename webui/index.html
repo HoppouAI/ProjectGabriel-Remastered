@@ -204,6 +204,7 @@
                     <i class="fa-solid fa-brain card-icon"></i>
                     <h2>Memories</h2>
                     <span class="file-count" id="memCount">0 memories</span>
+                    <button class="btn btn-primary btn-small" onclick="openMemCreateModal()"><i class="fa-solid fa-plus"></i> Add Memory</button>
                 </div>
                 <div class="mem-table-wrap" id="memTableWrap">
                     <div class="empty-state">Loading memories...</div>
@@ -235,6 +236,34 @@
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="closeMemEditModal()">Cancel</button>
                     <button class="btn btn-primary" onclick="saveMemoryEdit()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Memory Create Modal -->
+        <div class="modal-overlay" id="memCreateModal">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>Add Memory</h3>
+                    <button class="modal-close" onclick="closeMemCreateModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <label class="modal-label">Key</label>
+                    <input type="text" class="input" id="memCreateKey" placeholder="unique_memory_key">
+                    <label class="modal-label">Category</label>
+                    <input type="text" class="input" id="memCreateCategory" value="general" placeholder="general">
+                    <label class="modal-label">Type</label>
+                    <select class="select" id="memCreateType">
+                        <option value="long_term">Long-term</option>
+                        <option value="short_term">Short-term</option>
+                        <option value="quick_note">Quick Note</option>
+                    </select>
+                    <label class="modal-label">Content</label>
+                    <textarea class="input mem-textarea" id="memCreateContent" rows="6" placeholder="Memory content..."></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeMemCreateModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="submitCreateMemory()">Create</button>
                 </div>
             </div>
         </div>
