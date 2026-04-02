@@ -127,7 +127,7 @@ copy config\prompts\appends.yml.example config\prompts\appends.yml
 copy config\prompts\personalities.yml.example config\prompts\personalities.yml
 ```
 
-Edit `prompts.yml` to define Gabriel's base persona, `appends.yml` for any extra context appended every session, and `personalities.yml` for switchable personality modes the AI can activate at runtime.
+Edit `prompts.yml` to define the AI's base persona, `appends.yml` for any extra context appended every session, and `personalities.yml` for switchable personality modes the AI can activate at runtime.
 
 ### 3. Voices
 
