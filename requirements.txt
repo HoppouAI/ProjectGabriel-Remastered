@@ -15,6 +15,7 @@ beautifulsoup4
 Pillow
 torch
 torchvision
+torchaudio
 requests
 httpx
 soundfile
@@ -24,3 +25,11 @@ transformers
 psutil
 colorama
 discord.py-self
+fastapi
+uvicorn[standard]
+pynput
+pyotp
+nltk
+websockets
+# pymongo is optional - only needed for MongoDB Atlas memory backend
+# install separately with: uv pip install pymongo

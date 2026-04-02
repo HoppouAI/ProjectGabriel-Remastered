@@ -55,7 +55,21 @@ Optional:
 
 ## Installation
 
-We recommend using **uv** for setup.
+### Easy (Recommended)
+
+Just run `setup.bat` in the project root. It will:
+
+- Download UV (the package manager) into a local `.uv` folder
+- Create a Python 3.12 virtual environment
+- Install all dependencies
+- Detect if you have an NVIDIA GPU and ask if you want CUDA PyTorch
+- Copy all the example config files for you
+
+Once it finishes you just need to fill in your API key in `config.yml`.
+
+### Manual Setup
+
+We recommend using **uv** for this.
 
 **Install uv:**
 ```powershell
@@ -89,11 +103,11 @@ If you have an NVIDIA GPU, replace the default torch install with the CUDA versi
 ```bash
 # Using uv
 uv pip uninstall torch torchvision torchaudio
-uv pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio
+uv pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision torchaudio
 
 # Using pip
 pip uninstall torch torchvision torchaudio
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
 ---
