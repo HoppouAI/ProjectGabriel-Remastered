@@ -26,9 +26,10 @@ class DiscordBot:
     Supports image viewing, memory tools, and relay to the main VRChat session.
     """
 
-    def __init__(self, config=None, relay_callback=None):
+    def __init__(self, config=None, relay_callback=None, instance_monitor=None):
         self.config = config or BotConfig()
         self._relay_callback = relay_callback
+        self._instance_monitor = instance_monitor
         self._client = None
         self._gemini = None
         self._tool_handler = None
