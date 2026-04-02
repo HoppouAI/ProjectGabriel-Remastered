@@ -3,7 +3,7 @@ name = "projectgabriel"
 version = "2.0.0"
 description = "Real-time VRChat AI powered by Gemini Live with voice interaction, OSC control, and YOLOv8n person tracking"
 requires-python = ">=3.11,<3.13"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 authors = [
     {name = "HoppouAI"}
 ]
@@ -11,7 +11,7 @@ keywords = ["vrchat", "gemini", "ai", "voice", "osc", "yolo"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Games/Entertainment",
