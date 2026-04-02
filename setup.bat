@@ -206,3 +206,4 @@ if "%NEED_KEY%"=="1" (
 pause
 
 
+exit /b 0
