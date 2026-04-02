@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 > nul 2>&1
 setlocal enabledelayedexpansion
 
@@ -15,14 +15,14 @@ set "D=%E%[2m"
 set "B=%E%[1m"
 set "RE=%E%[91m"
 
-title ProjectGabriel Installer
+title ProjectGabriel Setup
 cd /d "%~dp0"
 cls
 
 echo.
-echo %C%%B%  +-----------------------------------------------+%R%
-echo %C%%B%  ^|          Project Gabriel - Setup              ^|%R%
-echo %C%%B%  +-----------------------------------------------+%R%
+echo %C%%B%  ====================================================%R%
+echo %C%%B%       Project Gabriel - Remaster Setup Wizard%R%
+echo %C%%B%  ====================================================%R%
 echo.
 echo %D%  This will set up a virtual environment and install%R%
 echo %D%  all dependencies for you.%R%
@@ -37,34 +37,25 @@ echo.
 echo %W%%B%  [1/5]%R%%B% Setting up UV package manager...%R%
 echo.
 
-set "UV_DIR=%~dp0.uv"
-set "UV=%UV_DIR%\uv.exe"
+if not exist "bin" mkdir "bin"
 
-if exist "%UV%" (
-    echo %D%        UV already present, skipping download.%R%
+if exist "bin\uv.exe" (
+    echo %D%        UV already installed in bin\%R%
 ) else (
-    echo %D%        Downloading UV to .uv folder, please wait...%R%
-    if not exist "%UV_DIR%" mkdir "%UV_DIR%"
-
-    set "UV_INSTALL_DIR=%UV_DIR%"
-    set "UV_INSTALLER_NO_MODIFY_PATH=1"
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression" > nul 2>&1
-
-    if not exist "%UV%" (
-        if exist "%UV_DIR%\bin\uv.exe" (
-            set "UV=%UV_DIR%\bin\uv.exe"
-        ) else (
-            echo.
-            echo %RE%  Error: UV download failed.%R%
-            echo %D%  Check your internet connection and try again.%R%
-            echo.
-            pause
-            exit /b 1
-        )
+    echo %D%        Installing UV to local bin folder...%R%
+    set "UV_INSTALL_DIR=%~dp0bin"
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    if not exist "bin\uv.exe" (
+        echo.
+        echo %RE%  Error: UV download failed. Check your internet connection and try again.%R%
+        echo.
+        pause
+        exit /b 1
     )
-
-    echo %G%        UV downloaded.%R%
+    echo %G%        UV installed.%R%
 )
+
+set "PATH=%~dp0bin;%PATH%"
 echo.
 
 :: =======================================================
@@ -73,34 +64,42 @@ echo.
 echo %W%%B%  [2/5]%R%%B% Creating Python 3.12 virtual environment...%R%
 echo.
 
-if exist "%~dp0.venv\Scripts\python.exe" (
-    echo %D%        Virtual environment already exists, skipping.%R%
-) else (
-    "%UV%" venv --python 3.12
-    if !errorlevel! neq 0 (
-        echo.
-        echo %RE%  Error: Could not create virtual environment.%R%
-        echo %D%  Make sure Python 3.12 is installed: https://www.python.org/downloads/%R%
-        echo.
-        pause
-        exit /b 1
-    )
+uv venv --python 3.12
+if %errorlevel% neq 0 (
     echo.
-    echo %G%        Virtual environment created.%R%
+    echo %RE%  Error: Could not create virtual environment.%R%
+    echo %D%  Make sure Python 3.12 is installed: https://www.python.org/downloads/%R%
+    echo.
+    pause
+    exit /b 1
 )
 echo.
 
 :: =======================================================
-:: Step 3 - Install dependencies
+:: Step 3 - Hardware selection
 :: =======================================================
-echo %W%%B%  [3/5]%R%%B% Installing dependencies...%R%
+echo %W%%B%  [3/5]%R%%B% Hardware selection...%R%
+echo.
+echo %W%        Select your hardware:%R%
+echo.
+echo %Y%          1.  NVIDIA GPU - installs CUDA PyTorch for better vision performance%R%
+echo %Y%          2.  CPU Only%R%
+echo.
+choice /C 12 /M "        Enter your choice"
+set "GPU_CHOICE=%errorlevel%"
+echo.
+
+:: =======================================================
+:: Step 4 - Install dependencies
+:: =======================================================
+echo %W%%B%  [4/5]%R%%B% Installing dependencies...%R%
 echo %D%        This can take a few minutes the first time.%R%
 echo.
 
-"%UV%" pip install --python ".venv\Scripts\python.exe" -r requirements.txt
-if !errorlevel! neq 0 (
+uv pip install -r requirements.txt
+if %errorlevel% neq 0 (
     echo.
-    echo %RE%  Error: Package installation failed. See the output above for details.%R%
+    echo %RE%  Error: Package installation failed. See output above for details.%R%
     echo.
     pause
     exit /b 1
@@ -109,51 +108,28 @@ echo.
 echo %G%        All packages installed.%R%
 echo.
 
-:: =======================================================
-:: Step 4 - NVIDIA GPU check
-:: =======================================================
-echo %W%%B%  [4/5]%R%%B% Checking for NVIDIA GPU...%R%
+if "%GPU_CHOICE%"=="1" goto install_cuda
+goto setup_config
+
+:install_cuda
+echo %D%        Uninstalling default CPU torch...%R%
+uv pip uninstall torch torchvision torchaudio
 echo.
-
-set "NVIDIA=0"
-nvidia-smi > nul 2>&1
-if !errorlevel! equ 0 set "NVIDIA=1"
-
-if "!NVIDIA!"=="1" (
-    echo %G%        NVIDIA GPU detected.%R%
+echo %D%        Installing CUDA PyTorch, this will take a few minutes...%R%
+echo.
+uv pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision torchaudio
+if %errorlevel% neq 0 (
     echo.
-    echo %W%        Install CUDA-accelerated PyTorch?%R%
-    echo %D%        Recommended if you plan to use person or face tracking.%R%
-    echo.
-    echo %Y%          [1]  Yes, install CUDA version%R%
-    echo %Y%          [2]  No, keep the standard CPU version%R%
-    echo.
-    set /p "GPUC=        Enter choice (1 or 2): "
-    echo.
-
-    if "!GPUC!"=="1" (
-        echo %D%        Removing CPU PyTorch first...%R%
-        "%UV%" pip uninstall --python ".venv\Scripts\python.exe" torch torchvision torchaudio -y > nul 2>&1
-        echo %D%        Installing CUDA PyTorch, this may take a few minutes...%R%
-        echo.
-        "%UV%" pip install --python ".venv\Scripts\python.exe" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-        if !errorlevel! neq 0 (
-            echo.
-            echo %Y%        CUDA install failed. You can retry it manually later with:%R%
-            echo %D%        .venv\Scripts\activate%R%
-            echo %D%        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126%R%
-        ) else (
-            echo.
-            echo %G%        CUDA PyTorch installed.%R%
-        )
-    ) else (
-        echo %D%        Keeping CPU-only PyTorch.%R%
-    )
+    echo %Y%        CUDA install failed. You can retry manually later:%R%
+    echo %D%        .venv\Scripts\activate%R%
+    echo %D%        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126%R%
 ) else (
-    echo %D%        No NVIDIA GPU found, keeping CPU-only PyTorch.%R%
+    echo.
+    echo %G%        CUDA PyTorch installed.%R%
 )
 echo.
 
+:setup_config
 :: =======================================================
 :: Step 5 - Config files
 :: =======================================================
@@ -190,18 +166,43 @@ echo.
 :: =======================================================
 :: Done
 :: =======================================================
-echo %C%%B%  +-----------------------------------------------+%R%
-echo %G%%B%  ^|           Setup complete!                    ^|%R%
-echo %C%%B%  +-----------------------------------------------+%R%
+echo %C%%B%  ====================================================%R%
+echo %G%%B%           Setup complete!%R%
+echo %C%%B%  ====================================================%R%
 echo.
 echo %W%  To run Gabriel:%R%
 echo %D%    .venv\Scripts\activate%R%
 echo %D%    python supervisor.py%R%
 echo.
 
-if "!NEED_KEY!"=="1" (
-    echo %Y%  Open config.yml and add your Gemini API key before starting!%R%
+if "%NEED_KEY%"=="1" (
+    echo %Y%  Open config.yml and add your Gemini API key before starting.%R%
     echo.
 )
 
 pause
+        echo %G%        Created config\voices.yml%R%
+    )
+)
+echo.
+
+:: =======================================================
+:: Done
+:: =======================================================
+echo %C%%B%  ====================================================%R%
+echo %G%%B%           Setup complete!%R%
+echo %C%%B%  ====================================================%R%
+echo.
+echo %W%  To run Gabriel:%R%
+echo %D%    .venv\Scripts\activate%R%
+echo %D%    python supervisor.py%R%
+echo.
+
+if "%NEED_KEY%"=="1" (
+    echo %Y%  Open config.yml and add your Gemini API key before starting.%R%
+    echo.
+)
+
+pause
+
+
