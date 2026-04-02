@@ -44,7 +44,7 @@ Before setting up, you need the following:
    - [VB-Audio Cable](https://vb-audio.com/Cable/) (Standard)
    - [VB-Audio Hi-Fi Cable](https://vb-audio.com/Cable/#DownloadASIOBridge) (Secondary)
 2. **Gemini API Key** - Get one from [Google AI Studio](https://aistudio.google.com/apikey).
-3. **Python 3.11 or 3.12** - The project requires one of these versions. 3.13+ is not supported.
+3. **Python 3.11 or 3.12** - The project requires one of these versions. Personally I use 3.12.11 and it works fine. 3.13+ is not supported.
 
 Optional:
 - MongoDB Atlas connection string (for cloud memory storage, falls back to SQLite if not set)
@@ -65,8 +65,8 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 Restart your terminal, then run these in the project folder:
 
 ```bash
-# Create virtual environment with Python 3.11
-uv venv --python 3.11
+# Create virtual environment with Python 3.12
+uv venv --python 3.12
 
 # Activate (Windows)
 .venv\Scripts\activate
