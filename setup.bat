@@ -21,7 +21,7 @@ cls
 
 echo.
 echo %C%%B%  +-----------------------------------------------+%R%
-echo %C%%B%  ^|          Project Gabriel - Setup             ^|%R%
+echo %C%%B%  ^|          Project Gabriel - Setup              ^|%R%
 echo %C%%B%  +-----------------------------------------------+%R%
 echo.
 echo %D%  This will set up a virtual environment and install%R%
@@ -125,7 +125,7 @@ if "!NVIDIA!"=="1" (
     echo %W%        Install CUDA-accelerated PyTorch?%R%
     echo %D%        Recommended if you plan to use person or face tracking.%R%
     echo.
-    echo %Y%          [1]  Yes, use CUDA version (better performance)%R%
+    echo %Y%          [1]  Yes, install CUDA version%R%
     echo %Y%          [2]  No, keep the standard CPU version%R%
     echo.
     set /p "GPUC=        Enter choice (1 or 2): "
