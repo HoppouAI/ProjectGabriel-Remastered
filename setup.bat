@@ -132,6 +132,8 @@ if "!NVIDIA!"=="1" (
     echo.
 
     if "!GPUC!"=="1" (
+        echo %D%        Removing CPU PyTorch first...%R%
+        "%UV%" pip uninstall --python ".venv\Scripts\python.exe" torch torchvision torchaudio -y > nul 2>&1
         echo %D%        Installing CUDA PyTorch, this may take a few minutes...%R%
         echo.
         "%UV%" pip install --python ".venv\Scripts\python.exe" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
