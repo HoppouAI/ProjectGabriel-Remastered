@@ -189,6 +189,8 @@ The WebUI dashboard is available at `http://localhost:8766` once running. It sho
 
 ## Discord Bot
 
+> **Disclaimer:** The Discord bot module uses a selfbot (a user account token, not a bot token). Self-botting is against Discord's Terms of Service and your account could be banned. Use this at your own risk. We are not responsible for any action taken against your account.
+
 The Discord selfbot is a separate module in `discord_bot/`. It runs its own Gemini Live session and can send and recieve messages in Discord channels.
 
 To configure it:
