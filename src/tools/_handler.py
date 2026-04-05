@@ -19,6 +19,7 @@ class ToolHandler:
         self._current_avatar_id = None
         self.instance_monitor = None
         self.music_gen = None
+        self.social_client = None
 
         # Import all tool modules to trigger @register_tool
         from src.tools import soundboard, music, voice, personalities  # noqa: F401
@@ -27,6 +28,7 @@ class ToolHandler:
         from src.tools import discord as discord_tools  # noqa: F401
         from src.tools import music_gen as music_gen_tools  # noqa: F401
         from src.tools import web_search as web_search_tools  # noqa: F401
+        from src.tools import social as social_tools  # noqa: F401
         from src.tools._base import get_registered_tools
 
         self._tools = [cls(self) for cls in get_registered_tools()]

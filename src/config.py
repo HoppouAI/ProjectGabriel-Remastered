@@ -385,3 +385,7 @@ class Config:
     @property
     def web_search_enabled(self):
         return self.get("web_search", "enabled", default=False)
+
+    @property
+    def social_enabled(self):
+        return self.get("social", "enabled", default=False)
