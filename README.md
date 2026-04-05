@@ -1,6 +1,6 @@
 # Project Gabriel - Remaster
 
-The 2026 remaster of Project Gabriel by [Hoppou.AI](https://hoppou.ai/). Gabriel is our VRChat AI, the Indian guy in the blue polo shirt. This version is a full rebuild using Gemini Live for real-time voice streaming, with much more functionality than the original framework.
+The 2026 remaster of Project Gabriel by [Hoppou.AI](https://hoppou.ai/). Gabriel is our VRChat AI, the Indian guy in the blue polo shirt. Same concept as the original but way more features, cleaner code, and a lot more stable. He walks around worlds, talks to people, remembers who they are, and has his own personality system.
 
 ![Gabriel Picture](https://github.com/HoppouAI/ProjectGabriel-Framework/blob/main/Other%20Stuff/Gabriel_Picture.png?raw=true)
 
@@ -8,7 +8,7 @@ The 2026 remaster of Project Gabriel by [Hoppou.AI](https://hoppou.ai/). Gabriel
 
 ## Summary
 
-Python-based system for running a live AI assistant in VRChat. It handles real-time audio streaming, VRChat OSC integration (movement, chatbox, voice), a REST API client for VRChat, memory, vision, and a Discord bot running its own separate Gemini Live session.
+Python-based system for running a live AI in VRChat. Handles real-time audio streaming through Gemini Live, VRChat OSC integration (movement, chatbox, voice), a REST API client for VRChat, memory, vision, and a Discord bot running its own separate Gemini Live session. Everything runs through a supervisor that auto-restarts on crashes, with a web dashboard for monitoring.
 
 - **Main Entry Point:** `supervisor.py`
 - **Key Features:** Gemini Live audio streaming, YOLOv8 person tracking, YOLOv8-face face tracking, OSC control, Discord bot, WebUI dashboard, persistent memory, personality switching, multiple TTS providers
@@ -17,22 +17,22 @@ Python-based system for running a live AI assistant in VRChat. It handles real-t
 
 ## What's New in the Remaster
 
-Compared to the original framework, this version adds:
+The original was getting messy and hard to maintain. This version is a full rewrite with a cleaner architecture. Compared to the original:
 
-- Gemini Live native audio (real-time bidirectional streaming, replaces the old polling approach)
+- Gemini Live native audio (real-time bidirectional streaming)
 - YOLOv8 person tracking and YOLOv8-face face tracking (two separate models)
 - Discord selfbot with its own Gemini Live session
 - FastAPI WebUI dashboard at port 8766 (console output, controls, memory manager)
 - Persistent memory system backed by MongoDB Atlas or SQLite
-- Personalities system (switchable at runtime via tools)
+- Switchable personalities (at runtime via tools)
 - VRChat REST API client (avatar switching, friend info, world search, status updates)
 - Multiple TTS providers (Gemini native, Qwen3 server, Hoppou AI cloud, Google Cloud Chirp 3 HD)
 - API key rotation for handling quota limits automatically
-- Idle chatbox with configurable banner display
 - Autonomous wandering behavior
 - Emotion and animation system via OSC
+- Idle chatbox with configurable banner display
 - Session resumption (2 hour session handle persistence)
-- Context window compression for unlimited session length
+- Proper context window compression for unlimited session length
 
 ---
 
@@ -205,7 +205,7 @@ The WebUI dashboard is available at `http://localhost:8766` once running. It sho
 
 > **Disclaimer:** The Discord bot module uses a selfbot (a user account token, not a bot token). Self-botting is against Discord's Terms of Service and your account could be banned. Use this at your own risk. We are not responsible for any action taken against your account.
 
-The Discord selfbot is a separate module in `discord_bot/`. It runs its own Gemini Live session and can send and recieve messages in Discord channels.
+The Discord selfbot is a separate module in `discord_bot/`. It runs its own Gemini Live session and can send and receive messages in Discord channels.
 
 To configure it:
 ```bash
