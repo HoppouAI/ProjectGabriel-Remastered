@@ -793,6 +793,11 @@ class GeminiLiveSession:
                 raise Exception("Reconnect requested")
             await asyncio.sleep(0.5)
 
+    async def _delayed_reconnect(self, delay: float):
+        """Wait for delay seconds then trigger a reconnect."""
+        await asyncio.sleep(delay)
+        self._reconnect_requested = True
+
     async def _idle_check_loop(self):
         """Monitor for idle state, stop talking animations, and trigger idle animation."""
         while True:
@@ -808,24 +813,31 @@ class GeminiLiveSession:
                     self.osc.set_typing(False)
             # Check music state once per iteration
             music_playing = self.audio.get_music_progress() is not None
-            # Don't trigger idle during music playback
+            # Check if tracker is following someone
+            tracker_active = getattr(self.tool_handler.tracker, 'active', False) if self.tool_handler.tracker else False
+            # Check if Lyria music gen is playing
+            music_gen = getattr(self.tool_handler, 'music_gen', None)
+            music_gen_active = music_gen.is_active if music_gen else False
+            # Anything keeping the AI busy suppresses idle
+            busy = music_playing or tracker_active or music_gen_active
+            # Don't trigger idle during active tasks
             if self._emotion_system:
-                if music_playing:
+                if busy:
                     self._emotion_system.mark_activity()
                 else:
                     self._emotion_system.check_idle()
-            # Start idle chatbox when idle and no music playing
-            if not self._speaking and not music_playing:
+            # Start idle chatbox when idle and not busy
+            if not self._speaking and not busy:
                 emo = self._emotion_system
                 if (emo and emo._idle_active) or not emo:
                     self._idle_chatbox.start()
-            elif music_playing:
+            elif busy:
                 self._idle_chatbox.stop()
             # Idle engagement - prompt model to speak after long silence
             if (
                 not self._idle_engagement_sent
                 and not self._speaking
-                and not music_playing
+                and not busy
                 and time.time() - self._last_interaction_time >= IDLE_ENGAGEMENT_SECONDS
             ):
                 self._idle_engagement_sent = True
@@ -1193,14 +1205,30 @@ class GeminiLiveSession:
                         logger.warning(
                             f"Server disconnecting in {time_left}"
                         )
-                        _broadcast_console("info", f"GoAway received, saving state and reconnecting in {time_left}")
+                        # Parse seconds from time_left
+                        try:
+                            if hasattr(time_left, 'total_seconds'):
+                                tl_seconds = time_left.total_seconds()
+                            elif hasattr(time_left, 'seconds'):
+                                tl_seconds = time_left.seconds
+                            else:
+                                import re
+                                m = re.search(r'(\d+)', str(time_left))
+                                tl_seconds = int(m.group(1)) if m else 30
+                        except Exception:
+                            tl_seconds = 30
+                        # Wait most of the remaining time, then reconnect fresh
+                        wait = max(tl_seconds - 10, 5)
+                        logger.info(f"Will reconnect in {wait}s (using remaining session time)")
+                        _broadcast_console("info", f"GoAway: reconnecting in {wait}s")
                         # Save current transcript before reconnecting
                         if self._transcript_buffer.strip():
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                             self._transcript_buffer = ""
                         self._conv_logger.finalize_user_message()
                         self._conv_logger._save_async()
-                        self._reconnect_requested = True
+                        # Schedule delayed reconnect so receive loop keeps working
+                        asyncio.create_task(self._delayed_reconnect(wait))
 
                     if (
                         hasattr(response, "session_resumption_update")

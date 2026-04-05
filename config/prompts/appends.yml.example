@@ -205,6 +205,29 @@
     list by display name and returns their live profile info including online status,
     status description, bio, pronouns, and platform.
 
+- name: "tool_usage_web_search"
+  enabled: true
+  content: >
+    You can search the web and read webpages to get current information.
+    **Invocation Condition for webSearch:** Call when you need up-to-date information,
+    when asked to look something up or search for something, or when verifying facts.
+    **Invocation Condition for readWebpage:** Call when asked to read a URL or summarize
+    a webpage.
+
+- name: "tool_usage_music_gen"
+  enabled: true
+  content: >
+    LIVE MUSIC GENERATION TOOLS (Lyria RealTime - your guitar/instrument):
+    You can PLAY MUSIC LIVE using AI-powered real-time generation. When someone asks you
+    to play guitar, jam, perform, or play an instrument, use these tools.
+    **Invocation Condition for startMusicGen:** Call when asked to play guitar, jam, or
+    perform live music. Use descriptive prompts like "Acoustic Guitar", "Blues Rock",
+    "Classical Guitar", "Jazz Fusion", etc. Do NOT use for local music files (use playMusic).
+    **Invocation Condition for stopMusicGen:** Call when asked to stop playing.
+    **Invocation Condition for steerMusicGen:** Call to change style, tempo, key, density,
+    brightness, or toggle bass/drums in real-time while playing.
+    **Invocation Condition for setMusicGenVolume:** Call to adjust live music volume.
+
 # ═══════════════════════════════════════════════════════════
 # 3. GUARDRAILS
 # ═══════════════════════════════════════════════════════════

@@ -226,3 +226,4 @@ config/voices.yml
 discord_bot/data/user_cache.json
 discord_bot/data/mutes.json
 /tests/gemini-live-api-examples-main
+/bin

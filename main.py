@@ -194,6 +194,13 @@ async def main(save_audio=False):
         except Exception as e:
             logger.error(f"Discord bot startup failed: {e}")
 
+    # Lyria RealTime music generation (optional)
+    if config.music_gen_enabled:
+        from src.music_gen import MusicGenerator
+        music_gen = MusicGenerator(config, audio)
+        session.tool_handler.music_gen = music_gen
+        logger.info("Lyria RealTime music generation enabled")
+
     while True:
         try:
             await session.run()
@@ -209,6 +216,8 @@ async def main(save_audio=False):
     # Cleanup
     if save_audio:
         session.save_audio_to_wav()
+    if config.music_gen_enabled and session.tool_handler.music_gen:
+        await session.tool_handler.music_gen.stop()
     if discord_bot:
         await discord_bot.stop()
     if tts_provider:
