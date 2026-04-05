@@ -3,8 +3,8 @@ const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const { loadConfig } = require("./src/config");
-const { initDatabase, cleanStalePresence, purgeOldMessages } = require("./src/database");
-const { initAuth, userAgentMiddleware, authMiddleware, authenticateRequest } = require("./src/auth");
+const { initDatabase, cleanStalePresence, purgeOldMessages, deleteExpiredSessions } = require("./src/database");
+const { initAuth, setAuthDb, userAgentMiddleware, authMiddleware, authenticateRequest } = require("./src/auth");
 const { initLogger, logInfo, closeLogger } = require("./src/logger");
 const { WebSocketManager } = require("./src/websocket");
 const usersRouter = require("./src/routes/users");
@@ -27,6 +27,8 @@ logInfo(`Database initialized at ${config.dbPath}`);
 
 // ── Initialize auth ──
 initAuth(config);
+const db = require("./src/database");
+setAuthDb(db);
 
 // ── Express app ──
 const app = express();
@@ -69,10 +71,16 @@ router.get("/health", (req, res) => {
   res.json({ status: "ok", uptime: process.uptime() });
 });
 
-// All /api routes require authentication (except admin which has its own)
+// Admin routes (own auth)
 router.use("/api/admin", adminRouter);
+
+// Register and login are pre-auth (accessible without session token in open mode)
+// They handle their own validation internally
+router.use("/api", usersRouter.preAuth);
+
+// All other /api routes require authentication
 router.use("/api", authMiddleware);
-router.use("/api", usersRouter);
+router.use("/api", usersRouter.authed);
 router.use("/api", messagesRouter);
 router.use("/api", friendsRouter);
 
@@ -109,6 +117,7 @@ messagesRouter.setMaxMessageLength(config.maxMessageLength);
 // Clean stale presence every 30 seconds
 setInterval(() => {
   cleanStalePresence(config.heartbeatTimeout);
+  deleteExpiredSessions();
 }, 30000);
 
 // Purge old messages based on retention policy

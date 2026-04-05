@@ -25,6 +25,7 @@ class SocialClient:
         self.server_url = config.get("social", "server_url", default="").rstrip("/")
         self.api_key = config.get("social", "api_key", default="")
         self.username = config.get("social", "username", default="")
+        self.password = config.get("social", "password", default="")
         self.description = config.get("social", "description", default="")
         self.appear_offline = config.get("social", "appear_offline", default=False)
         self.heartbeat_interval = config.get("social", "heartbeat_interval", default=30)
@@ -37,6 +38,7 @@ class SocialClient:
             return
 
         self._session = None  # GeminiLiveSession ref, set later
+        self._session_token = None  # Server session token for auth
         self._ws = None
         self._ws_task = None
         self._heartbeat_task = None
@@ -92,6 +94,8 @@ class SocialClient:
         }
         if self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
+        elif self._session_token:
+            h["Authorization"] = f"Bearer {self._session_token}"
         return h
 
     async def _request(self, method, path, body=None):
@@ -126,13 +130,42 @@ class SocialClient:
     # ── API methods ──
 
     async def _register(self):
-        body = {"description": self.description}
-        if self.appear_offline:
-            body["appear_offline"] = True
-        if not self.api_key:
-            body["username"] = self.username
-        result = await self._request("POST", "/api/register", body)
-        return result.get("result") == "ok"
+        # API key mode: just register profile, no password needed
+        if self.api_key:
+            body = {"description": self.description}
+            if self.appear_offline:
+                body["appear_offline"] = True
+            result = await self._request("POST", "/api/register", body)
+            return result.get("result") == "ok"
+
+        # Open mode: try login first, then register if account doesn't exist
+        if self.password:
+            login_result = await self._request("POST", "/api/login", {
+                "username": self.username,
+                "password": self.password,
+            })
+            if login_result.get("result") == "ok" and login_result.get("token"):
+                self._session_token = login_result["token"]
+                # Update profile after login
+                await self._request("POST", "/api/register", {"description": self.description})
+                return True
+
+            # Login failed, try registering
+            reg_result = await self._request("POST", "/api/register", {
+                "username": self.username,
+                "password": self.password,
+                "description": self.description,
+            })
+            if reg_result.get("result") == "ok" and reg_result.get("token"):
+                self._session_token = reg_result["token"]
+                return True
+
+            logger.error(f"Social: login/register failed: {reg_result.get('error', 'unknown')}")
+            return False
+
+        # Open mode without password: can't authenticate
+        logger.error("Social: no api_key or password configured, cannot authenticate")
+        return False
 
     async def heartbeat(self):
         body = {}
