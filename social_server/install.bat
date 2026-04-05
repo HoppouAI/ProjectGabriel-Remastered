@@ -41,14 +41,23 @@ for /f "tokens=*" %%v in ('node -v') do set "NODE_VER=%%v"
 echo %D%        Found Node.js %NODE_VER%%R%
 echo.
 
+:: Detect package manager (prefer pnpm if available)
+set "PKG_CMD=npm install"
+set "PKG_NAME=npm"
+where pnpm > nul 2>&1
+if %errorlevel% equ 0 (
+    set "PKG_CMD=pnpm install"
+    set "PKG_NAME=pnpm"
+)
+
 :: Install dependencies
-echo %B%  [2/3]%R%%B% Installing dependencies...%R%
+echo %B%  [2/3]%R%%B% Installing dependencies with %PKG_NAME%...%R%
 echo.
 
-call npm install
+call %PKG_CMD%
 if %errorlevel% neq 0 (
     echo.
-    echo %RE%        npm install failed. Check the output above for errors.%R%
+    echo %RE%        %PKG_NAME% install failed. Check the output above for errors.%R%
     echo.
     pause
     exit /b 1
