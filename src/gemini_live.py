@@ -1369,7 +1369,7 @@ class GeminiLiveSession:
             time_str = f"0:{seconds:02d}"
 
         divider_char = self.config.get("vrchat", "idle_chatbox", "divider", default="\u2500")
-        divider_length = self.config.get("vrchat", "idle_chatbox", "divider_length", default=20)
+        divider_length = self.config.get("vrchat", "idle_chatbox", "divider_length", default=14)
         divider = str(divider_char) * int(divider_length)
 
         lines = []
