@@ -288,3 +288,12 @@ webui/               -- Dashboard HTML/JS/CSS
 This project is licensed under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE) for details.
 
 Additional terms under AGPL Section 7 apply to the Gabriel AI persona. See [NOTICE.md](NOTICE.md).
+
+---
+
+<details>
+<summary>A note about AI-assisted development</summary>
+
+We sometimes use AI-assisted coding agents to help maintain, update, and add features to the project. It speeds things up and lets us ship more, faster. The code works, it's tested, and it gets reviewed before it goes in. If that bothers you for some reason, just know that the end result is the same - working software. If it works, why complain?
+
+</details>
