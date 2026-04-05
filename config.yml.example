@@ -225,9 +225,9 @@ vrchat:
     enabled: false
     # Header text at the top of the banner
     banner: "Gabriel AI"
-    # Character used for divider lines
+    # Character used for divider lines (also used in the live music gen display)
     divider: "\u2500"
-    # Number of times the divider character is repeated
+    # Number of times the divider character is repeated (also used in the live music gen display)
     divider_length: 20
     # Up to 3 lines of text between dividers (empty strings are skipped)
     lines:
