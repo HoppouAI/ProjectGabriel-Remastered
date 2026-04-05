@@ -2,7 +2,7 @@
 
 The 2026 remaster of Project Gabriel by [Hoppou.AI](https://hoppou.ai/). Gabriel is our VRChat AI, the Indian guy in the blue polo shirt. Same concept as the original but way more features, cleaner code, and a lot more stable. He walks around worlds, talks to people, remembers who they are, and has his own personality system.
 
-![Gabriel Picture](https://github.com/HoppouAI/ProjectGabriel-Framework/blob/main/Other%20Stuff/Gabriel_Picture.png?raw=true)
+![Gabriel Remaster](https://hoppou.ai/images/projects/ProjectCardHoppouAI-GabrielRemaster.webp)
 
 ---
 
@@ -47,6 +47,7 @@ Before setting up, you need the following:
 3. **Python 3.11 or 3.12** - The project requires one of these versions. Personally I use 3.12.11 and it works fine. 3.13+ is not supported.
 
 Optional:
+
 - MongoDB Atlas connection string (for cloud memory storage, falls back to SQLite if not set)
 - Google Cloud credentials (for Chirp 3 HD TTS)
 - VRChat account credentials (for REST API features like avatar switching)
@@ -72,6 +73,7 @@ Once it finishes you just need to fill in your API key in `config.yml`.
 We recommend using **uv** for this.
 
 **Install uv:**
+
 ```powershell
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
@@ -90,6 +92,7 @@ uv pip install -r requirements.txt
 ```
 
 **Standard pip (if you prefer):**
+
 ```bash
 python -m venv venv
 venv\Scripts\activate
@@ -171,10 +174,10 @@ For the AI to speak in VRChat, you need to route audio correctly. You must run t
 
 ### Windows Volume Mixer
 
-| Application | Output | Input |
-| :--- | :--- | :--- |
-| Python | CABLE Input (VB-Audio Virtual Cable) | Hi-Fi Cable Output (VB-Audio Hi-Fi) |
-| VRChat | Hi-Fi Cable Input (VB-Audio Hi-Fi) | Default / Microphone |
+| Application | Output                               | Input                               |
+| :---------- | :----------------------------------- | :---------------------------------- |
+| Python      | CABLE Input (VB-Audio Virtual Cable) | Hi-Fi Cable Output (VB-Audio Hi-Fi) |
+| VRChat      | Hi-Fi Cable Input (VB-Audio Hi-Fi)   | Default / Microphone                |
 
 ### VRChat In-Game Settings
 
@@ -208,6 +211,7 @@ The WebUI dashboard is available at `http://localhost:8766` once running. It sho
 The Discord selfbot is a separate module in `discord_bot/`. It runs its own Gemini Live session and can send and receive messages in Discord channels.
 
 To configure it:
+
 ```bash
 copy discord_bot\config.yml.example discord_bot\config.yml
 ```
