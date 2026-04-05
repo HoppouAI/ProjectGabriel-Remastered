@@ -645,8 +645,14 @@ class DiscordBot:
 
                 if not response or response.startswith("[Error:"):
                     logger.warning(f"Bad response from Gemini: {response}")
-                    await last_message.channel.send("-# no response...")
+                    reconnecting = self._gemini.report_bad_response()
+                    if reconnecting and self.config.show_reconnecting:
+                        await last_message.channel.send("-# reconnecting...")
+                    elif not reconnecting:
+                        await last_message.channel.send("-# no response...")
                     return
+
+                self._gemini.report_good_response()
 
                 # Strip channel tag the model may echo back
                 response = re.sub(r'^\[CHANNEL:[^\]]*\]\s*', '', response)
