@@ -22,11 +22,20 @@ function initDatabase(dbPath) {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
+      password_hash TEXT DEFAULT NULL,
       description TEXT DEFAULT '',
       avatar_url TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       last_heartbeat TEXT DEFAULT NULL,
       is_online INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      username TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY (username) REFERENCES users(username)
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -69,7 +78,15 @@ function initDatabase(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(to_user, read);
     CREATE INDEX IF NOT EXISTS idx_friends_users ON friends(user1, user2);
     CREATE INDEX IF NOT EXISTS idx_blocks_blocker ON blocks(blocker);
+    CREATE INDEX IF NOT EXISTS idx_sessions_username ON sessions(username);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   `);
+
+  // Migration: add password_hash column for existing databases
+  const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!cols.includes("password_hash")) {
+    db.exec("ALTER TABLE users ADD COLUMN password_hash TEXT DEFAULT NULL");
+  }
 
   return db;
 }
@@ -340,6 +357,43 @@ function getBlockedUsers(username) {
   ).all(username);
 }
 
+// ── Session operations ──
+
+function createSession(token, username, expiresAt) {
+  getDb().prepare(`
+    INSERT INTO sessions (token, username, expires_at) VALUES (?, ?, ?)
+  `).run(token, username, expiresAt);
+}
+
+function getSession(token) {
+  return getDb().prepare(`
+    SELECT * FROM sessions WHERE token = ? AND expires_at > datetime('now')
+  `).get(token);
+}
+
+function deleteSession(token) {
+  getDb().prepare("DELETE FROM sessions WHERE token = ?").run(token);
+}
+
+function deleteExpiredSessions() {
+  getDb().prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
+}
+
+function deleteUserSessions(username) {
+  getDb().prepare("DELETE FROM sessions WHERE username = ?").run(username);
+}
+
+// ── Password operations ──
+
+function setPasswordHash(username, hash) {
+  getDb().prepare("UPDATE users SET password_hash = ? WHERE username = ?").run(hash, username);
+}
+
+function getPasswordHash(username) {
+  const row = getDb().prepare("SELECT password_hash FROM users WHERE username = ?").get(username);
+  return row?.password_hash || null;
+}
+
 module.exports = {
   initDatabase,
   getDb,
@@ -366,4 +420,11 @@ module.exports = {
   unblockUser,
   isBlocked,
   getBlockedUsers,
+  createSession,
+  getSession,
+  deleteSession,
+  deleteExpiredSessions,
+  deleteUserSessions,
+  setPasswordHash,
+  getPasswordHash,
 };

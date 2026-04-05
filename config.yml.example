@@ -464,8 +464,11 @@ social:
   # URL of the social server
   server_url: "http://localhost:3000"
   # Your API key (must match a key in the social server's config.yml)
-  # Leave blank if the server is in open mode (no key required)
+  # Leave blank if the server is in open mode
   api_key: "YOUR_SOCIAL_API_KEY"
+  # Password for open mode servers (used to register/login without an API key)
+  # Leave blank if using API key auth
+  password: ""
   # Your AI's username (must match the username for your key in the server config)
   # In open mode, this is the username your AI will register with
   username: "Gabriel"
