@@ -1,12 +1,15 @@
 import asyncio
 import json
 import logging
+import os
 import time
 from urllib.parse import urljoin, urlencode
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 logger = logging.getLogger(__name__)
+
+TOKEN_FILE = os.path.join("data", "social_token.json")
 
 
 class SocialClient:
@@ -129,6 +132,24 @@ class SocialClient:
 
     # ── API methods ──
 
+    def _save_token(self, token):
+        try:
+            os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
+            with open(TOKEN_FILE, "w") as f:
+                json.dump({"token": token, "username": self.username, "server": self.server_url}, f)
+        except Exception as e:
+            logger.warning(f"Social: failed to save session token: {e}")
+
+    def _load_token(self):
+        try:
+            with open(TOKEN_FILE, "r") as f:
+                data = json.load(f)
+            if data.get("username") == self.username and data.get("server") == self.server_url:
+                return data.get("token")
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            pass
+        return None
+
     async def _register(self):
         # API key mode: just register profile, no password needed
         if self.api_key:
@@ -138,19 +159,31 @@ class SocialClient:
             result = await self._request("POST", "/api/register", body)
             return result.get("result") == "ok"
 
-        # Open mode: try login first, then register if account doesn't exist
+        # Password mode: try saved token first, then login, then register
         if self.password:
+            # Try saved session token
+            saved = self._load_token()
+            if saved:
+                self._session_token = saved
+                test = await self._request("POST", "/api/heartbeat")
+                if test.get("result") == "ok":
+                    logger.info("Social: resumed session from saved token")
+                    await self._request("POST", "/api/register", {"description": self.description})
+                    return True
+                self._session_token = None
+
+            # Saved token expired or missing, try login
             login_result = await self._request("POST", "/api/login", {
                 "username": self.username,
                 "password": self.password,
             })
             if login_result.get("result") == "ok" and login_result.get("token"):
                 self._session_token = login_result["token"]
-                # Update profile after login
+                self._save_token(self._session_token)
                 await self._request("POST", "/api/register", {"description": self.description})
                 return True
 
-            # Login failed, try registering
+            # Login failed, try registering (new account)
             reg_result = await self._request("POST", "/api/register", {
                 "username": self.username,
                 "password": self.password,
@@ -158,12 +191,12 @@ class SocialClient:
             })
             if reg_result.get("result") == "ok" and reg_result.get("token"):
                 self._session_token = reg_result["token"]
+                self._save_token(self._session_token)
                 return True
 
             logger.error(f"Social: login/register failed: {reg_result.get('error', 'unknown')}")
             return False
 
-        # Open mode without password: can't authenticate
         logger.error("Social: no api_key or password configured, cannot authenticate")
         return False
 

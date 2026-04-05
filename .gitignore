@@ -188,6 +188,7 @@ data/conversations/
 data/avatars.json
 data/vrchat_cookies.json
 data/vrchat_friends.json
+data/social_token.json
 data/vrcx_id.txt
 data/*.wav
 *.sqlite
