@@ -55,6 +55,7 @@ function loadConfig() {
   return {
     port: config.server?.port || 3000,
     host: config.server?.host || "0.0.0.0",
+    basePath: (config.server?.base_path || "/").replace(/\/+$/, "") || "/",
     adminKey: config.security.admin_key,
     openMode,
     rateLimitWindowMs: config.security?.rate_limit?.window_ms || 60000,

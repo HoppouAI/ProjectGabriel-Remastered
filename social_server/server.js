@@ -37,8 +37,14 @@ app.use(helmet());
 // Body parsing with size limit
 app.use(express.json({ limit: "16kb" }));
 
+// ── Base path router ──
+// When running behind a reverse proxy with a path prefix (e.g. /social/),
+// set server.base_path in config.yml so routes mount correctly.
+const basePath = config.basePath;
+const router = express.Router();
+
 // User-Agent validation (applies to all routes including /health)
-app.use(userAgentMiddleware);
+router.use(userAgentMiddleware);
 
 // Rate limiting (per API key, falling back to IP)
 const limiter = rateLimit({
@@ -56,30 +62,33 @@ const limiter = rateLimit({
     message: "Too many requests. Please slow down and try again in a moment.",
   },
 });
-app.use("/api/", limiter);
+router.use("/api/", limiter);
 
 // Health check (no auth)
-app.get("/health", (req, res) => {
+router.get("/health", (req, res) => {
   res.json({ status: "ok", uptime: process.uptime() });
 });
 
 // All /api routes require authentication (except admin which has its own)
-app.use("/api/admin", adminRouter);
-app.use("/api", authMiddleware);
-app.use("/api", usersRouter);
-app.use("/api", messagesRouter);
-app.use("/api", friendsRouter);
+router.use("/api/admin", adminRouter);
+router.use("/api", authMiddleware);
+router.use("/api", usersRouter);
+router.use("/api", messagesRouter);
+router.use("/api", friendsRouter);
 
 // 404 handler
-app.use((req, res) => {
+router.use((req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
 // Error handler
-app.use((err, req, res, _next) => {
+router.use((err, req, res, _next) => {
   console.error("[Social Server] Unhandled error:", err);
   res.status(500).json({ error: "Internal server error" });
 });
+
+// Mount router at base path
+app.use(basePath, router);
 
 // ── Create HTTP server ──
 const server = http.createServer(app);
@@ -118,13 +127,15 @@ server.listen(config.port, config.host, () => {
 
   const mode = config.openMode ? "OPEN (no key required)" : `${config.apiKeys.length} API key(s)`;
 
+  const bp = basePath === "/" ? "" : basePath;
   console.log("");
   console.log(bar("╔", "╗"));
   console.log(line("   ProjectGabriel Social Server v1.0.0"));
   console.log(bar("╠", "╣"));
-  console.log(line(`  HTTP:   http://${config.host}:${config.port}`));
-  console.log(line(`  WS:     ws://${config.host}:${config.port}/ws`));
+  console.log(line(`  HTTP:   http://${config.host}:${config.port}${bp}`));
+  console.log(line(`  WS:     ws://${config.host}:${config.port}${bp}/ws`));
   console.log(line(`  Auth:   ${mode}`));
+  if (bp) console.log(line(`  Base:   ${bp}`));
   console.log(line(`  Log:    ${config.logging.enabled ? config.logging.path : "disabled"}`));
   console.log(bar("╚", "╝"));
   console.log("");
