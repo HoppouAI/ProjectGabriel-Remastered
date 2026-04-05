@@ -1,0 +1,4 @@
+# Social server data
+data/
+node_modules/
+config.yml
