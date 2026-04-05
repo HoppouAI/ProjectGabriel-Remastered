@@ -56,7 +56,7 @@ class IdleChatbox:
         cfg = self._config
         banner = cfg.get("vrchat", "idle_chatbox", "banner", default="")
         divider_char = cfg.get("vrchat", "idle_chatbox", "divider", default="\u2500")
-        divider_length = cfg.get("vrchat", "idle_chatbox", "divider_length", default=20)
+        divider_length = cfg.get("vrchat", "idle_chatbox", "divider_length", default=14)
         lines = cfg.get("vrchat", "idle_chatbox", "lines", default=[])
 
         divider = str(divider_char) * int(divider_length)

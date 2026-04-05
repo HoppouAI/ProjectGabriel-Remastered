@@ -228,7 +228,7 @@ vrchat:
     # Character used for divider lines (also used in the live music gen display)
     divider: "\u2500"
     # Number of times the divider character is repeated (also used in the live music gen display)
-    divider_length: 20
+    divider_length: 14
     # Up to 3 lines of text between dividers (empty strings are skipped)
     lines:
       - "VRChat AI Assistant"
