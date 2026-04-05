@@ -1252,6 +1252,9 @@ class GeminiLiveSession:
         # Skip chatbox updates if music is playing (Now Playing display takes over)
         if self.audio.is_music_playing():
             return
+        music_gen = getattr(self.tool_handler, 'music_gen', None)
+        if music_gen and music_gen.is_active:
+            return
         
         text = self._transcript_buffer.strip()
         if not text:
@@ -1268,6 +1271,10 @@ class GeminiLiveSession:
         """Finalize chatbox with pagination when AI finishes speaking."""
         # Skip chatbox updates if music is playing
         if self.audio.is_music_playing():
+            self.osc.set_typing(False)
+            return
+        music_gen = getattr(self.tool_handler, 'music_gen', None)
+        if music_gen and music_gen.is_active:
             self.osc.set_typing(False)
             return
         
@@ -1342,6 +1349,49 @@ class GeminiLiveSession:
         
         return "\n".join(lines)
 
+    def _format_music_gen_display(self, music_gen) -> str:
+        """Format Lyria music gen display for chatbox."""
+        elapsed = int(music_gen.elapsed)
+        prompts = music_gen.current_prompts
+
+        # Format tags like [Acoustic Guitar] [Solo]
+        tags = " ".join(f"[{p['text']}]" for p in prompts)
+
+        # Format elapsed time
+        hours = elapsed // 3600
+        minutes = (elapsed % 3600) // 60
+        seconds = elapsed % 60
+        if hours > 0:
+            time_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+        elif minutes > 0:
+            time_str = f"{minutes}:{seconds:02d}"
+        else:
+            time_str = f"0:{seconds:02d}"
+
+        divider = "\u2500" * 20
+
+        lines = []
+        if music_gen.is_paused:
+            lines.append("\u23f8 PAUSED")
+        else:
+            lines.append("\u266b Live Music")
+        if tags:
+            lines.append(tags)
+        lines.append(divider)
+        lines.append(time_str)
+
+        text = "\n".join(lines)
+        if len(text) > 144:
+            # Truncate tags if needed to fit chatbox limit
+            max_tags = 144 - len(lines[0]) - len(divider) - len(time_str) - 3
+            if max_tags > 3:
+                tags = tags[:max_tags - 3] + "..."
+            lines = [lines[0], tags, divider, time_str]
+            text = "\n".join(lines)
+            if len(text) > 144:
+                text = text[:144]
+        return text
+
     async def _now_playing_loop(self):
         """Background task that updates chatbox with Now Playing when music plays."""
         while True:
@@ -1350,7 +1400,12 @@ class GeminiLiveSession:
                 if progress:
                     display = self._format_now_playing(progress)
                     self.osc.send_chatbox(display)
-                await asyncio.sleep(1.3)  # Same as chatbox rate limit
+                else:
+                    music_gen = getattr(self.tool_handler, 'music_gen', None)
+                    if music_gen and music_gen.is_active:
+                        display = self._format_music_gen_display(music_gen)
+                        self.osc.send_chatbox(display)
+                await asyncio.sleep(1.3)
             except Exception as e:
                 logger.error(f"Now Playing loop error: {e}")
                 await asyncio.sleep(1.0)
