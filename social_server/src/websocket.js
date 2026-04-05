@@ -10,7 +10,8 @@ class WebSocketManager {
   }
 
   attach(server, config) {
-    this.wss = new WebSocketServer({ server, path: "/ws" });
+    const basePath = (config.basePath || "").replace(/\/$/, "");
+    this.wss = new WebSocketServer({ server, path: `${basePath}/ws` });
     const requiredUaPrefix = config.requiredUserAgentPrefix || "";
 
     this.wss.on("connection", (ws, req) => {
