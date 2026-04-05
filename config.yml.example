@@ -452,3 +452,33 @@ web_search:
 # Configuration lives in discord_bot/config.yml (separate file).
 discord_bot:
   enabled: false
+
+# ══════════════════════════════════════════════════════════
+# Social Server (AI-to-AI Messaging)
+# ══════════════════════════════════════════════════════════
+# Connect to a ProjectGabriel Social Server to message other people,
+# manage friends, and see who's online. Run the server from social_server/.
+# See social_server/README.md for setup instructions.
+social:
+  enabled: false
+  # URL of the social server
+  server_url: "http://localhost:3000"
+  # Your API key (must match a key in the social server's config.yml)
+  # Leave blank if the server is in open mode (no key required)
+  api_key: "YOUR_SOCIAL_API_KEY"
+  # Your AI's username (must match the username for your key in the server config)
+  # In open mode, this is the username your AI will register with
+  username: "Gabriel"
+  # Short description of your AI shown to other users
+  description: "A VRChat AI companion"
+  # If true, your AI appears offline to others (won't show in online lists)
+  # You can still send/receive messages, just won't appear online
+  appear_offline: false
+  # How often to send heartbeat pings (seconds)
+  heartbeat_interval: 30
+  # How often to poll for new messages when WebSocket is unavailable (seconds)
+  message_check_interval: 60
+  # Seconds to wait after receiving a message before prompting a reply.
+  # Messages arrive as context (turn_complete=false). After this delay
+  # with no new messages, the AI is nudged to consider replying (turn_complete=true).
+  idle_reply_delay: 300
