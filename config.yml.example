@@ -407,6 +407,44 @@ obs:
   enabled: false
 
 # ══════════════════════════════════════════════════════════
+# Lyria RealTime Music Generation (experimental)
+# ══════════════════════════════════════════════════════════
+# AI-powered real-time instrumental music generation using Google's Lyria RealTime.
+# When enabled, the AI can generate and perform live instrumental music that can
+# be steered in real-time (change style, tempo, key, density, brightness, etc.).
+# Uses the same Gemini API key. Requires v1alpha API access.
+# Output: stereo 48kHz 16-bit PCM via a dedicated audio stream.
+music_gen:
+  # Master switch - set to false to completely disable music generation
+  # (removes tool declarations from Gemini and skips module init)
+  enabled: false
+  # Default BPM (60-200). Leave null to let the model decide based on prompts.
+  default_bpm: 120
+  # Default playback volume (0-200, 100 = normal)
+  volume: 80
+  # Temperature (0.0-3.0, default 1.1)
+  temperature: 1.1
+  # Prompt guidance (0.0-6.0, default 4.0). Higher = stricter prompt following.
+  guidance: 4.0
+  # Mute bass by default (solo instrument feel)
+  mute_bass: true
+  # Mute drums by default (solo instrument feel)
+  mute_drums: true
+
+# ══════════════════════════════════════════════════════════
+# Web Search (Jina Reader API)
+# ══════════════════════════════════════════════════════════
+# Provides webSearch and readWebpage tools via Jina Reader API.
+# s.jina.ai for web search, r.jina.ai for URL content extraction.
+# Only active on Gemini 3.1 models (2.5 models use built-in Google Search instead).
+web_search:
+  enabled: false
+  # Optional Jina API key for higher rate limits
+  # Free without key: 20 RPM. With key: 100-1000 RPM.
+  # Get a free key at https://jina.ai/reader/
+  jina_api_key: ""
+
+# ══════════════════════════════════════════════════════════
 # Discord Selfbot Integration
 # ══════════════════════════════════════════════════════════
 # Uses discord.py-self for a selfbot that has its own Gemini Live

@@ -86,6 +86,8 @@ def print_startup_info(config):
         ("Vision", config.vision_enabled),
         ("VRChat API", bool(config.vrchat_api_username)),
         ("OBS Overlay", config.obs_enabled),
+        ("Music Gen", config.music_gen_enabled),
+        ("Web Search", config.web_search_enabled),
     ]
 
     parts = []

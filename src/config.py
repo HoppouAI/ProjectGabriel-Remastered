@@ -377,3 +377,11 @@ class Config:
     @property
     def discord_bot_enabled(self):
         return self.get("discord_bot", "enabled", default=False)
+
+    @property
+    def music_gen_enabled(self):
+        return self.get("music_gen", "enabled", default=False)
+
+    @property
+    def web_search_enabled(self):
+        return self.get("web_search", "enabled", default=False)
