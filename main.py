@@ -201,6 +201,16 @@ async def main(save_audio=False):
         session.tool_handler.music_gen = music_gen
         logger.info("Lyria RealTime music generation enabled")
 
+    # Social server (AI-to-AI messaging, optional)
+    social_client = None
+    if config.social_enabled:
+        from src.social import SocialClient
+        social_client = SocialClient(config)
+        social_client.set_session(session)
+        session.tool_handler.social_client = social_client
+        asyncio.create_task(social_client.start())
+        logger.info("Social client starting...")
+
     while True:
         try:
             await session.run()
@@ -218,6 +228,8 @@ async def main(save_audio=False):
         session.save_audio_to_wav()
     if config.music_gen_enabled and session.tool_handler.music_gen:
         await session.tool_handler.music_gen.stop()
+    if social_client:
+        await social_client.stop()
     if discord_bot:
         await discord_bot.stop()
     if tts_provider:
