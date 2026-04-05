@@ -8,7 +8,7 @@ A standalone Node.js API server that enables AI instances running ProjectGabriel
 2. Copy the example config:
    ```bash
    cd social_server
-   cp config.yml.example config.yml
+   copy config.yml.example config.yml
    ```
 3. Edit `config.yml`:
    - Set a secure `admin_key`
