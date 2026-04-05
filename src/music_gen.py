@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import threading
+import time
 import pyaudio
 import numpy as np
 from google import genai
@@ -50,6 +51,8 @@ class MusicGenerator:
         # Session reference (set by session task, used for direct calls)
         self._session = None
         self._stop_event = asyncio.Event()
+        self._start_time: float | None = None
+        self._paused_elapsed: float = 0.0
 
     def _default_gen_config(self) -> types.LiveMusicGenerationConfig:
         cfg = self._config
@@ -108,6 +111,7 @@ class MusicGenerator:
                 await session.set_music_generation_config(config=gen_config)
                 await session.play()
                 self._playing = True
+                self._start_time = time.time()
 
                 # Signal that start is complete
                 if self._pending_result and not self._pending_result.done():
@@ -151,7 +155,8 @@ class MusicGenerator:
             self._session = None
             self._playing = False
             self._paused = False
-            # Close output stream safely in a thread (waits for any in-progress write)
+            self._start_time = None
+            self._paused_elapsed = 0.0
             await asyncio.to_thread(self._close_output_stream)
             self._prompts.clear()
             logger.info("Lyria RealTime session ended")
@@ -200,11 +205,13 @@ class MusicGenerator:
                         return
                     elif action == "pause":
                         await session.pause()
+                        self._paused_elapsed += time.time() - self._start_time
                         self._paused = True
                         if future and not future.done():
                             future.set_result({"result": "ok", "message": "Paused"})
                     elif action == "resume":
                         await session.play()
+                        self._start_time = time.time()
                         self._paused = False
                         if future and not future.done():
                             future.set_result({"result": "ok", "message": "Resumed"})
@@ -264,6 +271,15 @@ class MusicGenerator:
     @property
     def current_prompts(self) -> list[dict]:
         return [{"text": p.text, "weight": p.weight} for p in self._prompts]
+
+    @property
+    def elapsed(self) -> float:
+        """Seconds since playback started (excludes paused time)."""
+        if self._start_time is None:
+            return 0.0
+        if self._paused:
+            return self._paused_elapsed
+        return self._paused_elapsed + (time.time() - self._start_time)
 
     async def start(self, prompts: list[dict], bpm: int | None = None,
                     scale: str | None = None) -> dict:
@@ -359,6 +375,8 @@ class MusicGenerator:
         self._paused = False
         self._fading = False
         self._fade_volume = 1.0
+        self._start_time = None
+        self._paused_elapsed = 0.0
         self._prompts.clear()
         # Output stream is closed in _session_loop finally block
         logger.info("Lyria RealTime stopped")
