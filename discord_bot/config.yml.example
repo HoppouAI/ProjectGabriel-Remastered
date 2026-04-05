@@ -27,7 +27,10 @@ gemini:
   #  - "BACKUP_KEY_1"
   #  - "BACKUP_KEY_2"
 
-  # Gemini Live model - must support native audio
+  # Gemini Live model
+  # Supports both 2.5 and 3.1 Live models:
+  #   2.5: gemini-2.5-flash-native-audio-preview-12-2025 (native audio, affective)
+  #   3.1: gemini-3.1-flash-live-001 (thinking_level, realtime text input)
   model: "gemini-2.5-flash-native-audio-preview-09-2025"
 
   # System prompt -- select a named prompt from config/prompts/prompts.yml
@@ -55,11 +58,11 @@ gemini:
   # ── Thinking Configuration ──
   # Enables the model to "think" before responding (inner monologue).
   thinking:
-    # Thinking token budget - guides how many tokens the model uses to think.
-    # Higher = more thorough but slower responses. Set to 0 to disable thinking.
-    # null = use model default (dynamic thinking)
+    # For 2.5 models: thinking token budget (int, higher = more thorough, 0 = disable)
     budget: 2048
-
+    # For 3.1 models: thinking level (minimal / low / medium / high)
+    # Ignored on 2.5 models. Set budget to null when using a 3.1 model.
+    level: null
     # Whether to include thought summaries in logs.
     include_thoughts: false
 
@@ -96,6 +99,9 @@ behavior:
 
   # Minimum seconds between responses in the same channel (rate limiting)
   response_cooldown: 2.0
+
+  # Show "reconnecting..." message in chat when session handle is cleared after bad responses
+  show_reconnecting: false
 
   # How many recent messages to include as context when responding
   context_message_count: 15

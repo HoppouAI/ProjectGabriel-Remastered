@@ -141,8 +141,17 @@ class BotConfig:
         return self.get("gemini", "thinking", "budget")
 
     @property
+    def thinking_level(self):
+        return self.get("gemini", "thinking", "level")
+
+    @property
     def thinking_include_thoughts(self):
         return self.get("gemini", "thinking", "include_thoughts", default=False)
+
+    @property
+    def is_31_model(self):
+        """Check if current model is a Gemini 3.1 Live model."""
+        return "3.1" in self.model and "live" in self.model.lower()
 
     @property
     def compression_enabled(self):
@@ -175,6 +184,10 @@ class BotConfig:
     @property
     def response_cooldown(self):
         return self.get("behavior", "response_cooldown", default=2.0)
+
+    @property
+    def show_reconnecting(self):
+        return self.get("behavior", "show_reconnecting", default=False)
 
     @property
     def context_message_count(self):

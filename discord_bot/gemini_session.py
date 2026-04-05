@@ -41,6 +41,7 @@ class GeminiTextSession:
         self._reconnect_lock = asyncio.Lock()
         self._closing = False
         self._session_resumed = False
+        self._bad_response_streak = 0
         self._load_session_handle()
 
     def _build_config(self):
@@ -92,16 +93,29 @@ class GeminiTextSession:
                 cw_kwargs["trigger_tokens"] = self.config.compression_trigger_tokens
             config_kwargs["context_window_compression"] = types.ContextWindowCompressionConfig(**cw_kwargs)
 
-        # Thinking
-        thinking_budget = self.config.thinking_budget
-        include_thoughts = self.config.thinking_include_thoughts
-        if thinking_budget is not None or include_thoughts:
-            thinking_kwargs = {}
-            if thinking_budget is not None:
-                thinking_kwargs["thinking_budget"] = thinking_budget
-            if include_thoughts:
-                thinking_kwargs["include_thoughts"] = True
-            config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
+        # Thinking configuration
+        if self.config.is_31_model:
+            # 3.1 models use thinking_level (minimal/low/medium/high) instead of budget
+            thinking_level = self.config.thinking_level
+            include_thoughts = self.config.thinking_include_thoughts
+            if thinking_level is not None or include_thoughts:
+                thinking_kwargs = {}
+                if thinking_level is not None:
+                    thinking_kwargs["thinking_level"] = thinking_level
+                if include_thoughts:
+                    thinking_kwargs["include_thoughts"] = True
+                config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
+        else:
+            # 2.5 models use thinking_budget (token count)
+            thinking_budget = self.config.thinking_budget
+            include_thoughts = self.config.thinking_include_thoughts
+            if thinking_budget is not None or include_thoughts:
+                thinking_kwargs = {}
+                if thinking_budget is not None:
+                    thinking_kwargs["thinking_budget"] = thinking_budget
+                if include_thoughts:
+                    thinking_kwargs["include_thoughts"] = True
+                config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
 
         return types.LiveConnectConfig(**config_kwargs)
 
@@ -136,6 +150,23 @@ class GeminiTextSession:
         if SESSION_HANDLE_FILE.exists():
             SESSION_HANDLE_FILE.unlink()
 
+    def report_bad_response(self):
+        """Report a bad/empty response. After 2 consecutive bad responses,
+        clears the session handle and triggers a reconnect."""
+        self._bad_response_streak += 1
+        if self._bad_response_streak >= 2 and self._session_handle:
+            logger.warning(f"Discord bot: {self._bad_response_streak} consecutive bad responses, clearing session handle and reconnecting")
+            self._clear_session_handle()
+            # Cancel receive task to trigger reconnect in run_forever
+            if self._receive_task and not self._receive_task.done():
+                self._receive_task.cancel()
+            return True  # Signal that reconnect was triggered
+        return False
+
+    def report_good_response(self):
+        """Report a successful response, resetting the bad response counter."""
+        self._bad_response_streak = 0
+
     def _is_handle_expired(self):
         if not self._session_handle or not self._session_handle_created:
             return False
@@ -150,10 +181,14 @@ class GeminiTextSession:
         if self._is_handle_expired():
             self._clear_session_handle()
 
-        self._client = genai.Client(api_key=self.config.api_key)
+        self._client = genai.Client(
+            api_key=self.config.api_key,
+            http_options={"api_version": "v1alpha"},
+        )
         live_config = self._build_config()
 
-        logger.info(f"Connecting Discord bot to Gemini Live ({self.config.model})...")
+        model_family = "3.1" if self.config.is_31_model else "2.5"
+        logger.info(f"Connecting Discord bot to Gemini Live ({self.config.model}) [{model_family} model]...")
         return self._client.aio.live.connect(
             model=self.config.model,
             config=live_config,
@@ -192,16 +227,28 @@ class GeminiTextSession:
             except asyncio.QueueEmpty:
                 break
 
-        parts = []
-        if images:
-            img_data, mime_type = images[0]
-            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
-        parts.append(types.Part.from_text(text=text))
-
-        await self._session.send_client_content(
-            turns=types.Content(role="user", parts=parts),
-            turn_complete=True,
-        )
+        if self.config.is_31_model:
+            # 3.1 models: inject images via send_client_content, send text via realtime input
+            if images:
+                img_data, mime_type = images[0]
+                await self._session.send_client_content(
+                    turns=types.Content(role="user", parts=[
+                        types.Part.from_bytes(data=img_data, mime_type=mime_type),
+                    ]),
+                    turn_complete=False,
+                )
+            await self._session.send_realtime_input(text=text)
+        else:
+            # 2.5 models: use send_client_content for everything
+            parts = []
+            if images:
+                img_data, mime_type = images[0]
+                parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
+            parts.append(types.Part.from_text(text=text))
+            await self._session.send_client_content(
+                turns=types.Content(role="user", parts=parts),
+                turn_complete=True,
+            )
 
         response_text = await self._response_queue.get()
         return response_text
@@ -243,17 +290,29 @@ class GeminiTextSession:
                 turn_complete=False,
             )
 
-        # Build parts with optional image + text
-        parts = []
-        if images:
-            img_data, mime_type = images[0]
-            parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
-        parts.append(types.Part.from_text(text=text))
-
-        await self._session.send_client_content(
-            turns=types.Content(role="user", parts=parts),
-            turn_complete=True,
-        )
+        # Send the new message
+        if self.config.is_31_model:
+            # 3.1 models: inject images via client content, send text via realtime input
+            if images:
+                img_data, mime_type = images[0]
+                await self._session.send_client_content(
+                    turns=types.Content(role="user", parts=[
+                        types.Part.from_bytes(data=img_data, mime_type=mime_type),
+                    ]),
+                    turn_complete=False,
+                )
+            await self._session.send_realtime_input(text=text)
+        else:
+            # 2.5 models: use send_client_content for everything
+            parts = []
+            if images:
+                img_data, mime_type = images[0]
+                parts.append(types.Part.from_bytes(data=img_data, mime_type=mime_type))
+            parts.append(types.Part.from_text(text=text))
+            await self._session.send_client_content(
+                turns=types.Content(role="user", parts=parts),
+                turn_complete=True,
+            )
 
         # Wait for complete response
         response_text = await self._response_queue.get()
@@ -265,13 +324,17 @@ class GeminiTextSession:
         await self._connected.wait()
         if not self._session:
             return
-        await self._session.send_client_content(
-            turns=types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=text)],
-            ),
-            turn_complete=False,
-        )
+        if self.config.is_31_model:
+            # 3.1 models: use send_realtime_input for mid-session text
+            await self._session.send_realtime_input(text=text)
+        else:
+            await self._session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=text)],
+                ),
+                turn_complete=False,
+            )
 
     async def _receive_loop(self):
         """Continuously receive responses from Gemini Live."""
@@ -318,13 +381,16 @@ class GeminiTextSession:
                             if self.tool_handler._personality_prompt:
                                 prompt = self.tool_handler._personality_prompt
                                 self.tool_handler._personality_prompt = None
-                                await self._session.send_client_content(
-                                    turns=types.Content(
-                                        role="user",
-                                        parts=[types.Part.from_text(text=prompt)],
-                                    ),
-                                    turn_complete=False,
-                                )
+                                if self.config.is_31_model:
+                                    await self._session.send_realtime_input(text=prompt)
+                                else:
+                                    await self._session.send_client_content(
+                                        turns=types.Content(
+                                            role="user",
+                                            parts=[types.Part.from_text(text=prompt)],
+                                        ),
+                                        turn_complete=False,
+                                    )
                         except Exception as e:
                             logger.error(f"Discord tool dispatch error: {e}")
 
@@ -361,6 +427,7 @@ class GeminiTextSession:
                 connection = await self.connect()
                 async with connection as session:
                     self._session = session
+                    self._bad_response_streak = 0
                     if self._session_resumed:
                         logger.info("Discord bot resumed Gemini Live session")
                     else:
