@@ -413,6 +413,21 @@ class GeminiLiveSession:
             target = self.config.compression_target_tokens or "default"
             logger.info(f"Context compression enabled (trigger={trigger}, target={target})")
 
+        # Media resolution (reduces image token cost, critical for 3.1 free tier)
+        media_res = self.config.vision_media_resolution
+        if media_res and self.config.vision_enabled:
+            res_map = {
+                "low": types.MediaResolution.MEDIA_RESOLUTION_LOW,
+                "medium": types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+                "high": types.MediaResolution.MEDIA_RESOLUTION_HIGH,
+            }
+            resolved = res_map.get(media_res.lower())
+            if resolved:
+                config_kwargs["media_resolution"] = resolved
+                token_map = {"low": 280, "medium": 560, "high": 1120}
+                tokens = token_map.get(media_res.lower(), "?")
+                logger.info(f"Media resolution: {media_res} (~{tokens} tokens/frame)")
+
         # Thinking configuration
         if self.config.is_31_model:
             # 3.1 models use thinking_level (minimal/low/medium/high) instead of budget
@@ -970,10 +985,17 @@ class GeminiLiveSession:
                 screenshot = sct.grab(monitor)
                 img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
                 max_size = self.config.vision_max_size
+                # Use smaller resolution for 3.1 models to save tokens
+                if self.config.is_31_model and max_size > 768:
+                    max_size = 768
                 if img.width > max_size or img.height > max_size:
                     img.thumbnail([max_size, max_size])
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG", quality=self.config.vision_quality)
+                quality = self.config.vision_quality
+                # Use lower JPEG quality for 3.1 models (smaller payload)
+                if self.config.is_31_model and quality > 60:
+                    quality = 60
+                img.save(buffer, format="JPEG", quality=quality)
                 buffer.seek(0)
                 return buffer.read()
         except Exception as e:
@@ -989,8 +1011,23 @@ class GeminiLiveSession:
             monitor = sct.monitors[monitor_idx]
             logger.info(f"Capturing monitor {monitor_idx}: {monitor['width']}x{monitor['height']}")
         interval = self.config.vision_interval
+        # Auto-increase interval for 3.1 models if user hasn't set a higher value
+        if self.config.is_31_model and interval < 2.0:
+            interval = 2.0
+            logger.info(f"Vision interval increased to {interval}s for 3.1 model (token optimization)")
+        pause_on_output = self.config.vision_pause_on_output
+        if pause_on_output:
+            logger.info("Vision pause enabled (skips frames during speech/music, not live music)")
         try:
             while True:
+                # Skip frame when AI is speaking or music is playing (unless live music is active)
+                if pause_on_output:
+                    music_gen = getattr(self.tool_handler, 'music_gen', None)
+                    music_gen_active = music_gen.is_active if music_gen else False
+                    if not music_gen_active:
+                        if self._speaking or self.audio.is_music_playing():
+                            await asyncio.sleep(interval)
+                            continue
                 frame = await asyncio.to_thread(self._capture_screen_frame)
                 if frame:
                     try:

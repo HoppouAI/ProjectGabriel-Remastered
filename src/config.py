@@ -295,6 +295,18 @@ class Config:
         return self.get("vision", "quality", default=80)
 
     @property
+    def vision_media_resolution(self):
+        """Media resolution for Live API vision. Auto-defaults to LOW for 3.1 models to save tokens."""
+        val = self.get("vision", "media_resolution")
+        if val is not None:
+            return val
+        return "low" if self.is_31_model else None
+
+    @property
+    def vision_pause_on_output(self):
+        return self.get("vision", "pause_on_output", default=True)
+
+    @property
     def memory_enabled(self):
         return self.get("memory", "enabled", default=True)
 
