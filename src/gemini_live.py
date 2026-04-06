@@ -838,6 +838,7 @@ class GeminiLiveSession:
             busy = music_playing or tracker_active or music_gen_active
             # Don't trigger idle during active tasks
             if self._emotion_system:
+                self._emotion_system.set_seated(self.osc.seated)
                 if busy:
                     self._emotion_system.mark_activity()
                 else:

@@ -32,6 +32,7 @@ class VRChatOSC:
         self.velocity_y = 0.0
         self.velocity_z = 0.0
         self.grounded = True
+        self.seated = False
         self.velocity_received = False  # True once any velocity update arrives
 
         # Start OSC listener for avatar parameters
@@ -45,6 +46,7 @@ class VRChatOSC:
         dispatcher.map("/avatar/parameters/VelocityX", self._on_velocity_x)
         dispatcher.map("/avatar/parameters/VelocityY", self._on_velocity_y)
         dispatcher.map("/avatar/parameters/Grounded", self._on_grounded)
+        dispatcher.map("/avatar/parameters/Seated", self._on_seated)
 
         try:
             server = ThreadingOSCUDPServer(("127.0.0.1", receive_port), dispatcher)
@@ -67,6 +69,9 @@ class VRChatOSC:
 
     def _on_grounded(self, address, value):
         self.grounded = bool(value)
+
+    def _on_seated(self, address, value):
+        self.seated = bool(value)
 
     def _chatbox_worker(self):
         """Background thread that sends chatbox messages respecting rate limit."""

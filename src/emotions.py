@@ -84,6 +84,9 @@ class EmotionSystem:
         # Wandering suppresses idle
         self._wandering = False
 
+        # Seated state (read from VRChat OSC, suppresses talking/idle animations)
+        self._seated = False
+
     def set_osc_client(self, osc_client):
         """Set the OSC client after initialization."""
         self.osc_client = osc_client
@@ -116,10 +119,24 @@ class EmotionSystem:
         """Check if idle animation should start. Call periodically from a loop."""
         if not self.enabled or not self._idle_enabled or not self._idle_animation_name:
             return
-        if self._idle_active or self._is_speaking or self._manual_animation_active or self._wandering:
+        if self._idle_active or self._is_speaking or self._manual_animation_active or self._wandering or self._seated:
             return
         if time.time() - self._last_activity_time >= self._idle_timeout:
             self._start_idle_animation()
+
+    def set_seated(self, seated: bool):
+        """Update seated state from VRChat OSC. Suppresses talking and idle animations."""
+        if seated == self._seated:
+            return
+        self._seated = seated
+        if seated:
+            if self._is_speaking:
+                self.stop_speaking()
+            if self._idle_active:
+                self._stop_idle_animation()
+            logger.debug("Seated: suppressing auto animations")
+        else:
+            logger.debug("Unseated: auto animations re-enabled")
 
     def set_wandering(self, active: bool):
         """Suppress idle animation while wandering."""
@@ -187,6 +204,11 @@ class EmotionSystem:
         if self._thinking_active:
             self.stop_thinking()
         if not self.enabled or self._is_speaking or not self._talking_anims:
+            return
+        
+        # Don't start talking animations if seated
+        if self._seated:
+            logger.debug("Seated, skipping talking animations")
             return
         
         # Don't start talking animations if a manual animation is playing
