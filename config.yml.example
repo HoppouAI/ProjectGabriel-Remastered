@@ -333,6 +333,10 @@ vision:
   # Set to false if you want the AI to always see the screen even while talking.
   pause_on_output: true
 
+  # Pause screen capture when nobody is interacting with the AI (saves tokens).
+  # Resumes as soon as the AI starts speaking, receives input, or any task is active.
+  pause_on_idle: true
+
 # ══════════════════════════════════════════════════════════
 # Persistent Memory System
 # ══════════════════════════════════════════════════════════

@@ -166,6 +166,7 @@ class GeminiLiveSession:
         self._idle_timeout = 15.0  # Stop talking animations after 15s idle
         self._last_interaction_time = time.time()  # Track last user/AI interaction for engagement
         self._idle_engagement_sent = False  # Only send one engagement prompt per idle period
+        self._is_idle = False  # True when AI is idle (not speaking, no active tasks)
         self._pending_finalize_task = None
         self._wanderer = None  # Set externally from main.py
         self._save_audio = False  # Set externally via --save-audio flag
@@ -841,8 +842,11 @@ class GeminiLiveSession:
                     self._emotion_system.mark_activity()
                 else:
                     self._emotion_system.check_idle()
+            # Track idle state for vision pause and chatbox
+            idle_now = not self._speaking and not busy
+            self._is_idle = idle_now
             # Start idle chatbox when idle and not busy
-            if not self._speaking and not busy:
+            if idle_now:
                 emo = self._emotion_system
                 if (emo and emo._idle_active) or not emo:
                     self._idle_chatbox.start()
@@ -1016,10 +1020,17 @@ class GeminiLiveSession:
             interval = 2.0
             logger.info(f"Vision interval increased to {interval}s for 3.1 model (token optimization)")
         pause_on_output = self.config.vision_pause_on_output
+        pause_on_idle = self.config.vision_pause_on_idle
         if pause_on_output:
             logger.info("Vision pause enabled (skips frames during speech/music, not live music)")
+        if pause_on_idle:
+            logger.info("Vision pause on idle enabled (skips frames when nobody is interacting)")
         try:
             while True:
+                # Skip frame when AI is idle (nobody talking, no active tasks)
+                if pause_on_idle and self._is_idle:
+                    await asyncio.sleep(interval)
+                    continue
                 # Skip frame when AI is speaking or music is playing (unless live music is active)
                 if pause_on_output:
                     music_gen = getattr(self.tool_handler, 'music_gen', None)
@@ -1237,7 +1248,7 @@ class GeminiLiveSession:
                         if hasattr(um, "total_token_count") and um.total_token_count:
                             self._usage_metadata["total_tokens"] = um.total_token_count
 
-                    if response.go_away:
+                    if response.go_away and not self._reconnect_requested:
                         time_left = response.go_away.time_left
                         logger.warning(
                             f"Server disconnecting in {time_left}"
