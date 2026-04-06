@@ -27,6 +27,7 @@ colorama
 discord.py-self
 fastapi
 uvicorn[standard]
+python-multipart
 pynput
 pyotp
 nltk

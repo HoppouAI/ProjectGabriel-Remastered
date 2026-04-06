@@ -311,13 +311,27 @@ vision:
 
   # Seconds between screen captures (lower = more responsive but uses more tokens)
   # Note: audio+video sessions are limited to 2 minutes, use context window compression
+  # For 3.1 models on free tier: auto-bumped to 2.0s if set below that (token optimization)
   interval: 1.0
 
   # Max resolution (images are scaled to fit this size, preserving aspect ratio)
+  # For 3.1 models: auto-capped at 768 to reduce payload size
   max_size: 1024
 
   # JPEG quality (1-100, higher = better quality but larger payload)
+  # For 3.1 models: auto-capped at 60 to reduce payload size
   quality: 80
+
+  # Media resolution controls how many tokens each image costs in the Live API.
+  # Options: "low" (280 tokens), "medium" (560 tokens), "high" (1120 tokens)
+  # Auto-defaults to "low" for 3.1 models if not set (critical for free tier 65K TPM limit).
+  # For 2.5 models the default is unset (uses API default ~256 tokens with pan & scan).
+  # media_resolution: "low"
+
+  # Pause screen capture while AI is speaking or music is playing (saves tokens).
+  # Live music (music_gen) is excluded from this pause so the AI can still see reactions.
+  # Set to false if you want the AI to always see the screen even while talking.
+  pause_on_output: true
 
 # ══════════════════════════════════════════════════════════
 # Persistent Memory System
