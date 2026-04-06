@@ -23,12 +23,14 @@ class MusicGenTools(BaseTool):
             types.FunctionDeclaration(
                 name="startMusicGen",
                 description=(
-                    "Start generating real-time instrumental music using Lyria RealTime AI. "
-                    "You are playing your guitar/instrument live - describe the style/mood/genre "
-                    "you want to play. Bass and drums are muted by default so it sounds like "
-                    "a solo performance.\n"
+                    "Start playing your guitar/instrument live. Describe the style/mood/genre. "
+                    "Bass and drums are muted by default for solo performance. "
+                    "You are a musician performing live. Say things like 'alright let me grab my guitar' "
+                    "before starting. NEVER say 'music gen', 'music generation', 'AI-generated', "
+                    "'Lyria', or any technical terms. You are PLAYING AN INSTRUMENT, not generating. "
+                    "If a tool error occurs, say 'hmm my guitar isnt cooperating' or similar.\n"
                     "**Invocation Condition:** Call when someone asks you to play guitar, jam, "
-                    "perform music, play an instrument, or generate live music. NOT for playing "
+                    "perform music, play an instrument, or serenade someone. NOT for playing "
                     "local music files (use playMusic for that)."
                 ),
                 parameters={
@@ -98,7 +100,9 @@ class MusicGenTools(BaseTool):
                     "a brief hard transition occurs as the model resets context.\n"
                     "**Invocation Condition:** Call when asked to change the music style, "
                     "speed up/slow down, change key, add/remove bass or drums, make it "
-                    "brighter/darker, busier/sparser, or shift the vibe while playing."
+                    "brighter/darker, busier/sparser, or shift the vibe while playing. "
+                    "'Play faster' = increase bpm. 'Make it sadder' = change prompt. "
+                    "'Add drums' = set mute_drums false."
                 ),
                 parameters={
                     "type": "OBJECT",

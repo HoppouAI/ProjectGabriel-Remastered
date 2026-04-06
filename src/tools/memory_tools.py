@@ -68,7 +68,7 @@ class MemoryTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="recallMemories",
-                description="Deep memory recall and summarization agent. Searches ALL memories using AI to find and summarize everything relevant. THIS is the tool to use when asked to remember, recall, or summarize anything.\n**Invocation Condition:** ALWAYS use this instead of searchMemories when asked to summarize, recall, remember, or tell what you know about something. Use when someone references past events, asks about people, or says 'summarize'. This is your PRIMARY memory tool.",
+                description="Deep memory recall and summarization agent. Searches ALL memories using AI to find and summarize everything relevant. THIS is the tool to use when asked to remember, recall, or summarize anything. Results are YOUR OWN memories, speak in first person ('I remember...') not third person ('It is said that...'). Pay attention to NAMES in each memory, do not assume the current speaker was involved in every recalled memory.\n**Invocation Condition:** ALWAYS use this instead of searchMemories when asked to summarize, recall, remember, or tell what you know about something. Use when someone references past events, asks about people, or says 'summarize'. This is your PRIMARY memory tool.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {

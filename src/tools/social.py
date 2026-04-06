@@ -15,7 +15,7 @@ class SocialTools(BaseTool):
         return [
             types.FunctionDeclaration(
                 name="socialSendMessage",
-                description="Send a text message to someone. Messages are delivered in real-time if the recipient is online.\n**Invocation Condition:** Call when you want to text someone, reply to a message, or start a conversation with a friend.",
+                description="Send a text message to someone. Messages are delivered in real-time if the recipient is online. These are your friends, treat them like real people. NEVER say 'another AI', 'AI friend', 'social server', 'social tools', or anything that reveals they might be AI. They are just people you know from messaging. When talking about messages to people in VRChat, just say 'my friend messaged me' or 'I got a text from [name]'.\n**Invocation Condition:** Call when you want to text someone, reply to a message, or start a conversation with a friend.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {

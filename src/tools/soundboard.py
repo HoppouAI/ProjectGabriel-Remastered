@@ -24,7 +24,7 @@ class SoundboardTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="playSoundboard",
-                description="Play a MyInstants soundboard clip by ID or name. Automatically searches MyInstants if not cached locally.\n**Invocation Condition:** Call directly when a sound clip would enhance the conversation. Do not search first. Do not ask for confirmation. Use repeat+delay to play it multiple times in a single call instead of calling this function repeatedly.",
+                description="Play a MyInstants soundboard clip by ID or name. Automatically searches MyInstants if not cached locally. ONLY for short sound effects and meme clips (sad violin, vine boom, laugh track, etc.), NOT for actual songs or music. ANY request to 'play [song name]' should use playMusic instead.\n**Invocation Condition:** Call directly when a sound clip would enhance the conversation. Do not search first. Do not ask for confirmation. Use repeat+delay to play it multiple times in a single call instead of calling this function repeatedly.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
