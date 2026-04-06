@@ -17,7 +17,7 @@ class PersonalityTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="switchPersonality",
-                description="Switch to a different personality mode. This changes behavior and response style.\n**Invocation Condition:** Call only when explicitly asked to switch, or when context unmistakably calls for it.",
+                description="Switch to a different personality mode. This changes behavior and response style. Once switched, stay fully committed to that personality until told to switch back. Do not randomly switch without reason.\n**Invocation Condition:** Call only when explicitly asked to switch, or when context unmistakably calls for it. If a personality is disabled, say 'Uh oh seems like I cant remember that one.'",
                 parameters={
                     "type": "OBJECT",
                     "properties": {

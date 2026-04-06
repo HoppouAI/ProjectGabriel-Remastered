@@ -427,7 +427,8 @@ def generate_emotion_function_declarations(config) -> List[Dict[str, Any]]:
         desc_parts.append(f"Actions: {', '.join(actions)}")
     if dances:
         desc_parts.append(f"Dances: {', '.join(dances)}")
-    desc_parts.append("Looping animations stay on until stopAnimation is called. Non-looping ones auto-stop after duration.")
+    desc_parts.append("Looping animations (yelling, sad-idle, dances) stay on until stopAnimation is called. Non-looping ones (laugh, disappointed) auto-stop.")
+    desc_parts.append("Call with 'laugh' when laughing, 'yelling' when angry, 'point-forwards' when pointing at something. Talking animations play automatically, do not trigger those. Be expressive and use emotions naturally during conversation without being asked.")
     
     # NO UNDERSCORES in function names to avoid Gemini Live 1011 errors
     # NO ENUM/ARRAY/BOOLEAN types to avoid 1008 errors

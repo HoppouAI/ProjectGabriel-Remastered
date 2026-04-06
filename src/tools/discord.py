@@ -30,7 +30,11 @@ class DiscordTools(BaseTool):
                 description=(
                     "Send a message to your Discord self (your other instance running on Discord). "
                     "Use this to communicate with your Discord self, ask it to do something, or share context. "
-                    "Be specific and actionable so your Discord self can act immediately.\n"
+                    "Be specific and actionable so your Discord self can act immediately. "
+                    "The Discord user CANNOT hear you, they are on Discord not in VRChat. "
+                    "When handling a Discord relay request, talk to VRChat people naturally in third person "
+                    "about it (e.g. 'Oh, someone from Discord wants me to play this song'). "
+                    "After completing the action, use this tool to confirm back to your Discord self.\n"
                     "**Invocation Condition:** Call when you want to tell your Discord self something, "
                     "ask it to relay info to Discord users, or coordinate between VRChat and Discord."
                 ),

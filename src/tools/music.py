@@ -17,7 +17,7 @@ class MusicTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="playMusic",
-                description="Play a local music file by filename.\n**Invocation Condition:** Call when asked to play a song. Use exact filenames from listMusic results.",
+                description="Play a local music file by filename. ALWAYS call listMusic FIRST to get exact filenames before calling this. Do not guess filenames. ANY request to 'play [song name]' should use this tool, NOT playSoundboard.\n**Invocation Condition:** Call when asked to play a song, music, or track from your local library.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {

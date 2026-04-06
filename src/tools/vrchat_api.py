@@ -12,7 +12,7 @@ class VRChatAPITools(BaseTool):
         return [
             types.FunctionDeclaration(
                 name="searchAvatars",
-                description="Search for VRChat avatars by name. Returns up to 25 avatar names. Use switchAvatar with the exact name to switch.\n**Invocation Condition:** Call when asked to find, search, or look for avatars.",
+                description="Search for VRChat avatars by name. Returns up to 25 avatar names. If duplicates exist, they get suffixes like 'Cat-1', 'Cat-2'. Tell the user the names you found. Use switchAvatar with the exact name to switch.\n**Invocation Condition:** Call when asked to find, search, or look for avatars.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -23,7 +23,7 @@ class VRChatAPITools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="switchAvatar",
-                description="Switch to a VRChat avatar by name or ID. Checks the local cache first, then searches online if needed. Use the exact name from searchAvatars results.\n**Invocation Condition:** Call when asked to change avatar, switch avatar, or put on a specific avatar.",
+                description="Switch to a VRChat avatar by name or ID. Checks the local cache first, then searches online if needed. Use the exact name from searchAvatars results (including -N suffix for duplicates). Previously used avatars are cached, so you can switch back by name without searching again.\n**Invocation Condition:** Call when asked to change avatar, switch avatar, or put on a specific avatar.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
