@@ -307,6 +307,10 @@ class Config:
         return self.get("vision", "pause_on_output", default=True)
 
     @property
+    def vision_pause_on_idle(self):
+        return self.get("vision", "pause_on_idle", default=True)
+
+    @property
     def memory_enabled(self):
         return self.get("memory", "enabled", default=True)
 
