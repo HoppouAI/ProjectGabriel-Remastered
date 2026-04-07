@@ -32,17 +32,32 @@ gemini:
   voice: "Puck"
 
   # ── Voice Activity Detection (VAD) ──
-  # Controls how Gemini detects when you start/stop speaking
+  # Controls how Gemini detects when you start/stop speaking.
+  #
+  # Two modes:
+  #   1. Automatic (disabled: false) - Server-side VAD handles everything.
+  #      Simple, works well for most setups. Just configure sensitivity.
+  #   2. Manual (disabled: true) - Client-side energy-based VAD.
+  #      Sends activityStart/activityEnd signals to Gemini manually.
+  #      Recommended for production apps (per Google AI community patterns).
+  #      Gives you full control over turn-taking and prevents echo issues.
+  #      Also gates audio during tool calls and model speech to avoid
+  #      1007/1008 disconnects from stale audio.
   vad:
-    # Set to true to disable automatic VAD (you'd need to send manual signals)
-    disabled: false
+    # VAD mode: "auto" (Gemini server-side) or "silero" (local Silero VAD model)
+    #   auto   = Uses Gemini's built-in automatic activity detection. Simple, no extra deps.
+    #   silero = Uses Silero VAD locally for speech detection with activityStart/activityEnd.
+    #            More stable on 3.1 models, prevents stalls from noise. Requires torch.
+    #            Also gates audio during tool calls and model speech to avoid
+    #            1007/1008 disconnects from stale audio leaking to the server.
+    mode: "silero"
 
-    # Sensitivity for detecting the START of speech
+    # Sensitivity for detecting the START of speech (auto mode only)
     # Options: START_SENSITIVITY_LOW, START_SENSITIVITY_HIGH
     # HIGH = triggers faster but may pick up noise, LOW = more selective
     start_of_speech_sensitivity: "START_SENSITIVITY_HIGH"
 
-    # Sensitivity for detecting the END of speech
+    # Sensitivity for detecting the END of speech (auto mode only)
     # Options: END_SENSITIVITY_LOW, END_SENSITIVITY_HIGH
     # HIGH = ends speech detection quicker, LOW = waits longer
     end_of_speech_sensitivity: "END_SENSITIVITY_HIGH"
@@ -51,7 +66,14 @@ gemini:
     prefix_padding_ms: 100
 
     # Milliseconds of silence required to consider speech complete
-    silence_duration_ms: 200
+    # Used in both auto and silero mode. 500ms is good for natural conversation.
+    silence_duration_ms: 500
+
+    # Speech probability threshold for Silero VAD (silero mode only)
+    # Silero outputs a 0.0-1.0 probability per audio chunk.
+    # Chunks above this threshold are considered speech.
+    # Default 0.5 is a good starting point. Lower = more sensitive, higher = stricter.
+    silero_threshold: 0.5
 
   # ── Generation Parameters ──
   temperature: 1.0     # 0.0-2.0, controls randomness (default: 1.0, higher = more creative)

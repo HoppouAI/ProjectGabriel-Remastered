@@ -123,8 +123,21 @@ class Config:
         return self.get("gemini", "voice", default="Kore")
 
     @property
+    def vad_mode(self):
+        """VAD mode: 'auto' (Gemini server-side) or 'silero' (local Silero VAD model).
+        Also supports legacy 'disabled: true' which maps to 'silero'."""
+        mode = self.get("gemini", "vad", "mode")
+        if mode:
+            return mode.lower()
+        # Legacy compat: disabled=true maps to silero mode
+        if self.get("gemini", "vad", "disabled", default=False):
+            return "silero"
+        return "auto"
+
+    @property
     def vad_disabled(self):
-        return self.get("gemini", "vad", "disabled", default=False)
+        """True when using client-side VAD (Silero). Used internally."""
+        return self.vad_mode == "silero"
 
     @property
     def vad_start_sensitivity(self):
@@ -141,6 +154,11 @@ class Config:
     @property
     def vad_silence_duration_ms(self):
         return self.get("gemini", "vad", "silence_duration_ms", default=500)
+
+    @property
+    def vad_silero_threshold(self):
+        """Speech probability threshold for Silero VAD (0.0-1.0). Default 0.5."""
+        return self.get("gemini", "vad", "silero_threshold", default=0.5)
 
     @property
     def temperature(self):
