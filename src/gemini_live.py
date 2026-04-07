@@ -7,6 +7,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+import numpy as np
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
@@ -155,6 +156,11 @@ class GeminiLiveSession:
         self._last_connect_succeeded = True  # Track if last connect attempt reached onopen
         self._rate_limit_backoff = 0
         self._tool_call_pending = False
+        self._audio_stream_active = False  # True when server knows we're streaming audio
+        self._audio_gated = False  # True when we should suppress outbound audio (tool calls, model speaking)
+        self._manual_vad_speaking = False  # Client-side VAD: True when user is speaking
+        self._manual_vad_silence_start = 0  # When silence started for manual VAD debounce
+        self._silero_vad = None  # Lazy-loaded Silero VAD model
         self._out_queue = asyncio.Queue(maxsize=5)
         self._audio_in_queue = asyncio.Queue()
         self._reconnect_requested = False
@@ -524,6 +530,12 @@ class GeminiLiveSession:
                         logger.info("Google Search auto-disabled for 3.1 model")
                 else:
                     logger.info("Using 2.5 model (thinkingBudget, send_client_content, v1alpha features available)")
+                # Log VAD mode
+                if self.config.vad_mode == "silero":
+                    logger.info(f"Silero VAD enabled (threshold={self.config.vad_silero_threshold}, silence={self.config.vad_silence_duration_ms}ms)")
+                    logger.info("Audio gating active: outbound suppressed during model speech and tool calls")
+                else:
+                    logger.info("Using Gemini server-side VAD (auto mode)")
                 if self._session_handle:
                     # If last connect attempt failed before reaching onopen, handle is likely bad
                     if not self._last_connect_succeeded:
@@ -563,6 +575,13 @@ class GeminiLiveSession:
                     self._out_queue = asyncio.Queue(maxsize=5)
                     self._audio_in_queue = asyncio.Queue()
                     self._stream_closing = False
+                    self._audio_stream_active = False
+                    self._audio_gated = False
+                    self._manual_vad_speaking = False
+                    self._manual_vad_silence_start = 0
+                    # Reset Silero VAD internal state if loaded
+                    if self._silero_vad is not None:
+                        self._silero_vad.reset_states()
                     input_stream = self.audio.open_input_stream()
                     output_stream = self.audio.open_output_stream()
                     try:
@@ -898,13 +917,137 @@ class GeminiLiveSession:
                 logger.error(f"Audio listen error: {e}")
                 raise
 
+    async def _send_audio_stream_end(self, session):
+        """Send audioStreamEnd to flush server-side buffered audio.
+        Per Joe_Hu's production patterns: always flush before gating audio."""
+        if self._audio_stream_active:
+            try:
+                await session.send_realtime_input(audio_stream_end=True)
+                self._audio_stream_active = False
+                logger.debug("Sent audioStreamEnd")
+            except Exception as e:
+                logger.debug(f"Failed to send audioStreamEnd: {e}")
+
+    async def _send_activity_start(self, session):
+        """Send activityStart signal for manual VAD mode."""
+        if not self._manual_vad_speaking:
+            try:
+                self._manual_vad_speaking = True
+                await session.send_realtime_input(activity_start=types.ActivityStart())
+                logger.debug("Sent activityStart")
+            except Exception as e:
+                logger.debug(f"Failed to send activityStart: {e}")
+
+    async def _send_activity_end(self, session):
+        """Send activityEnd signal for manual VAD mode."""
+        if self._manual_vad_speaking:
+            try:
+                self._manual_vad_speaking = False
+                await session.send_realtime_input(activity_end=types.ActivityEnd())
+                logger.debug("Sent activityEnd")
+            except Exception as e:
+                logger.debug(f"Failed to send activityEnd: {e}")
+
+    async def _gate_audio(self, session):
+        """Gate outbound audio, sending audioStreamEnd first to flush server buffer.
+        Used when tool calls come in or model starts speaking."""
+        if not self._audio_gated:
+            self._audio_gated = True
+            # If Silero VAD is active, end the activity first
+            if self.config.vad_mode == "silero" and self._manual_vad_speaking:
+                await self._send_activity_end(session)
+            await self._send_audio_stream_end(session)
+            logger.debug("Audio gated (outbound suppressed)")
+
+    def _ungate_audio(self):
+        """Resume outbound audio. Audio will start flowing on next send."""
+        if self._audio_gated:
+            self._audio_gated = False
+            logger.debug("Audio ungated (outbound resumed)")
+
+    def _load_silero_vad(self):
+        """Lazy-load Silero VAD model. Uses torch.hub, cached after first download."""
+        if self._silero_vad is not None:
+            return self._silero_vad
+        import torch
+        logger.info("Loading Silero VAD model...")
+        torch.set_num_threads(1)  # single thread is fine for VAD
+        model, _ = torch.hub.load(
+            repo_or_dir="snakers4/silero-vad",
+            model="silero_vad",
+            trust_repo=True,
+        )
+        model.eval()
+        self._silero_vad = model
+        logger.info("Silero VAD model loaded")
+        return model
+
+    def _silero_detect_speech(self, data: bytes) -> float:
+        """Run Silero VAD on a PCM 16-bit 16kHz audio chunk. Returns speech probability 0.0-1.0.
+        Silero requires exactly 512 samples at 16kHz, so we split and take the max probability."""
+        import torch
+        model = self._load_silero_vad()
+        samples = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+        # Silero needs 512-sample chunks at 16kHz
+        chunk_size = 512
+        max_prob = 0.0
+        with torch.no_grad():
+            for i in range(0, len(samples) - chunk_size + 1, chunk_size):
+                chunk = torch.from_numpy(samples[i:i + chunk_size])
+                prob = model(chunk, 16000).item()
+                if prob > max_prob:
+                    max_prob = prob
+        return max_prob
+
     async def _send_realtime_loop(self, session):
+        use_silero = self.config.vad_mode == "silero"
+        silero_threshold = self.config.vad_silero_threshold
+        silence_ms = self.config.vad_silence_duration_ms
+        # Pre-load silero model before the loop starts
+        if use_silero:
+            await asyncio.to_thread(self._load_silero_vad)
         while True:
             try:
                 msg_type, data = await self._out_queue.get()
-                if self._tool_call_pending:
+                # Hard gate: tool calls in progress, drop all audio
+                if self._tool_call_pending and msg_type == "audio":
                     continue
                 if msg_type == "audio":
+                    if use_silero:
+                        # Silero VAD: detect speech via ML model
+                        prob = await asyncio.to_thread(self._silero_detect_speech, data)
+                        if prob >= silero_threshold:
+                            # Speech detected
+                            self._manual_vad_silence_start = 0
+                            if self._audio_gated:
+                                # User is speaking while model is talking, interrupt!
+                                self._ungate_audio()
+                                logger.debug("Silero detected speech while gated, ungating for interruption")
+                            if not self._manual_vad_speaking:
+                                await self._send_activity_start(session)
+                        else:
+                            # Silence
+                            if self._audio_gated:
+                                continue  # still gated and no speech, skip
+                            if self._manual_vad_speaking:
+                                if self._manual_vad_silence_start == 0:
+                                    self._manual_vad_silence_start = time.time()
+                                elapsed_silence = (time.time() - self._manual_vad_silence_start) * 1000
+                                if elapsed_silence >= silence_ms:
+                                    await self._send_activity_end(session)
+                                    await self._send_audio_stream_end(session)
+                                    self._manual_vad_silence_start = 0
+                                    continue  # dont send this silent chunk after activityEnd
+                            else:
+                                # Not speaking and silence, don't send audio
+                                # Joe_Hu: "don't send audio between activityEnd and next activityStart"
+                                continue
+                    else:
+                        # Auto mode: just skip gated audio
+                        if self._audio_gated:
+                            continue
+                    # Send the audio chunk
+                    self._audio_stream_active = True
                     await session.send_realtime_input(
                         audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
                     )
@@ -1089,6 +1232,9 @@ class GeminiLiveSession:
                                     self._speaking = True
                                     self._idle_chatbox.stop()
                                     self.osc.set_typing(True)
+                                    # Gate outbound audio while model speaks (prevents echo/barge-in)
+                                    if self.config.vad_mode == "silero":
+                                        await self._gate_audio(session)
                                 # Try to start talking animations (idempotent, handles manual animation blocking)
                                 if self._emotion_system:
                                     self._emotion_system.start_speaking()
@@ -1144,6 +1290,8 @@ class GeminiLiveSession:
 
                     if response.server_content and response.server_content.turn_complete:
                         self._speaking = False
+                        # Ungate audio so mic input can flow again
+                        self._ungate_audio()
                         if self._thinking_shown:
                             self.audio.stop_thinking_sound()
                             if self._emotion_system:
@@ -1166,6 +1314,8 @@ class GeminiLiveSession:
 
                     if response.server_content and response.server_content.interrupted:
                         self._speaking = False
+                        # Ungate audio on interruption so user can speak
+                        self._ungate_audio()
                         if self._thinking_shown:
                             self.audio.stop_thinking_sound()
                             if self._emotion_system:
@@ -1188,6 +1338,9 @@ class GeminiLiveSession:
 
                     if response.tool_call:
                         self._tool_call_pending = True
+                        # Gate audio and flush server buffer before processing tool calls
+                        # Per Joe_Hu: sending audio during tool processing causes 1007/1008 disconnects
+                        await self._gate_audio(session)
                         # Interrupt TTS -- model will regenerate after tool response
                         if self._tts:
                             self._tts.interrupt()
@@ -1233,6 +1386,8 @@ class GeminiLiveSession:
                                 )
                         finally:
                             self._tool_call_pending = False
+                            # Ungate audio after tool response sent
+                            self._ungate_audio()
 
                     # Track usage metadata if available
                     if hasattr(response, "usage_metadata") and response.usage_metadata:
