@@ -50,7 +50,7 @@ gemini:
     #            More stable on 3.1 models, prevents stalls from noise. Requires torch.
     #            Also gates audio during tool calls and model speech to avoid
     #            1007/1008 disconnects from stale audio leaking to the server.
-    mode: "silero"
+    mode: "auto"
 
     # Sensitivity for detecting the START of speech (auto mode only)
     # Options: START_SENSITIVITY_LOW, START_SENSITIVITY_HIGH
@@ -67,13 +67,13 @@ gemini:
 
     # Milliseconds of silence required to consider speech complete
     # Used in both auto and silero mode. 500ms is good for natural conversation.
-    silence_duration_ms: 500
+    silence_duration_ms: 200
 
     # Speech probability threshold for Silero VAD (silero mode only)
     # Silero outputs a 0.0-1.0 probability per audio chunk.
     # Chunks above this threshold are considered speech.
     # Default 0.5 is a good starting point. Lower = more sensitive, higher = stricter.
-    silero_threshold: 0.5
+    # silero_threshold: 0.5
 
   # ── Generation Parameters ──
   temperature: 1.0     # 0.0-2.0, controls randomness (default: 1.0, higher = more creative)

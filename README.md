@@ -166,6 +166,30 @@ face_tracker:
   enabled: false
 ```
 
+### 5. Voice Activity Detection (VAD)
+
+Two VAD modes are available, configured via `gemini.vad.mode` in `config.yml`:
+
+**Auto mode** (default) uses Gemini's built-in server-side VAD. No extra setup needed, works out of the box.
+
+```yaml
+gemini:
+  vad:
+    mode: "auto"
+```
+
+**Silero mode** uses a local [Silero VAD](https://github.com/snakers4/silero-vad) model for speech detection. Recommended for 3.1 models where it provides more stable behavior. It sends `activityStart`/`activityEnd` signals based on speech probability, gates outbound audio during model speech and tool calls to prevent stalls and disconnects, and allows interruptions by detecting user speech even while the model is talking.
+
+```yaml
+gemini:
+  vad:
+    mode: "silero"
+    silence_duration_ms: 500    # how long to wait before ending speech
+    silero_threshold: 0.5       # speech probability threshold (0.0-1.0)
+```
+
+The Silero model is downloaded automatically on first use via `torch.hub` and cached locally. It requires PyTorch which is already included in the project dependencies.
+
 ---
 
 ## Audio Routing
