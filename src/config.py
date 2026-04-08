@@ -329,6 +329,11 @@ class Config:
         return self.get("vision", "pause_on_idle", default=True)
 
     @property
+    def vision_idle_interval(self):
+        """Seconds between vision frames when idle. Slows down instead of stopping entirely."""
+        return self.get("vision", "idle_interval", default=15.0)
+
+    @property
     def memory_enabled(self):
         return self.get("memory", "enabled", default=True)
 

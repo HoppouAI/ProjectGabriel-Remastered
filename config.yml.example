@@ -355,9 +355,15 @@ vision:
   # Set to false if you want the AI to always see the screen even while talking.
   pause_on_output: true
 
-  # Pause screen capture when nobody is interacting with the AI (saves tokens).
-  # Resumes as soon as the AI starts speaking, receives input, or any task is active.
+  # Pause screen capture when nobody is interacting with the AI.
+  # Instead of fully stopping, vision slows down to idle_interval to save tokens
+  # while still keeping some awareness. Resumes normal speed when someone speaks
+  # or any task becomes active. Works with both auto and Silero VAD modes.
   pause_on_idle: true
+
+  # Seconds between vision frames when idle. Only used when pause_on_idle is true.
+  # Lower = more awareness while idle but more tokens, higher = saves tokens.
+  idle_interval: 15.0
 
 # ══════════════════════════════════════════════════════════
 # Persistent Memory System
