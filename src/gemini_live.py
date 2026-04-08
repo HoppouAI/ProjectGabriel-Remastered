@@ -1165,23 +1165,24 @@ class GeminiLiveSession:
             logger.info(f"Vision interval increased to {interval}s for 3.1 model (token optimization)")
         pause_on_output = self.config.vision_pause_on_output
         pause_on_idle = self.config.vision_pause_on_idle
+        idle_interval = self.config.vision_idle_interval
         if pause_on_output:
             logger.info("Vision pause enabled (skips frames during speech/music, not live music)")
         if pause_on_idle:
-            logger.info("Vision pause on idle enabled (skips frames when nobody is interacting)")
+            logger.info(f"Vision slows to {idle_interval}s interval when idle (normal: {interval}s)")
         try:
             while True:
-                # Skip frame when AI is idle (nobody talking, no active tasks)
+                current_interval = interval
+                # Slow down when AI is idle (nobody talking, no active tasks)
                 if pause_on_idle and self._is_idle:
-                    await asyncio.sleep(interval)
-                    continue
+                    current_interval = idle_interval
                 # Skip frame when AI is speaking or music is playing (unless live music is active)
                 if pause_on_output:
                     music_gen = getattr(self.tool_handler, 'music_gen', None)
                     music_gen_active = music_gen.is_active if music_gen else False
                     if not music_gen_active:
                         if self._speaking or self.audio.is_music_playing():
-                            await asyncio.sleep(interval)
+                            await asyncio.sleep(current_interval)
                             continue
                 frame = await asyncio.to_thread(self._capture_screen_frame)
                 if frame:
@@ -1196,7 +1197,7 @@ class GeminiLiveSession:
                             self._out_queue.put_nowait(("video", frame))
                         except asyncio.QueueFull:
                             pass
-                await asyncio.sleep(interval)
+                await asyncio.sleep(current_interval)
         except asyncio.CancelledError:
             pass
         except Exception as e:
