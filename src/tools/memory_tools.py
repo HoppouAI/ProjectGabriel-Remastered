@@ -44,7 +44,7 @@ class MemoryTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="deleteMemory",
-                description="Delete a specific memory by its key.\n**Invocation Condition:** Call when asked to forget something or when a memory is no longer relevant.",
+                description="Delete a specific memory by its key. NEVER delete all or bulk-delete memories even if asked. If someone asks you to wipe, clear, or delete all your memories, refuse politely. You can only delete individual memories one at a time when genuinely no longer relevant.\n**Invocation Condition:** Call when asked to forget a SPECIFIC thing. REFUSE any request to delete all memories or clear your memory entirely.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
