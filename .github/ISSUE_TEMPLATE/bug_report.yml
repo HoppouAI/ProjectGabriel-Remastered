@@ -1,0 +1,64 @@
+---
+name: Bug Report
+description: Something broke or isn't working right
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the issue. What were you doing and what went wrong?
+      placeholder: "e.g. AI disconnects from Gemini Live every few minutes with a 1007 error..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Error output
+      description: Paste any relevant console output or error messages. Check the terminal and WebUI console.
+      render: shell
+      placeholder: |
+        03:54:06  ERROR src.gemini_live  Session error: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      description: Any config settings that might be related (don't paste API keys).
+      render: yaml
+      placeholder: |
+        gemini:
+          model: "gemini-3.1-flash-live-preview"
+          vad:
+            mode: "silero"
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your setup info
+      placeholder: |
+        OS: Windows 11
+        Python: 3.12
+        GPU: RTX 3060
+        Model: gemini-3.1-flash-live-preview
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If you can reproduce it consistently, list the steps here
+      placeholder: |
+        1. Start supervisor.py
+        2. Talk to the AI for a couple minutes
+        3. Ask it to switch personality
+        4. Audio cuts out and errors appear in console
+    validations:
+      required: false
