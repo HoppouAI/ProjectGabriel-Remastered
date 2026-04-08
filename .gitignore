@@ -182,6 +182,7 @@ cython_debug/
 
 # ProjectGabriel
 config.yml
+!.github/ISSUE_TEMPLATE/config.yml
 session_handle.txt
 depth_server/keys.txt
 data/conversations/

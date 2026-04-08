@@ -1,0 +1,38 @@
+---
+name: Help / Setup Issue
+description: Need help getting things running or configured
+labels: ["help wanted"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What's the problem?
+      description: Describe what you're trying to do and where you're stuck
+      placeholder: "e.g. The AI can hear me but no audio comes through to VRChat, other players can't hear it..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: What steps did you already take?
+      placeholder: |
+        - Ran setup.bat, all dependencies installed fine
+        - Set up VB-Audio Cable as the output device
+        - Checked Windows sound settings
+        - Can hear the AI in my headphones but VRChat doesn't pick it up
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Your setup info
+      placeholder: |
+        OS: Windows 11
+        Python: 3.12
+        Audio: VB-Audio Cable
+    validations:
+      required: false

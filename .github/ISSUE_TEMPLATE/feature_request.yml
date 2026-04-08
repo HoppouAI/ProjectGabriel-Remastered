@@ -1,0 +1,31 @@
+---
+name: Feature Request
+description: Got an idea for something new or an improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What do you want?
+      description: Describe the feature or improvement you'd like to see
+      placeholder: "e.g. It would be cool if the AI could join a different VRChat world on command via Discord..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Why?
+      description: What problem does this solve or what would it make better?
+      placeholder: "e.g. Right now you have to manually move it between worlds, being able to do it remotely would be really useful..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: ideas
+    attributes:
+      label: Ideas for implementation
+      description: If you have thoughts on how this could work, share them here
+      placeholder: "e.g. Could add an !invite command in the Discord bot that calls inviteSelfToInstance..."
+    validations:
+      required: false
