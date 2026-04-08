@@ -117,6 +117,12 @@ class ConversationLogger:
             }
         threading.Thread(target=self._write_file, args=(data,), daemon=True).start()
 
+    def get_recent_entries(self, count=10):
+        """Return last N user/assistant entries for context replay."""
+        with self._lock:
+            relevant = [e for e in self._entries if e["role"] in ("user", "assistant")]
+            return relevant[-count:]
+
     def _write_file(self, data):
         try:
             self._file_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -173,6 +179,7 @@ class GeminiLiveSession:
         self._last_interaction_time = time.time()  # Track last user/AI interaction for engagement
         self._idle_engagement_sent = False  # Only send one engagement prompt per idle period
         self._is_idle = False  # True when AI is idle (not speaking, no active tasks)
+        self._replay_context = []  # Previous session entries to replay on error reconnect
         self._pending_finalize_task = None
         self._wanderer = None  # Set externally from main.py
         self._save_audio = False  # Set externally via --save-audio flag
@@ -197,8 +204,9 @@ class GeminiLiveSession:
         self._idle_chatbox = IdleChatbox(osc, config)
 
     def request_reconnect(self):
-        """Request a reconnect on next iteration."""
+        """Request a reconnect on next iteration (manual, no context replay)."""
         self._reconnect_requested = True
+        self._replay_context = []  # manual reconnect = fresh start
         logger.info("Reconnect requested via control panel")
 
     def _notify_chatbox_error(self):
@@ -278,6 +286,28 @@ class GeminiLiveSession:
         except Exception as e:
             logger.error(f"Failed to send client content: {e}")
             raise
+
+    async def _replay_previous_context(self, session):
+        """Replay last few messages as context after an error reconnect.
+        Uses send_client_content to seed the session with recent conversation history
+        so the model doesnt lose track of what was being discussed."""
+        if not self._replay_context:
+            return
+        try:
+            turns = []
+            for entry in self._replay_context:
+                role = "model" if entry["role"] == "assistant" else "user"
+                turns.append(types.Content(
+                    role=role,
+                    parts=[types.Part.from_text(text=entry["content"])]
+                ))
+            # Send all turns as context, last one with turn_complete=True
+            await session.send_client_content(turns=turns, turn_complete=True)
+            count = len(self._replay_context)
+            logger.info(f"Replayed {count} messages as session context")
+            _broadcast_console("info", f"Replayed {count} messages as context after reconnect")
+        except Exception as e:
+            logger.warning(f"Failed to replay context (non-fatal): {e}")
 
     @staticmethod
     def _extract_text_from_turns(turns):
@@ -459,6 +489,13 @@ class GeminiLiveSession:
                     thinking_kwargs["include_thoughts"] = True
                 config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
 
+        # History config for context replay (3.1 models need this to accept send_client_content)
+        # Only needed on fresh sessions (no handle) where we'll replay previous context
+        if self._replay_context and not self._session_handle and self.config.is_31_model:
+            config_kwargs["history_config"] = types.HistoryConfig(
+                initial_history_in_client_content=True
+            )
+
         return types.LiveConnectConfig(**config_kwargs)
 
     def _load_session_handle(self):
@@ -504,6 +541,12 @@ class GeminiLiveSession:
         self._alpha_fallback_failed = False
         self._rate_limit_backoff = 0
         while True:
+            # Capture previous conversation for context replay on error reconnects
+            # Skip on manual reconnect since the user explicitly wants a fresh session
+            if not self._reconnect_requested and hasattr(self, '_conv_logger') and self._conv_logger:
+                recent = self._conv_logger.get_recent_entries(10)
+                if recent:
+                    self._replay_context = recent
             self._reconnect_requested = False
             # Check for expired session handle before each connection attempt
             if self._is_session_handle_expired():
@@ -567,6 +610,12 @@ class GeminiLiveSession:
                     )
                     self._session = session
                     self._connection_start_time = time.time()
+
+                    # Replay previous context on fresh sessions (no handle = context was lost)
+                    # Skip if session resumption is active since the model already has history
+                    if self._replay_context and not self._session_handle:
+                        await self._replay_previous_context(session)
+                    self._replay_context = []
                     self._rate_limit_backoff = 0
                     self._last_interaction_time = time.time()
                     self._idle_engagement_sent = False
