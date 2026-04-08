@@ -77,7 +77,7 @@ class VRChatAPITools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="getOwnAvatar",
-                description="Get information about your currently equipped VRChat avatar. Returns name, description, author, and performance ratings.\n**Invocation Condition:** Call when asked what avatar you are wearing, what your current avatar is, or for details about your avatar.",
+                description="Get info about YOUR (the AI's) currently equipped avatar. This returns YOUR avatar data, NOT another player's. Use vision to see what other people look like.\n**Invocation Condition:** Call ONLY when someone asks what avatar YOU (the AI) are wearing or asks about YOUR appearance. Do NOT call this to check what other players look like.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
