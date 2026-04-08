@@ -863,7 +863,7 @@ class GeminiLiveSession:
                 else:
                     self._emotion_system.check_idle()
             # Track idle state for vision pause and chatbox
-            idle_now = not self._speaking and not busy
+            idle_now = not self._speaking and not self._manual_vad_speaking and not busy
             self._is_idle = idle_now
             # Start idle chatbox when idle and not busy
             if idle_now:
