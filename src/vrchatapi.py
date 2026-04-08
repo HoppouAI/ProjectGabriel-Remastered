@@ -602,3 +602,26 @@ class VRChatAPI:
             if resp.status != 200:
                 return {"error": f"API returned {resp.status}"}
             return await resp.json()
+
+    async def get_mutual_friends(self, user_id: str, n: int = 60, offset: int = 0):
+        """Get mutual friends between the logged-in user and the specified user."""
+        logged_in = await self.ensure_logged_in()
+        if not logged_in:
+            return {"error": "Not logged in to VRChat API"}
+
+        session = await self._get_session()
+        headers = self._headers()
+        params = f"?n={min(n, 100)}&offset={offset}"
+        async with session.get(
+            f"{BASE_URL}/users/{user_id}/mutuals/friends{params}",
+            headers=headers,
+        ) as resp:
+            self._extract_cookies(resp)
+            if resp.status == 401:
+                self._logged_in = False
+                return {"error": "Auth expired, please retry"}
+            if resp.status == 404:
+                return {"error": f"User '{user_id}' not found"}
+            if resp.status != 200:
+                return {"error": f"API returned {resp.status}"}
+            return await resp.json()

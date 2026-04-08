@@ -131,6 +131,17 @@ class VRChatAPITools(BaseTool):
                     "required": ["name"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="getMutualFriends",
+                description="Get mutual friends between you and another player. Finds friends that both you and the specified person have in common. Resolves display names from the friend cache.\n**Invocation Condition:** Call when asked about mutual friends with someone, what friends you have in common, or who you both know.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Player's display name or user ID (usr_xxx) to check mutual friends with"},
+                    },
+                    "required": ["name"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -158,6 +169,8 @@ class VRChatAPITools(BaseTool):
             return await self._get_current_status()
         elif name == "getFriendInfo":
             return await self._get_friend_info(args["name"])
+        elif name == "getMutualFriends":
+            return await self._get_mutual_friends(args["name"])
         return None
 
     async def _search_avatars(self, query):
@@ -357,3 +370,23 @@ class VRChatAPITools(BaseTool):
             "last_login": data.get("last_login", ""),
             "isFriend": data.get("isFriend", False),
         }
+
+    async def _get_mutual_friends(self, name):
+        user_id = self._resolve_player_id(name)
+        if not user_id:
+            return {"result": "error", "message": f"Could not find player '{name}' -- check the name or use a user ID (usr_xxx)"}
+        api = self.handler._get_vrchat_api()
+        data = await api.get_mutual_friends(user_id)
+        if isinstance(data, dict) and "error" in data:
+            return data
+        if not data:
+            return {"result": "ok", "message": f"No mutual friends with {name}", "count": 0, "mutuals": []}
+        mutuals = []
+        for f in data:
+            mutuals.append({
+                "displayName": f.get("displayName", ""),
+                "id": f.get("id", ""),
+                "status": f.get("status", ""),
+                "statusDescription": f.get("statusDescription", ""),
+            })
+        return {"result": "ok", "count": len(mutuals), "mutuals": mutuals}
