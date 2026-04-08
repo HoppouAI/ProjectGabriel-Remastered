@@ -544,7 +544,7 @@ class GeminiLiveSession:
             # Capture previous conversation for context replay on error reconnects
             # Skip on manual reconnect since the user explicitly wants a fresh session
             if not self._reconnect_requested and hasattr(self, '_conv_logger') and self._conv_logger:
-                recent = self._conv_logger.get_recent_entries(10)
+                recent = self._conv_logger.get_recent_entries(self.config.session_replay_messages)
                 if recent:
                     self._replay_context = recent
             self._reconnect_requested = False
@@ -719,12 +719,13 @@ class GeminiLiveSession:
                     self._notify_chatbox_error()
                     # Check if session crashed quickly (within 15s) - likely handle issue
                     session_was_short = self._connection_start_time > 0 and (time.time() - self._connection_start_time) < 15
-                    # 1007 (invalid argument) - retry with handle, only clear after 3 failures
+                    err_threshold = self.config.session_error_threshold
+                    # 1007 (invalid argument) - clear handle after configurable threshold
                     if "1007" in err_str and self._session_handle:
                         self._handle_fail_count += 1
-                        logger.warning(f"1007 invalid argument (attempt {self._handle_fail_count}/3, keeping handle)")
-                        if self._handle_fail_count >= 3:
-                            logger.warning("Clearing session handle after 3 consecutive 1007 errors")
+                        logger.warning(f"1007 invalid argument (attempt {self._handle_fail_count}/{err_threshold})")
+                        if self._handle_fail_count >= err_threshold:
+                            logger.warning(f"Clearing session handle after {err_threshold} consecutive 1007 error(s)")
                             self._resumption_fail_streak += 1
                             self._clear_session_handle()
                         await asyncio.sleep(3)
@@ -745,8 +746,8 @@ class GeminiLiveSession:
                             self._clear_session_handle()
                     elif self._session_handle:
                         self._handle_fail_count += 1
-                        if self._handle_fail_count >= 3:
-                            logger.warning("Session handle failed 3 times after WS errors, clearing")
+                        if self._handle_fail_count >= err_threshold:
+                            logger.warning(f"Session handle failed {err_threshold} time(s) after WS errors, clearing")
                             self._clear_session_handle()
                     await asyncio.sleep(0.5)
                     continue
@@ -775,12 +776,13 @@ class GeminiLiveSession:
                 self._notify_chatbox_error()
                 # Check if session crashed quickly (within 15s) - likely handle issue
                 session_was_short = self._connection_start_time > 0 and (time.time() - self._connection_start_time) < 15
-                # 1007 (invalid argument) - retry with handle, only clear after 3 failures
+                # 1007 (invalid argument) - clear handle after configurable threshold
+                err_threshold = self.config.session_error_threshold
                 if code == 1007 and self._session_handle:
                     self._handle_fail_count += 1
-                    logger.warning(f"1007 invalid argument (attempt {self._handle_fail_count}/3, keeping handle)")
-                    if self._handle_fail_count >= 3:
-                        logger.warning("Clearing session handle after 3 consecutive 1007 errors")
+                    logger.warning(f"1007 invalid argument (attempt {self._handle_fail_count}/{err_threshold})")
+                    if self._handle_fail_count >= err_threshold:
+                        logger.warning(f"Clearing session handle after {err_threshold} consecutive 1007 error(s)")
                         self._resumption_fail_streak += 1
                         self._clear_session_handle()
                     await asyncio.sleep(3)
@@ -801,8 +803,8 @@ class GeminiLiveSession:
                         self._clear_session_handle()
                 elif self._session_handle:
                     self._handle_fail_count += 1
-                    if self._handle_fail_count >= 3:
-                        logger.warning("Session handle failed 3 times, clearing")
+                    if self._handle_fail_count >= err_threshold:
+                        logger.warning(f"Session handle failed {err_threshold} time(s), clearing")
                         self._clear_session_handle()
                 await asyncio.sleep(0.5)
                 continue

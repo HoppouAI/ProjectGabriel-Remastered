@@ -209,6 +209,16 @@ class Config:
         return "3.1" in self.model and "live" in self.model.lower()
 
     @property
+    def session_error_threshold(self):
+        """How many consecutive errors (e.g. 1007) before clearing session handle. Default 1."""
+        return self.get("gemini", "session", "error_threshold", default=1)
+
+    @property
+    def session_replay_messages(self):
+        """Number of recent user/assistant messages to replay as context on fresh reconnect."""
+        return self.get("gemini", "session", "replay_messages", default=10)
+
+    @property
     def compression_enabled(self):
         return self.get("gemini", "context_window_compression", "enabled", default=True)
 
