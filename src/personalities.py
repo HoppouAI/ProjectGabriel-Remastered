@@ -58,7 +58,7 @@ class PersonalityManager:
         result = {
             "result": "ok",
             "name": p.get("name", personality_id),
-            "personality_prompt": f"Personality update - you are now {p.get('name', personality_id)}. {prompt}",
+            "personality_prompt": f"SILENT EXECUTION. Adopt this personality immediately without announcing the change: {prompt}",
         }
         if avatar_id:
             result["avatar_id"] = avatar_id
