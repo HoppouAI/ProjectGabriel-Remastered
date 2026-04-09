@@ -37,18 +37,16 @@ class VRChatAPITools(BaseTool):
                 description="Get a list of all players currently in the same VRChat instance as you. Returns each player's display name. Useful for knowing who is around you.\n**Invocation Condition:** Call when asked who is in the instance, who is here, who is around, or to list the people in the room/world.",
                 parameters={
                     "type": "OBJECT",
-                    "properties": {
-                        "includeIds": {"type": "STRING", "description": "Set to 'true' to also return user IDs alongside names. Default false."},
-                    },
+                    "properties": {},
                 },
             ),
             types.FunctionDeclaration(
                 name="invitePlayer",
-                description="Invite a player to YOUR current VRChat instance (sends them an invite to come to you). Use the exact display name or user ID.\n**Invocation Condition:** Call when you want to bring someone to YOUR world/instance. NOT for joining someone else's instance.",
+                description="Invite a player to YOUR current VRChat instance (sends them an invite to come to you). Use the exact display name.\n**Invocation Condition:** Call when you want to bring someone to YOUR world/instance. NOT for joining someone else's instance.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "player": {"type": "STRING", "description": "Player display name or user ID (usr_xxx) to invite"},
+                        "player": {"type": "STRING", "description": "Player's display name to invite"},
                     },
                     "required": ["player"],
                 },
@@ -59,7 +57,7 @@ class VRChatAPITools(BaseTool):
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "player": {"type": "STRING", "description": "Player display name or user ID (usr_xxx) to request invite from"},
+                        "player": {"type": "STRING", "description": "Player's display name to request invite from"},
                     },
                     "required": ["player"],
                 },
@@ -70,7 +68,7 @@ class VRChatAPITools(BaseTool):
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "player": {"type": "STRING", "description": "Friend's display name or user ID (usr_xxx) to join"},
+                        "player": {"type": "STRING", "description": "Friend's display name to join"},
                     },
                     "required": ["player"],
                 },
@@ -137,18 +135,18 @@ class VRChatAPITools(BaseTool):
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "name": {"type": "STRING", "description": "Player's display name or user ID (usr_xxx) to check mutual friends with"},
+                        "name": {"type": "STRING", "description": "Player's display name to check mutual friends with"},
                     },
                     "required": ["name"],
                 },
             ),
             types.FunctionDeclaration(
                 name="boopPlayer",
-                description="Send a boop to a player. Resolves display names from the instance player list or friend cache.\n**Invocation Condition:** Call when asked to boop someone or send a boop.",
+                description="Send a boop to a player. The player must be on your friends list. Resolves display names from the friend cache or instance player list.\n**Invocation Condition:** Call when asked to boop someone or send a boop.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "player": {"type": "STRING", "description": "Player's display name or user ID (usr_xxx) to boop"},
+                        "player": {"type": "STRING", "description": "Player's display name to boop"},
                     },
                     "required": ["player"],
                 },
@@ -161,7 +159,7 @@ class VRChatAPITools(BaseTool):
         elif name == "switchAvatar":
             return await self._switch_avatar(args["nameOrId"])
         elif name == "getInstancePlayers":
-            return self._get_instance_players(str(args.get("includeIds", "false")).lower() == "true")
+            return self._get_instance_players()
         elif name == "invitePlayer":
             return await self._invite_player(args["player"])
         elif name == "requestInvite":
@@ -202,7 +200,7 @@ class VRChatAPITools(BaseTool):
             self.handler._current_avatar_id = result.get("avatar_id")
         return result
 
-    def _get_instance_players(self, include_ids=False):
+    def _get_instance_players(self):
         if not self.handler.instance_monitor:
             return {"result": "error", "message": "Instance monitor not available"}
         players = self.handler.instance_monitor.get_players()
@@ -211,10 +209,7 @@ class VRChatAPITools(BaseTool):
             if not location:
                 return {"result": "ok", "message": "Not currently in a VRChat instance", "players": [], "count": 0}
             return {"result": "ok", "message": "No players detected yet", "location": location, "players": [], "count": 0}
-        if include_ids:
-            player_list = [{"name": p["name"], "id": p["id"]} for p in players]
-        else:
-            player_list = [p["name"] for p in players]
+        player_list = [p["name"] for p in players]
         return {"result": "ok", "location": location, "count": len(player_list), "players": player_list}
 
     def _resolve_player_id(self, player):
@@ -235,7 +230,7 @@ class VRChatAPITools(BaseTool):
         api = self.handler._get_vrchat_api()
         user_id = self._resolve_player_id(player)
         if not user_id:
-            return {"result": "error", "message": f"Could not find player '{player}' -- use getInstancePlayers first or provide a user ID (usr_xxx)"}
+            return {"result": "error", "message": f"Could not find player '{player}' in the instance or friends list"}
         location = self.handler.instance_monitor.current_location if self.handler.instance_monitor else ""
         if not location:
             user_data = await api.get_current_user()
@@ -250,7 +245,7 @@ class VRChatAPITools(BaseTool):
         api = self.handler._get_vrchat_api()
         user_id = self._resolve_player_id(player)
         if not user_id:
-            return {"result": "error", "message": f"Could not find player '{player}' -- use getInstancePlayers first or provide a user ID (usr_xxx)"}
+            return {"result": "error", "message": f"Could not find player '{player}' in the instance or friends list"}
         result = await api.request_invite(user_id)
         return result
 
@@ -387,7 +382,7 @@ class VRChatAPITools(BaseTool):
     async def _get_mutual_friends(self, name):
         user_id = self._resolve_player_id(name)
         if not user_id:
-            return {"result": "error", "message": f"Could not find player '{name}' -- check the name or use a user ID (usr_xxx)"}
+            return {"result": "error", "message": f"Could not find player '{name}' in the instance or friends list"}
         api = self.handler._get_vrchat_api()
         data = await api.get_mutual_friends(user_id)
         if isinstance(data, dict) and "error" in data:
@@ -407,6 +402,6 @@ class VRChatAPITools(BaseTool):
     async def _boop_player(self, player):
         user_id = self._resolve_player_id(player)
         if not user_id:
-            return {"result": "error", "message": f"Could not find player '{player}' -- check the name or use a user ID (usr_xxx)"}
+            return {"result": "error", "message": f"Could not find player '{player}' in the instance or friends list"}
         api = self.handler._get_vrchat_api()
         return await api.boop_user(user_id)
