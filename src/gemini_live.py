@@ -774,6 +774,13 @@ class GeminiLiveSession:
                 # Rate limiting - check expired handle first, then rotate key
                 if "429" in err_lower or "quota" in err_lower or "rate" in err_lower:
                     logger.warning(f"Rate limit error details: {err_str[:200]}")
+                    # Flush buffered transcript so last messages make it into replay context
+                    if self._transcript_buffer.strip():
+                        self._conv_logger.add_assistant_message(self._transcript_buffer)
+                        self._transcript_buffer = ""
+                    if self._input_transcript_buffer.strip():
+                        self._conv_logger.finalize_user_message()
+                        self._input_transcript_buffer = ""
                     if self._session_handle and self._is_session_handle_expired():
                         logger.warning("Rate limited with expired session handle, clearing handle")
                         _broadcast_console("info", "Expired session handle causing rate limit, clearing")
@@ -787,6 +794,9 @@ class GeminiLiveSession:
                         logger.warning("Rate limited - switched API key")
                         _broadcast_console("info", "Rate limited - switched API key")
                         self._rate_limit_backoff = 0
+                        # Handle is key-specific, can't resume on a different key
+                        if self._session_handle:
+                            self._clear_session_handle()
                     else:
                         self._rate_limit_backoff = min(self._rate_limit_backoff + 1, 5)
                         wait = 5 * (2 ** self._rate_limit_backoff)  # 10, 20, 40, 80, 160, 160s
@@ -808,6 +818,13 @@ class GeminiLiveSession:
                     logger.warning(f"WebSocket close ({e}), reconnecting...")
                     _broadcast_console("error", f"WebSocket error: {err_str[:100]}")
                     self._notify_chatbox_error()
+                    # Flush buffered transcript so last messages make it into replay context
+                    if self._transcript_buffer.strip():
+                        self._conv_logger.add_assistant_message(self._transcript_buffer)
+                        self._transcript_buffer = ""
+                    if self._input_transcript_buffer.strip():
+                        self._conv_logger.finalize_user_message()
+                        self._input_transcript_buffer = ""
                     # Check if session crashed quickly (within 15s) - likely handle issue
                     session_was_short = self._connection_start_time > 0 and (time.time() - self._connection_start_time) < 15
                     err_threshold = self.config.session_error_threshold
