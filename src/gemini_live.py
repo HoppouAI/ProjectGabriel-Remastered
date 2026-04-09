@@ -523,11 +523,7 @@ class GeminiLiveSession:
             target = self.config.compression_target_tokens or "default"
             logger.info(f"Context compression enabled (trigger={trigger}, target={target})")
         elif self.config.custom_compression_enabled:
-            # Still need built-in compression as a safety net, but set trigger very high
-            # so our custom compression fires first
-            config_kwargs["context_window_compression"] = types.ContextWindowCompressionConfig(
-                sliding_window=types.SlidingWindow(),
-            )
+            # No built-in compression at all -- we handle it via summarization + reconnect
             trigger = self.config.custom_compression_trigger_tokens or "auto"
             logger.info(f"Custom context compression enabled (trigger={trigger} tokens)")
 
