@@ -865,6 +865,13 @@ class GeminiLiveSession:
                 logger.warning(f"WebSocket closed (code={code}, reason={reason[:80]}), reconnecting...")
                 _broadcast_console("error", f"WebSocket closed: {code} {reason[:60]}")
                 self._notify_chatbox_error()
+                # Flush any buffered transcript so the last model message is in replay context
+                if self._transcript_buffer.strip():
+                    self._conv_logger.add_assistant_message(self._transcript_buffer)
+                    self._transcript_buffer = ""
+                if self._input_transcript_buffer.strip():
+                    self._conv_logger.finalize_user_message()
+                    self._input_transcript_buffer = ""
                 # Check if session crashed quickly (within 15s) - likely handle issue
                 session_was_short = self._connection_start_time > 0 and (time.time() - self._connection_start_time) < 15
                 # 1007 (invalid argument) - clear handle after configurable threshold
@@ -905,6 +912,13 @@ class GeminiLiveSession:
                 logger.warning(f"Network error: {e}, reconnecting in 3s...")
                 _broadcast_console("error", f"Network error: {str(e)[:80]}")
                 self._notify_chatbox_error()
+                # Flush buffered transcript so last messages make it into replay context
+                if self._transcript_buffer.strip():
+                    self._conv_logger.add_assistant_message(self._transcript_buffer)
+                    self._transcript_buffer = ""
+                if self._input_transcript_buffer.strip():
+                    self._conv_logger.finalize_user_message()
+                    self._input_transcript_buffer = ""
                 await asyncio.sleep(3)
                 continue
 
