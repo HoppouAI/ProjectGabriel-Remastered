@@ -112,6 +112,7 @@ gemini:
   # Prevents session termination when context gets too large.
   # Without compression: audio-only 15 min, audio+video 2 min.
   # With compression: unlimited session length.
+  # NOTE: These settings are bypassed when custom_compression is enabled.
   context_window_compression:
     enabled: true
     # Token count that triggers compression (null = 80% of model's 128k context window)
