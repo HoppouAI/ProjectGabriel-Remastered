@@ -142,6 +142,17 @@ class VRChatAPITools(BaseTool):
                     "required": ["name"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="boopPlayer",
+                description="Send a boop to a player. Resolves display names from the instance player list or friend cache.\n**Invocation Condition:** Call when asked to boop someone or send a boop.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "player": {"type": "STRING", "description": "Player's display name or user ID (usr_xxx) to boop"},
+                    },
+                    "required": ["player"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -171,6 +182,8 @@ class VRChatAPITools(BaseTool):
             return await self._get_friend_info(args["name"])
         elif name == "getMutualFriends":
             return await self._get_mutual_friends(args["name"])
+        elif name == "boopPlayer":
+            return await self._boop_player(args["player"])
         return None
 
     async def _search_avatars(self, query):
@@ -390,3 +403,10 @@ class VRChatAPITools(BaseTool):
                 "statusDescription": f.get("statusDescription", ""),
             })
         return {"result": "ok", "count": len(mutuals), "mutuals": mutuals}
+
+    async def _boop_player(self, player):
+        user_id = self._resolve_player_id(player)
+        if not user_id:
+            return {"result": "error", "message": f"Could not find player '{player}' -- check the name or use a user ID (usr_xxx)"}
+        api = self.handler._get_vrchat_api()
+        return await api.boop_user(user_id)

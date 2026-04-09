@@ -625,3 +625,28 @@ class VRChatAPI:
             if resp.status != 200:
                 return {"error": f"API returned {resp.status}"}
             return await resp.json()
+
+    async def boop_user(self, user_id: str):
+        """Send a boop to another user."""
+        logged_in = await self.ensure_logged_in()
+        if not logged_in:
+            return {"error": "Not logged in to VRChat API"}
+
+        session = await self._get_session()
+        headers = self._headers()
+        headers["Content-Type"] = "application/json"
+        async with session.post(
+            f"{BASE_URL}/users/{user_id}/boop",
+            headers=headers,
+            json={},
+        ) as resp:
+            self._extract_cookies(resp)
+            if resp.status == 401:
+                self._logged_in = False
+                return {"error": "Auth expired, please retry"}
+            if resp.status == 404:
+                return {"error": f"User '{user_id}' not found"}
+            if resp.status != 200:
+                text = await resp.text()
+                return {"error": f"Boop failed: HTTP {resp.status} - {text}"}
+            return {"result": "ok", "message": "Boop sent!"}
