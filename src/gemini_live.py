@@ -190,6 +190,8 @@ class GeminiLiveSession:
             "total_tokens": 0,
             "tool_calls": 0,
         }
+        self._compression_in_progress = False  # Guard to prevent concurrent compression
+        self._compression_summary = None  # Summary from custom compression to seed on reconnect
         self._load_session_handle()
         self._conv_logger = ConversationLogger()
         
@@ -207,7 +209,76 @@ class GeminiLiveSession:
         """Request a reconnect on next iteration (manual, no context replay)."""
         self._reconnect_requested = True
         self._replay_context = []  # manual reconnect = fresh start
+        self._compression_summary = None
         logger.info("Reconnect requested via control panel")
+
+    async def _summarize_conversation_for_compression(self):
+        """Summarize current conversation using a lightweight model for context compression.
+        Called when token count approaches the threshold to avoid Gemini's built-in
+        compression failing with 1007 errors."""
+        if self._compression_in_progress:
+            return
+        self._compression_in_progress = True
+        try:
+            entries = self._conv_logger.get_recent_entries(50)
+            if not entries:
+                return
+            lines = []
+            for e in entries:
+                role = "User" if e["role"] == "user" else "AI"
+                lines.append(f"{role}: {e['content']}")
+            conversation_text = "\n".join(lines)
+            system_prompt = (
+                "You are a conversation summarizer. Summarize the following conversation between a user and an AI assistant. "
+                "Preserve key topics, facts, names, decisions, and ongoing context. "
+                "The summary will be used to seed a fresh session so the AI can continue naturally. "
+                "Keep the summary concise but include all important details. Under 500 words."
+            )
+            api_key = self.config.api_key
+            if not api_key:
+                logger.warning("No API key for compression summary")
+                return
+            from google.genai import types as gtypes
+            client = genai.Client(api_key=api_key)
+            model = self.config.custom_compression_model
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=model,
+                    contents=f"Summarize this conversation:\n\n{conversation_text}",
+                    config=gtypes.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        temperature=0.3,
+                        max_output_tokens=2048,
+                    ),
+                ),
+                timeout=20.0,
+            )
+            summary = response.text if response.text else None
+            if summary:
+                self._compression_summary = summary
+                self._clear_session_handle()
+                self._reconnect_requested = True
+                prompt_tokens = self._usage_metadata.get("prompt_tokens", 0)
+                logger.info(f"Custom compression triggered at {prompt_tokens} tokens, summary ready ({len(summary)} chars)")
+                _broadcast_console("info", f"Context compressed via summary ({prompt_tokens} tokens -> fresh session)")
+            else:
+                logger.warning("Compression summary returned empty result")
+        except asyncio.TimeoutError:
+            logger.warning("Compression summary timed out after 20s")
+        except Exception as e:
+            logger.error(f"Compression summary failed: {e}")
+        finally:
+            self._compression_in_progress = False
+
+    def _check_custom_compression(self, prompt_tokens: int):
+        """Check if custom compression should be triggered based on token count."""
+        if not self.config.custom_compression_enabled:
+            return
+        if self._compression_in_progress or self._compression_summary:
+            return
+        trigger = self.config.custom_compression_trigger_tokens
+        if trigger and prompt_tokens >= trigger:
+            asyncio.create_task(self._summarize_conversation_for_compression())
 
     def _notify_chatbox_error(self):
         """Show a one-time error message in VRChat chatbox when connection drops."""
@@ -438,7 +509,9 @@ class GeminiLiveSession:
                 config_kwargs["proactivity"] = self.config.proactivity
 
         # Context window compression
-        if self.config.compression_enabled:
+        # When custom compression is enabled, skip Gemini's built-in sliding window
+        # to avoid 1007 errors at the threshold -- we handle it ourselves via summarization
+        if self.config.compression_enabled and not self.config.custom_compression_enabled:
             sw_kwargs = {}
             if self.config.compression_target_tokens is not None:
                 sw_kwargs["target_tokens"] = self.config.compression_target_tokens
@@ -449,6 +522,14 @@ class GeminiLiveSession:
             trigger = self.config.compression_trigger_tokens or "default"
             target = self.config.compression_target_tokens or "default"
             logger.info(f"Context compression enabled (trigger={trigger}, target={target})")
+        elif self.config.custom_compression_enabled:
+            # Still need built-in compression as a safety net, but set trigger very high
+            # so our custom compression fires first
+            config_kwargs["context_window_compression"] = types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            )
+            trigger = self.config.custom_compression_trigger_tokens or "auto"
+            logger.info(f"Custom context compression enabled (trigger={trigger} tokens)")
 
         # Media resolution (reduces image token cost, critical for 3.1 free tier)
         media_res = self.config.vision_media_resolution
@@ -491,7 +572,8 @@ class GeminiLiveSession:
 
         # History config for context replay (3.1 models need this to accept send_client_content)
         # Only needed on fresh sessions (no handle) where we'll replay previous context
-        if self._replay_context and not self._session_handle and self.config.is_31_model:
+        has_replay = self._replay_context or self._compression_summary
+        if has_replay and not self._session_handle and self.config.is_31_model:
             config_kwargs["history_config"] = types.HistoryConfig(
                 initial_history_in_client_content=True
             )
@@ -543,7 +625,8 @@ class GeminiLiveSession:
         while True:
             # Capture previous conversation for context replay on error reconnects
             # Skip on manual reconnect since the user explicitly wants a fresh session
-            if not self._reconnect_requested and hasattr(self, '_conv_logger') and self._conv_logger:
+            # Skip when compression summary is ready (it takes priority over raw replay)
+            if not self._reconnect_requested and not self._compression_summary and hasattr(self, '_conv_logger') and self._conv_logger:
                 recent = self._conv_logger.get_recent_entries(self.config.session_replay_messages)
                 if recent:
                     self._replay_context = recent
@@ -613,7 +696,19 @@ class GeminiLiveSession:
 
                     # Replay previous context on fresh sessions (no handle = context was lost)
                     # Skip if session resumption is active since the model already has history
-                    if self._replay_context and not self._session_handle:
+                    if self._compression_summary and not self._session_handle:
+                        # Custom compression: send summary as initial context
+                        summary_turns = [types.Content(
+                            role="user",
+                            parts=[types.Part.from_text(
+                                text=f"[Context from previous session - continue naturally]\n{self._compression_summary}"
+                            )]
+                        )]
+                        await session.send_client_content(turns=summary_turns, turn_complete=True)
+                        logger.info(f"Seeded fresh session with compression summary ({len(self._compression_summary)} chars)")
+                        _broadcast_console("info", "Seeded session with conversation summary")
+                        self._compression_summary = None
+                    elif self._replay_context and not self._session_handle:
                         await self._replay_previous_context(session)
                     self._replay_context = []
                     self._rate_limit_backoff = 0
@@ -1451,6 +1546,8 @@ class GeminiLiveSession:
                             if prev_prompt > 0 and um.prompt_token_count < prev_prompt * 0.8:
                                 logger.info(f"Context compressed: {prev_prompt} -> {um.prompt_token_count} prompt tokens")
                                 _broadcast_console("info", f"Context compressed: {prev_prompt} -> {um.prompt_token_count} tokens")
+                            # Check if custom compression should trigger
+                            self._check_custom_compression(um.prompt_token_count)
                         if hasattr(um, "response_token_count") and um.response_token_count:
                             self._usage_metadata["response_tokens"] = um.response_token_count
                         if hasattr(um, "total_token_count") and um.total_token_count:
