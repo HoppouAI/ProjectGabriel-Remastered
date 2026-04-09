@@ -435,28 +435,33 @@ class GeminiLiveSession:
                 or self.config.proactivity is not None)
 
     def _build_config(self, skip_alpha_features=False):
-        start_sens_map = {
-            "START_SENSITIVITY_LOW": types.StartSensitivity.START_SENSITIVITY_LOW,
-            "START_SENSITIVITY_HIGH": types.StartSensitivity.START_SENSITIVITY_HIGH,
-        }
-        end_sens_map = {
-            "END_SENSITIVITY_LOW": types.EndSensitivity.END_SENSITIVITY_LOW,
-            "END_SENSITIVITY_HIGH": types.EndSensitivity.END_SENSITIVITY_HIGH,
-        }
-
-        vad_config = types.AutomaticActivityDetection(
-            disabled=self.config.vad_disabled,
-            start_of_speech_sensitivity=start_sens_map.get(
-                self.config.vad_start_sensitivity,
-                types.StartSensitivity.START_SENSITIVITY_HIGH,
-            ),
-            end_of_speech_sensitivity=end_sens_map.get(
-                self.config.vad_end_sensitivity,
-                types.EndSensitivity.END_SENSITIVITY_HIGH,
-            ),
-            prefix_padding_ms=self.config.vad_prefix_padding_ms,
-            silence_duration_ms=self.config.vad_silence_duration_ms,
-        )
+        # Build VAD config based on mode
+        if self.config.vad_mode == "silero":
+            # Client-side Silero VAD: disable server VAD, we handle speech detection ourselves
+            vad_config = types.AutomaticActivityDetection(disabled=True)
+        else:
+            # Server-side auto VAD with configurable sensitivity
+            start_sens_map = {
+                "START_SENSITIVITY_LOW": types.StartSensitivity.START_SENSITIVITY_LOW,
+                "START_SENSITIVITY_HIGH": types.StartSensitivity.START_SENSITIVITY_HIGH,
+            }
+            end_sens_map = {
+                "END_SENSITIVITY_LOW": types.EndSensitivity.END_SENSITIVITY_LOW,
+                "END_SENSITIVITY_HIGH": types.EndSensitivity.END_SENSITIVITY_HIGH,
+            }
+            vad_config = types.AutomaticActivityDetection(
+                disabled=False,
+                start_of_speech_sensitivity=start_sens_map.get(
+                    self.config.vad_start_sensitivity,
+                    types.StartSensitivity.START_SENSITIVITY_HIGH,
+                ),
+                end_of_speech_sensitivity=end_sens_map.get(
+                    self.config.vad_end_sensitivity,
+                    types.EndSensitivity.END_SENSITIVITY_HIGH,
+                ),
+                prefix_padding_ms=self.config.vad_prefix_padding_ms,
+                silence_duration_ms=self.config.vad_silence_duration_ms,
+            )
 
         transcription_config = types.AudioTranscriptionConfig()
 
