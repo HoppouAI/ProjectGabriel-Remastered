@@ -231,6 +231,18 @@ class Config:
         return self.get("gemini", "context_window_compression", "target_tokens")
 
     @property
+    def custom_compression_enabled(self):
+        return self.get("gemini", "custom_compression", "enabled", default=False)
+
+    @property
+    def custom_compression_trigger_tokens(self):
+        return self.get("gemini", "custom_compression", "trigger_tokens", default=100000)
+
+    @property
+    def custom_compression_model(self):
+        return self.get("gemini", "custom_compression", "model", default="gemini-3.1-flash-lite-preview")
+
+    @property
     def language(self):
         return self.get("gemini", "language")
 

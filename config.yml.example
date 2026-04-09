@@ -119,6 +119,18 @@ gemini:
     # Tokens to keep after compression (null = trigger_tokens / 2)
     target_tokens: 25000
 
+  # ── Custom Context Compression ──
+  # When enabled, replaces Gemini's built-in sliding window compression with a
+  # smarter approach: when tokens near the threshold, a lightweight model summarizes
+  # the conversation, clears the session, and seeds the summary as initial context.
+  # This avoids repeated 1007 errors that Gemini's built-in compression can cause.
+  custom_compression:
+    enabled: false
+    # Token count that triggers the summarize-and-reconnect cycle
+    trigger_tokens: 100000
+    # Model used for summarization (lightweight, fast)
+    model: "gemini-3.1-flash-lite-preview"
+
   # ── Session Resumption ──
   # Controls how aggressively session handles are cleared on errors and
   # how many recent messages are replayed as context on fresh reconnects.
