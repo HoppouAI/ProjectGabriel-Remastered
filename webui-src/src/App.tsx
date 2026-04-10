@@ -20,7 +20,7 @@ export default function App() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000)
   }, [])
 
-  const { state, logs, clearLogs } = useWebSocket(addToast)
+  const { state, logs, clearLogs, addLog } = useWebSocket(addToast)
 
   return (
     <div className="min-h-screen bg-background">
@@ -33,7 +33,7 @@ export default function App() {
       />
       <main className={tab === 'dashboard' || tab === 'memories' ? '' : 'max-w-[1600px] mx-auto px-4 py-4'}>
         {tab === 'dashboard' && (
-          <Dashboard state={state} logs={logs} clearLogs={clearLogs} onToast={addToast} />
+          <Dashboard state={state} logs={logs} clearLogs={clearLogs} addLog={addLog} onToast={addToast} />
         )}
         {tab === 'memories' && <Memories onToast={addToast} />}
         {tab === 'music' && <Music onToast={addToast} />}

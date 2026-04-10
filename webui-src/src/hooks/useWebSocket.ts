@@ -91,5 +91,12 @@ export function useWebSocket(onToast: (msg: string, level: string) => void) {
     setLogs([{ type: 'info', content: 'Console cleared' }])
   }, [])
 
-  return { state, logs, connected, clearLogs }
+  const addLog = useCallback((entry: ConsoleEntry) => {
+    setLogs(prev => {
+      const next = [...prev, entry]
+      return next.length > 300 ? next.slice(-300) : next
+    })
+  }, [])
+
+  return { state, logs, connected, clearLogs, addLog }
 }
