@@ -173,6 +173,15 @@ class DiscordActionsTool:
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
+                name="getFriendsList",
+                description=(
+                    "Get your Discord friends list with usernames and user IDs.\n"
+                    "**Invocation Condition:** Call when asked about your Discord friends, "
+                    "who your friends are, or when you need to look up a friend's user ID."
+                ),
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
                 name="transferGroupOwnership",
                 description=(
                     "Transfer ownership of a group DM to another member. You must be the current owner.\n"
@@ -185,6 +194,94 @@ class DiscordActionsTool:
                         "group_id": {"type": "STRING", "description": "The group channel ID (optional, defaults to current channel)"},
                     },
                     "required": ["user_id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="deleteMessage",
+                description=(
+                    "Delete one of YOUR OWN messages by its message ID. You can only delete messages you sent.\n"
+                    "**Invocation Condition:** Call when asked to delete, unsend, or remove one of your messages."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "channel_id": {"type": "STRING", "description": "The channel ID where the message is"},
+                        "message_id": {"type": "STRING", "description": "The message ID to delete"},
+                    },
+                    "required": ["channel_id", "message_id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="blockUser",
+                description=(
+                    "Block a Discord user. They will no longer be able to message you or see your online status.\n"
+                    "**Invocation Condition:** Call when asked to block someone on Discord."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_id": {"type": "STRING", "description": "The user ID or username to block"},
+                    },
+                    "required": ["user_id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="unblockUser",
+                description=(
+                    "Unblock a previously blocked Discord user.\n"
+                    "**Invocation Condition:** Call when asked to unblock someone on Discord."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_id": {"type": "STRING", "description": "The user ID or username to unblock"},
+                    },
+                    "required": ["user_id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="pinMessage",
+                description=(
+                    "Pin a message in a channel.\n"
+                    "**Invocation Condition:** Call when asked to pin a message."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "channel_id": {"type": "STRING", "description": "The channel ID where the message is"},
+                        "message_id": {"type": "STRING", "description": "The message ID to pin"},
+                    },
+                    "required": ["channel_id", "message_id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="unpinMessage",
+                description=(
+                    "Unpin a previously pinned message in a channel.\n"
+                    "**Invocation Condition:** Call when asked to unpin a message."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "channel_id": {"type": "STRING", "description": "The channel ID where the message is"},
+                        "message_id": {"type": "STRING", "description": "The message ID to unpin"},
+                    },
+                    "required": ["channel_id", "message_id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="renameGroupChat",
+                description=(
+                    "Rename a group DM. You must be the group owner.\n"
+                    "**Invocation Condition:** Call when asked to rename or change the name of a group chat."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "The new name for the group chat"},
+                        "group_id": {"type": "STRING", "description": "The group channel ID (optional, defaults to current channel)"},
+                    },
+                    "required": ["name"],
                 },
             ),
         ]
@@ -210,8 +307,22 @@ class DiscordActionsTool:
             return await self._view_profile(args)
         elif name == "listGroupChats":
             return await self._list_group_chats(args)
+        elif name == "getFriendsList":
+            return await self._get_friends_list(args)
         elif name == "transferGroupOwnership":
             return await self._transfer_ownership(args)
+        elif name == "deleteMessage":
+            return await self._delete_message(args)
+        elif name == "blockUser":
+            return await self._block_user(args)
+        elif name == "unblockUser":
+            return await self._unblock_user(args)
+        elif name == "pinMessage":
+            return await self._pin_message(args)
+        elif name == "unpinMessage":
+            return await self._unpin_message(args)
+        elif name == "renameGroupChat":
+            return await self._rename_group_chat(args)
         return None
 
     async def _send_message(self, args):
@@ -556,6 +667,26 @@ class DiscordActionsTool:
         except Exception as e:
             return {"result": "error", "message": str(e)}
 
+    async def _get_friends_list(self, args):
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        try:
+            friends = client.friends
+            friend_list = []
+            for user in friends:
+                friend_list.append({
+                    "username": user.name,
+                    "display_name": user.display_name or user.name,
+                    "id": str(user.id),
+                })
+                self._cache_user(user)
+            friend_list.sort(key=lambda f: f["username"].lower())
+            return {"result": "ok", "count": len(friend_list), "friends": friend_list}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
     async def _list_group_chats(self, args):
         import discord
         client = self.handler._discord_client
@@ -597,6 +728,108 @@ class DiscordActionsTool:
         try:
             await channel.edit(owner=user)
             return {"result": "ok", "new_owner": user.name, "group_id": str(channel.id)}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _delete_message(self, args):
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        try:
+            channel = client.get_channel(int(args["channel_id"]))
+            if not channel:
+                return {"result": "error", "message": "Channel not found"}
+            message = await channel.fetch_message(int(args["message_id"]))
+            if message.author.id != client.user.id:
+                return {"result": "error", "message": "Can only delete your own messages"}
+            await message.delete()
+            return {"result": "ok", "deleted": args["message_id"]}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _block_user(self, args):
+        ident = args.get("user_id", "").strip()
+        if not ident:
+            return {"result": "error", "message": "No user provided"}
+
+        user, err = await self._resolve_user(ident)
+        if err:
+            return {"result": "error", "message": err}
+
+        try:
+            await user.block()
+            return {"result": "ok", "blocked": user.name, "id": str(user.id)}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _unblock_user(self, args):
+        ident = args.get("user_id", "").strip()
+        if not ident:
+            return {"result": "error", "message": "No user provided"}
+
+        user, err = await self._resolve_user(ident)
+        if err:
+            return {"result": "error", "message": err}
+
+        try:
+            await user.unblock()
+            return {"result": "ok", "unblocked": user.name, "id": str(user.id)}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _pin_message(self, args):
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        try:
+            channel = client.get_channel(int(args["channel_id"]))
+            if not channel:
+                return {"result": "error", "message": "Channel not found"}
+            message = await channel.fetch_message(int(args["message_id"]))
+            await message.pin()
+            return {"result": "ok", "pinned": args["message_id"]}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _unpin_message(self, args):
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        try:
+            channel = client.get_channel(int(args["channel_id"]))
+            if not channel:
+                return {"result": "error", "message": "Channel not found"}
+            message = await channel.fetch_message(int(args["message_id"]))
+            await message.unpin()
+            return {"result": "ok", "unpinned": args["message_id"]}
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _rename_group_chat(self, args):
+        import discord
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        channel = None
+        group_id = args.get("group_id", "").strip()
+        if group_id:
+            channel = client.get_channel(int(group_id))
+        if not channel:
+            channel = getattr(self.handler, "_current_channel", None)
+        if not channel or not isinstance(channel, discord.GroupChannel):
+            return {"result": "error", "message": "Target is not a group DM. Provide a valid group_id."}
+
+        new_name = args.get("name", "").strip()
+        if not new_name:
+            return {"result": "error", "message": "No name provided"}
+
+        try:
+            await channel.edit(name=new_name)
+            return {"result": "ok", "renamed": new_name, "group_id": str(channel.id)}
         except Exception as e:
             return {"result": "error", "message": str(e)}
 
