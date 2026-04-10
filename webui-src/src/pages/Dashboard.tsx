@@ -1,13 +1,12 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import Console from '../components/Console'
 import { api } from '../lib/api'
 import { formatNumber, formatTime, truncate } from '../lib/utils'
 import type { AppState, ConsoleEntry, Personality } from '../lib/types'
 import {
-  RiRefreshLine, RiDeleteBinLine, RiSendPlaneLine,
-  RiPlayFill, RiPauseFill, RiStopFill, RiVolumeUpFill,
-  RiVipCrownLine, RiSettings3Line,
-  RiArrowUpLine,
+  RiRefreshLine, RiDeleteBinLine,
+  RiPlayFill, RiPauseFill, RiStopFill, RiVolumeUpFill, RiVolumeMuteFill,
+  RiSettings3Line, RiArrowUpLine,
 } from 'react-icons/ri'
 import {
   TbMicrophone, TbMicrophoneOff, TbLayoutSidebarLeftCollapse,
@@ -28,10 +27,6 @@ export default function Dashboard({ state, logs, clearLogs, addLog, onToast }: P
   const [volume, setVolume] = useState(100)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [inputMode, setInputMode] = useState<'message' | 'system'>('message')
-
-  useEffect(() => {
-    if (state?.music_progress?.is_playing) return
-  }, [state?.music_progress])
 
   const act = useCallback(async (endpoint: string, body?: unknown) => {
     try {
@@ -125,39 +120,11 @@ export default function Dashboard({ state, logs, clearLogs, addLog, onToast }: P
           <PersonalitySelector
             personalities={state?.personalities || []}
             current={state?.current_personality || null}
-            onSwitch={(id) => act('/api/switch-personality', { personality_id: id })}
+            onSwitch={(id) => act('/api/switch-personality', { personality: id })}
           />
 
-          {/* Now playing */}
-          {music?.is_playing && (
-            <SidebarSection label="Now Playing">
-              <p className="text-xs text-text truncate mb-2">{music.song_name || 'Unknown'}</p>
-              <div className="h-1 bg-background rounded-full overflow-hidden mb-1">
-                <div
-                  className="h-full bg-accent rounded-full transition-all"
-                  style={{ width: music.duration > 0 ? `${(music.position / music.duration) * 100}%` : '0%' }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-[10px] text-text-muted/50 font-title mb-2">
-                <span>{formatTime(music.position)}</span>
-                <span>{formatTime(music.duration)}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button onClick={() => act('/api/pause-music')} className="p-1 hover:text-accent transition-colors text-xs"><RiPauseFill /></button>
-                <button onClick={() => act('/api/resume-music')} className="p-1 hover:text-accent transition-colors text-xs"><RiPlayFill /></button>
-                <button onClick={() => act('/api/stop-music')} className="p-1 hover:text-rose transition-colors text-xs"><RiStopFill /></button>
-                <div className="ml-auto flex items-center gap-1">
-                  <RiVolumeUpFill className="text-text-muted/40 text-[10px]" />
-                  <input
-                    type="range" min={0} max={100} value={volume}
-                    onChange={e => { setVolume(+e.target.value); act('/api/set-volume', { volume: +e.target.value }) }}
-                    className="w-14 accent-accent h-0.5"
-                  />
-                  <span className="text-text-muted/40 text-[10px] font-title">{volume}%</span>
-                </div>
-              </div>
-            </SidebarSection>
-          )}
+          {/* Music Player */}
+          <MusicPlayer music={music} volume={volume} setVolume={setVolume} act={act} />
 
           {/* Recent memories */}
           <SidebarSection label="Recent Memories">
@@ -340,5 +307,120 @@ function PersonalitySelector({ personalities, current, onSwitch }: {
         ))}
       </div>
     </SidebarSection>
+  )
+}
+
+function MusicPlayer({ music, volume, setVolume, act }: {
+  music: AppState['music_progress'] | undefined
+  volume: number
+  setVolume: (v: number) => void
+  act: (endpoint: string, body?: unknown) => void
+}) {
+  const isPlaying = !!music?.is_playing
+  const hasSong = !!music?.song_name
+  const isActive = isPlaying || hasSong
+  const progress = music && music.duration > 0 ? (music.position / music.duration) * 100 : 0
+  const volTimer = useRef<ReturnType<typeof setTimeout>>(null)
+  const setVol = (v: number) => {
+    setVolume(v)
+    if (volTimer.current) clearTimeout(volTimer.current)
+    volTimer.current = setTimeout(() => {
+      fetch('/api/set-volume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ volume: v / 100 }) })
+    }, 150)
+  }
+
+  return (
+    <div className="rounded-lg border border-white/[0.04] overflow-hidden shrink-0 bg-surface/40 p-3">
+      {/* Header */}
+      <div className="flex items-center mb-2">
+        <h3 className="font-title text-[10px] text-text-muted/50 uppercase tracking-wider">
+          {isPlaying ? 'Now Playing' : hasSong ? 'Paused' : 'Music'}
+        </h3>
+        {isPlaying && (
+          <div className="ml-auto flex gap-[3px]">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="w-[2px] bg-accent rounded-full animate-music-bar" style={{
+                height: '10px',
+                animationDelay: `${i * 0.15}s`,
+              }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {isActive ? (
+        <div className="space-y-2">
+          {/* Song name */}
+          <p className="text-[11px] text-text font-medium truncate" title={music.song_name || 'Unknown'}>
+            {music.song_name || 'Unknown'}
+          </p>
+
+          {/* Progress bar */}
+          <div className="h-[3px] bg-background rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-[width] duration-500 ease-linear"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+
+          {/* Time + transport controls -- all inline */}
+          <div className="flex items-center text-[9px] font-title tabular-nums">
+            <span className="text-text-muted/40">{formatTime(music.position)}</span>
+            <span className="text-text-muted/20 mx-1">/</span>
+            <span className="text-text-muted/40">{formatTime(music.duration)}</span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={() => act('/api/stop-music')}
+                className="text-text-muted/40 hover:text-rose transition-colors"
+                title="Stop"
+              >
+                <RiStopFill size={13} />
+              </button>
+              <button
+                onClick={() => act(isPlaying ? '/api/pause-music' : '/api/resume-music')}
+                className="text-accent hover:text-accent/80 transition-colors"
+                title={isPlaying ? 'Pause' : 'Play'}
+              >
+                {isPlaying ? <RiPauseFill size={13} /> : <RiPlayFill size={13} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Volume */}
+          <div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setVol(volume > 0 ? 0 : 100)}
+                className="text-text-muted/40 hover:text-text-muted transition-colors shrink-0"
+              >
+                {volume === 0 ? <RiVolumeMuteFill size={11} /> : <RiVolumeUpFill size={11} />}
+              </button>
+              <input
+                type="range" min={0} max={100} value={volume}
+                onChange={e => setVol(+e.target.value)}
+                className="flex-1 accent-accent h-[3px] cursor-pointer"
+              />
+            </div>
+            <p className="text-[9px] text-text-muted/30 font-title tabular-nums text-center mt-1">{volume}%</p>
+          </div>
+        </div>
+      ) : (
+        /* Idle state */
+        <div className="space-y-2">
+          <p className="text-[10px] text-text-muted/30 font-title text-center">Nothing playing</p>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <RiVolumeUpFill size={11} className="text-text-muted/25 shrink-0" />
+              <input
+                type="range" min={0} max={100} value={volume}
+                onChange={e => setVol(+e.target.value)}
+                className="flex-1 accent-accent h-[3px] cursor-pointer"
+              />
+            </div>
+            <p className="text-[9px] text-text-muted/25 font-title tabular-nums text-center mt-1">{volume}%</p>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

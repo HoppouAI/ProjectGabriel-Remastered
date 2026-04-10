@@ -70,7 +70,6 @@ function groupLogs(logs: ConsoleEntry[]): ChatMsg[] {
       ensureAssistant().thinking += entry.content
       if (isLast) ctx.cur!.streaming = true
     } else if (entry.type === 'tool_call') {
-      if (ctx.cur?.response) flushAssistant()
       const match = entry.content.match(/^(\w+)\((.*)?\)$/s)
       const name = match?.[1] || entry.content
       const args = match?.[2] || ''
@@ -128,6 +127,10 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
   )
 }
 
+function formatJson(s: string): string {
+  try { return JSON.stringify(JSON.parse(s), null, 2) } catch { return s }
+}
+
 function ToolCallBlock({ calls }: { calls: ToolCall[] }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -152,16 +155,12 @@ function ToolCallBlock({ calls }: { calls: ToolCall[] }) {
         <div className="mt-1.5 ml-5 space-y-1.5">
           {calls.map((tc, i) => (
             <div key={i} className="text-xs border-l-2 border-accent/20 pl-3 py-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-accent font-title font-medium">{tc.name}</span>
-                {tc.args && (
-                  <span className="text-text-muted/50 truncate max-w-[200px]">({tc.args})</span>
-                )}
-              </div>
+              <span className="text-accent font-title font-medium">{tc.name}</span>
+              {tc.args && (
+                <pre className="mt-1 text-text-muted/50 whitespace-pre-wrap break-words bg-background/40 rounded px-2 py-1 text-[11px]">{formatJson(tc.args)}</pre>
+              )}
               {tc.result !== undefined && (
-                <div className="mt-0.5 text-text-muted/60 whitespace-pre-wrap break-words">
-                  → {tc.result}
-                </div>
+                <pre className="mt-1 text-text-muted/60 whitespace-pre-wrap break-words bg-background/40 rounded px-2 py-1 text-[11px]">→ {formatJson(tc.result)}</pre>
               )}
             </div>
           ))}

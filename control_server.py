@@ -743,9 +743,7 @@ def start_music_broadcast():
 
 @app.on_event("startup")
 async def _on_startup():
-    cfg = shared_state.get("config")
-    if cfg and cfg.obs_enabled:
-        start_music_broadcast()
+    start_music_broadcast()
 
 
 # --- Run ---
