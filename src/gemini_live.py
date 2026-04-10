@@ -247,7 +247,6 @@ class GeminiLiveSession:
                     contents=f"Summarize this conversation:\n\n{conversation_text}",
                     config=gtypes.GenerateContentConfig(
                         system_instruction=system_prompt,
-                        temperature=0.3,
                         max_output_tokens=2048,
                     ),
                 ),
