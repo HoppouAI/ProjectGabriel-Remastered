@@ -61,7 +61,7 @@ export default function Console({ logs }: ConsoleProps) {
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="console-scroll h-[420px] bg-background/60 rounded-lg border border-white/[0.04] p-3 space-y-0.5"
+      className="console-scroll h-full bg-background/60 rounded-lg border border-white/[0.04] p-3 space-y-0.5"
     >
       {rendered.length === 0 && (
         <div className="text-text-muted text-sm italic">Waiting for activity...</div>
