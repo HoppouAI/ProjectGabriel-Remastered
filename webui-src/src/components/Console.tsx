@@ -24,7 +24,9 @@ interface AssistantMsg {
 }
 
 interface UserMsg { role: UserRole; content: string }
-interface SystemMsg { role: SystemRole; content: string; level: 'info' | 'error' | 'warn' | 'system' }
+
+interface SystemItem { content: string; level: 'info' | 'error' | 'warn' | 'system' }
+interface SystemMsg { role: SystemRole; items: SystemItem[] }
 
 type ChatMsg = AssistantMsg | UserMsg | SystemMsg
 
@@ -86,11 +88,13 @@ function groupLogs(logs: ConsoleEntry[]): ChatMsg[] {
       if (isLast) a.streaming = true
     } else if (SYSTEM_TYPES.has(entry.type)) {
       flushAssistant()
-      messages.push({
-        role: 'system',
-        content: entry.content,
-        level: entry.type as SystemMsg['level'],
-      })
+      const last = messages[messages.length - 1]
+      const item: SystemItem = { content: entry.content, level: entry.type as SystemItem['level'] }
+      if (last?.role === 'system') {
+        last.items.push(item)
+      } else {
+        messages.push({ role: 'system', items: [item] })
+      }
     }
   }
 
@@ -224,6 +228,39 @@ const systemColors: Record<string, string> = {
   system: 'text-accent-dim/60 border-accent/10',
 }
 
+function SystemNotice({ items }: { items: SystemItem[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const latest = items[items.length - 1]
+  const hasHistory = items.length > 1
+
+  return (
+    <div className="flex justify-center px-4">
+      <div className="max-w-[500px]">
+        <button
+          onClick={hasHistory ? () => setExpanded(!expanded) : undefined}
+          className={`flex items-center gap-1.5 text-[11px] border rounded-full px-3 py-1 transition-colors ${systemColors[latest.level]} ${hasHistory ? 'cursor-pointer hover:border-white/[0.1]' : 'cursor-default'}`}
+        >
+          {systemIcons[latest.level]}
+          <span className="truncate max-w-[400px]">{latest.content}</span>
+          {hasHistory && (
+            <span className="text-text-muted/30 ml-1">+{items.length - 1}</span>
+          )}
+        </button>
+        {expanded && (
+          <div className="mt-1 space-y-0.5">
+            {items.slice(0, -1).reverse().map((item, j) => (
+              <div key={j} className={`flex items-center gap-1.5 text-[10px] px-3 py-0.5 ${systemColors[item.level]} opacity-60`}>
+                {systemIcons[item.level]}
+                <span className="truncate max-w-[400px]">{item.content}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ── Main Console ───────────────────────────────── */
 
 interface ConsoleProps {
@@ -274,14 +311,7 @@ export default function Console({ logs }: ConsoleProps) {
         }
 
         if (msg.role === 'system') {
-          return (
-            <div key={i} className="flex justify-center px-4">
-              <div className={`flex items-center gap-1.5 text-[11px] border rounded-full px-3 py-1 ${systemColors[msg.level]}`}>
-                {systemIcons[msg.level]}
-                <span className="truncate max-w-[400px]">{msg.content}</span>
-              </div>
-            </div>
-          )
+          return <SystemNotice key={i} items={msg.items} />
         }
 
         // Assistant message
