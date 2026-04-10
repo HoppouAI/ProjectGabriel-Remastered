@@ -173,6 +173,15 @@ class DiscordActionsTool:
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
+                name="getFriendsList",
+                description=(
+                    "Get your Discord friends list with usernames and user IDs.\n"
+                    "**Invocation Condition:** Call when asked about your Discord friends, "
+                    "who your friends are, or when you need to look up a friend's user ID."
+                ),
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
                 name="transferGroupOwnership",
                 description=(
                     "Transfer ownership of a group DM to another member. You must be the current owner.\n"
@@ -210,6 +219,8 @@ class DiscordActionsTool:
             return await self._view_profile(args)
         elif name == "listGroupChats":
             return await self._list_group_chats(args)
+        elif name == "getFriendsList":
+            return await self._get_friends_list(args)
         elif name == "transferGroupOwnership":
             return await self._transfer_ownership(args)
         return None
@@ -553,6 +564,26 @@ class DiscordActionsTool:
             if profile.connections:
                 info["connections"] = [{"type": c.type, "name": c.name} for c in profile.connections]
             return info
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    async def _get_friends_list(self, args):
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        try:
+            friends = client.friends
+            friend_list = []
+            for user in friends:
+                friend_list.append({
+                    "username": user.name,
+                    "display_name": user.display_name or user.name,
+                    "id": str(user.id),
+                })
+                self._cache_user(user)
+            friend_list.sort(key=lambda f: f["username"].lower())
+            return {"result": "ok", "count": len(friend_list), "friends": friend_list}
         except Exception as e:
             return {"result": "error", "message": str(e)}
 
