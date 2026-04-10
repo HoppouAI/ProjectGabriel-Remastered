@@ -1546,13 +1546,13 @@ class GeminiLiveSession:
                                         response={"result": "error", "message": "malformed arguments, please retry"},
                                     ))
                                     continue
-                                _broadcast_console("tool_call", f"{fc.name}({args_str[:100]})")
+                                _broadcast_console("tool_call", f"{fc.name}({args_str})")
                                 self._usage_metadata["tool_calls"] += 1
                                 self._conv_logger.add_tool_call(fc.name, args_dict)
                                 fr = await self.tool_handler.handle(fc)
                                 result_dict = fr.response if fr.response else {}
                                 result_str = json.dumps(result_dict)
-                                _broadcast_console("tool_response", f"{fc.name} → {result_str[:150]}")
+                                _broadcast_console("tool_response", f"{fc.name} → {result_str}")
                                 self._conv_logger.add_tool_response(fc.name, result_dict)
                                 responses.append(fr)
                             await session.send_tool_response(function_responses=responses)
