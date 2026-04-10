@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  background-color: #101014;
+  color: #e8e6e3;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+::selection {
+  background-color: rgba(196, 163, 90, 0.4);
+  color: #f0e6cf;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #303038;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c4a35a;
+}
+
+/* Console */
+.console-scroll {
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+/* Upload drag */
+.drop-active {
+  border-color: #c4a35a !important;
+  background-color: rgba(196, 163, 90, 0.06) !important;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Form inputs */
+.form-input {
+  @apply w-full bg-background/60 border border-white/[0.08] rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:border-accent/40 transition-colors;
+}
+select.form-input {
+  @apply appearance-none cursor-pointer;
+}
