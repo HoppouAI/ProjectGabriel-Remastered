@@ -1,6 +1,7 @@
 """
 Persistent Memory System for ProjectGabriel
 Supports MongoDB (primary) and SQLite (fallback) backends.
+RAG-enabled: Uses Gemini embeddings + MongoDB Atlas Vector Search for semantic recall.
 
 Memory Types:
 - long_term: Permanent memories
@@ -99,6 +100,13 @@ class MemorySystem:
         self._note_last_ts: float = 0
         self._note_last_hash: str = ""
 
+        # RAG config (opt-in, requires MongoDB backend)
+        self.rag_enabled = self.config.get("rag_enabled", False) and self.backend == "mongo"
+        self._embedding_model = self.config.get("embedding_model", "gemini-embedding-001")
+        self._embedding_dimensions = int(self.config.get("embedding_dims", 768))
+        self._embedding_client = None
+        self._vector_index_checked = False
+
         self._connect()
         if self.is_available():
             self._start_cleanup_thread()
@@ -118,6 +126,13 @@ class MemorySystem:
             self.collection = self.client[self.mongo_db][self.mongo_collection_name]
             self._init_mongo_indexes()
             self.backend = "mongo"
+            # Re-evaluate rag_enabled now that backend is confirmed
+            self.rag_enabled = self.config.get("rag_enabled", False) and self.backend == "mongo"
+            if self.rag_enabled:
+                self._ensure_vector_index()
+                logger.info(f"RAG enabled (model={self._embedding_model}, dims={self._embedding_dimensions})")
+            else:
+                logger.info("RAG disabled, using legacy keyword recall")
             logger.info(f"Memory connected to MongoDB: {self.mongo_db}.{self.mongo_collection_name}")
         except Exception as e:
             logger.warning(f"MongoDB connection failed: {e}, falling back to SQLite")
@@ -138,6 +153,196 @@ class MemorySystem:
             self.collection.create_index([("content_hash", ASCENDING)], name="idx_content_hash")
         except Exception as e:
             logger.error(f"Failed to create MongoDB indexes: {e}")
+
+    def _ensure_vector_index(self):
+        """Create MongoDB Atlas Vector Search index if it doesn't exist."""
+        if self._vector_index_checked or self.collection is None:
+            return
+        self._vector_index_checked = True
+        try:
+            db = self.client[self.mongo_db]
+            existing = list(db[self.mongo_collection_name].list_search_indexes())
+            for idx in existing:
+                if idx.get("name") == "vector_index":
+                    logger.debug("Vector search index already exists")
+                    return
+            from pymongo.operations import SearchIndexModel
+            vector_index = SearchIndexModel(
+                definition={
+                    "fields": [
+                        {
+                            "type": "vector",
+                            "path": "embedding",
+                            "numDimensions": self._embedding_dimensions,
+                            "similarity": "cosine",
+                        },
+                        {
+                            "type": "filter",
+                            "path": "memory_type",
+                        },
+                    ],
+                },
+                name="vector_index",
+                type="vectorSearch",
+            )
+            db[self.mongo_collection_name].create_search_index(vector_index)
+            logger.info("Created MongoDB Atlas Vector Search index")
+        except Exception as e:
+            logger.warning(f"Could not create vector search index (may need Atlas UI): {e}")
+
+    def _get_embedding_client(self):
+        """Get or create Gemini client for embeddings."""
+        if self._embedding_client is None:
+            try:
+                from google import genai
+                api_key = self._get_api_key()
+                if api_key:
+                    self._embedding_client = genai.Client(api_key=api_key)
+            except Exception as e:
+                logger.debug(f"Could not create embedding client: {e}")
+        return self._embedding_client
+
+    def _get_api_key(self) -> str:
+        """Get API key from config for embedding generation."""
+        try:
+            from src.config import Config
+            config = Config()
+            return config.api_key
+        except Exception:
+            return ""
+
+    def generate_embedding(self, text: str) -> Optional[List[float]]:
+        """Generate embedding vector for text using Gemini."""
+        client = self._get_embedding_client()
+        if client is None:
+            return None
+        try:
+            from google.genai import types as gtypes
+            result = client.models.embed_content(
+                model=self._embedding_model,
+                contents=text,
+                config=gtypes.EmbedContentConfig(
+                    output_dimensionality=self._embedding_dimensions,
+                ),
+            )
+            return result.embeddings[0].values if result.embeddings else None
+        except Exception as e:
+            logger.debug(f"Embedding generation failed: {e}")
+            return None
+
+    def generate_embeddings_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
+        """Generate embeddings for multiple texts in one API call."""
+        client = self._get_embedding_client()
+        if client is None:
+            return [None] * len(texts)
+        try:
+            from google.genai import types as gtypes
+            result = client.models.embed_content(
+                model=self._embedding_model,
+                contents=texts,
+                config=gtypes.EmbedContentConfig(
+                    output_dimensionality=self._embedding_dimensions,
+                ),
+            )
+            return [emb.values if emb else None for emb in result.embeddings]
+        except Exception as e:
+            logger.debug(f"Batch embedding failed: {e}")
+            return [None] * len(texts)
+
+    def vector_search(self, query: str, limit: int = 20, memory_type: Optional[str] = None) -> Dict[str, Any]:
+        """Semantic vector search using MongoDB Atlas Vector Search."""
+        if self.backend != "mongo" or self.collection is None:
+            return {"success": False, "message": "Vector search requires MongoDB backend"}
+
+        query_embedding = self.generate_embedding(query)
+        if query_embedding is None:
+            return {"success": False, "message": "Could not generate query embedding"}
+
+        try:
+            pipeline = [
+                {
+                    "$vectorSearch": {
+                        "index": "vector_index",
+                        "path": "embedding",
+                        "queryVector": query_embedding,
+                        "numCandidates": limit * 10,
+                        "limit": limit,
+                    }
+                },
+                {
+                    "$project": {
+                        "key": 1,
+                        "content": 1,
+                        "category": 1,
+                        "memory_type": 1,
+                        "tags": 1,
+                        "created_at": 1,
+                        "access_count": 1,
+                        "score": {"$meta": "vectorSearchScore"},
+                    }
+                },
+            ]
+
+            if memory_type:
+                pipeline[0]["$vectorSearch"]["filter"] = {"memory_type": memory_type}
+
+            memories = []
+            for doc in self.collection.aggregate(pipeline):
+                memories.append({
+                    "key": doc.get("key"),
+                    "content": doc.get("content", ""),
+                    "category": doc.get("category", "general"),
+                    "memory_type": doc.get("memory_type", MEMORY_TYPE_LONG_TERM),
+                    "tags": doc.get("tags", []),
+                    "created_at": self._serialize_dt(doc.get("created_at")),
+                    "access_count": doc.get("access_count", 0),
+                    "score": round(doc.get("score", 0), 4),
+                })
+
+            return {"success": True, "memories": memories, "count": len(memories)}
+
+        except Exception as e:
+            logger.warning(f"Vector search failed: {e}")
+            return {"success": False, "message": str(e)}
+
+    def backfill_embeddings(self, batch_size: int = 20) -> Dict[str, Any]:
+        """Generate embeddings for all memories that don't have one yet."""
+        if self.backend != "mongo" or self.collection is None:
+            return {"success": False, "message": "Backfill requires MongoDB backend"}
+
+        try:
+            docs = list(self.collection.find(
+                {"embedding": {"$exists": False}},
+                {"key": 1, "content": 1, "category": 1}
+            ))
+            if not docs:
+                return {"success": True, "backfilled": 0, "message": "All memories already have embeddings"}
+
+            total = len(docs)
+            backfilled = 0
+
+            for i in range(0, total, batch_size):
+                batch = docs[i:i + batch_size]
+                texts = [f"{d.get('category', 'general')}: {d.get('content', '')}" for d in batch]
+                embeddings = self.generate_embeddings_batch(texts)
+
+                for doc, embedding in zip(batch, embeddings):
+                    if embedding is not None:
+                        self.collection.update_one(
+                            {"_id": doc["_id"]},
+                            {"$set": {"embedding": embedding}}
+                        )
+                        backfilled += 1
+
+                if i + batch_size < total:
+                    time.sleep(1.5)  # Rate limit between batches (100 RPM on free tier)
+
+            logger.info(f"Backfilled embeddings: {backfilled}/{total}")
+            return {"success": True, "backfilled": backfilled, "total": total}
+
+        except Exception as e:
+            logger.error(f"Backfill failed: {e}")
+            return {"success": False, "message": str(e)}
 
     def _connect_sqlite(self):
         """Connect to SQLite."""
@@ -297,17 +502,24 @@ class MemorySystem:
                     """, (key, content, category, memory_type, tags_json, content_hash, now_iso, now_iso))
                     self.sqlite_conn.commit()
             else:
+                update_fields = {
+                    "content": content,
+                    "category": category,
+                    "memory_type": memory_type,
+                    "tags": tags_list,
+                    "content_hash": content_hash,
+                    "updated_at": now,
+                }
+                # Generate embedding for RAG (only when enabled)
+                if self.rag_enabled:
+                    embedding = self.generate_embedding(f"{category}: {content}")
+                    if embedding is not None:
+                        update_fields["embedding"] = embedding
+
                 self.collection.find_one_and_update(
                     {"key": key},
                     {
-                        "$set": {
-                            "content": content,
-                            "category": category,
-                            "memory_type": memory_type,
-                            "tags": tags_list,
-                            "content_hash": content_hash,
-                            "updated_at": now,
-                        },
+                        "$set": update_fields,
                         "$setOnInsert": {"created_at": now, "access_count": 0},
                     },
                     upsert=True,
@@ -1054,9 +1266,9 @@ def get_memory_content_for_prompt(count: int = 10) -> str:
 
 async def recall_memories(query: str, context: str = "", api_key: str = "", personality_prompt: str = "") -> Dict[str, Any]:
     """
-    Agentic memory recall: fetches memories, sends them to Gemini Flash Lite
-    to summarize relevant information in-character. 30s timeout.
-    Tries keyword search first, falls back to all memories if too few results.
+    RAG-powered memory recall: uses vector search for semantic retrieval,
+    then sends relevant memories to Gemini Flash Lite for summarization.
+    Falls back to keyword search if vector search is unavailable.
     """
     if not memory_system.is_available():
         return {"result": "error", "message": "Memory system unavailable"}
@@ -1064,33 +1276,46 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
     if not api_key:
         return {"result": "error", "message": "No API key available for recall agent"}
 
-    # Try keyword search first to reduce prompt size
-    search_result = memory_system.search(term=query, limit=100)
-    searched = search_result.get("memories", []) if search_result.get("success") else []
+    # Use RAG vector search when enabled, otherwise legacy keyword path
+    memories_found = []
+    search_method = "keyword"
 
-    # Fall back to all memories if search found very few
-    if len(searched) < 5:
-        all_memories = memory_system.list_memories(limit=200)
-        memories_found = all_memories.get("memories", [])
-    else:
-        memories_found = searched
+    if memory_system.rag_enabled:
+        vector_result = memory_system.vector_search(query=query, limit=30)
+        if vector_result.get("success") and vector_result.get("memories"):
+            memories_found = vector_result["memories"]
+            search_method = "vector"
+
+    # Legacy fallback: keyword search + list (used when RAG is off or vector search fails)
+    if not memories_found:
+        search_result = memory_system.search(term=query, limit=100)
+        searched = search_result.get("memories", []) if search_result.get("success") else []
+        if len(searched) < 5:
+            all_memories = memory_system.list_memories(limit=200)
+            memories_found = all_memories.get("memories", [])
+        else:
+            memories_found = searched
 
     if not memories_found:
         return {"result": "ok", "summary": "No memories stored yet.", "count": 0}
 
-    # Format all memories for the sub-agent with key, content, and date
+    # Format memories for the sub-agent
     memory_lines = []
     for mem in memories_found:
         key = mem.get("key", "unknown")
         content = mem.get("content", "")
         created = mem.get("created_at", "unknown")
         category = mem.get("category", "general")
-        memory_lines.append(f"[{key}] ({category}, {created}): {content}")
+        score = mem.get("score")
+        prefix = f"[{key}] ({category}, {created})"
+        if score is not None:
+            prefix += f" [relevance: {score}]"
+        memory_lines.append(f"{prefix}: {content}")
 
     memories_block = "\n".join(memory_lines)
 
     system_prompt = (
-        "You are a memory recall assistant. You have been given ALL stored memories and a search query. "
+        "You are a memory recall assistant. You have been given relevant memories and a search query. "
         "Your job is to find every relevant memory and provide a concise, accurate summary. "
         "Include specific details like names, dates, events, and quotes. "
         "If the query is about a person, include everything you know about them. "
@@ -1103,7 +1328,7 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
     user_prompt = f"QUERY: {query}"
     if context:
         user_prompt += f"\nCONTEXT: {context}"
-    user_prompt += f"\n\n=== ALL MEMORIES ({len(memories_found)} total) ===\n{memories_block}"
+    user_prompt += f"\n\n=== MEMORIES ({len(memories_found)} found via {search_method} search) ===\n{memories_block}"
 
     try:
         from google import genai
@@ -1124,6 +1349,7 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
         )
 
         summary = response.text if response.text else "Could not generate summary."
+        logger.info(f"Recall completed via {search_method} search ({len(memories_found)} memories)")
         return {"result": "ok", "summary": summary, "count": len(memories_found)}
 
     except asyncio.TimeoutError:
