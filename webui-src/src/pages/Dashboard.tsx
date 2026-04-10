@@ -18,10 +18,11 @@ interface Props {
   state: AppState | null
   logs: ConsoleEntry[]
   clearLogs: () => void
+  addLog: (entry: ConsoleEntry) => void
   onToast: (msg: string, level?: string) => void
 }
 
-export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
+export default function Dashboard({ state, logs, clearLogs, addLog, onToast }: Props) {
   const [text, setText] = useState('')
   const [sysText, setSysText] = useState('')
   const [volume, setVolume] = useState(100)
@@ -47,7 +48,11 @@ export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (inputMode === 'message') {
-      if (text.trim()) { act('/api/send-text', { text }); setText('') }
+      if (text.trim()) {
+        addLog({ type: 'transcription', content: text.trim() })
+        act('/api/send-text', { text })
+        setText('')
+      }
     } else {
       if (sysText.trim()) { act('/api/send-system-instruction', { text: sysText }); setSysText('') }
     }
