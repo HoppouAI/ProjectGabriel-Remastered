@@ -57,29 +57,36 @@ export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
     <div className="flex h-[calc(100vh-72px)] gap-0">
       {/* Left sidebar */}
       <div className={`${sidebarOpen ? 'w-64' : 'w-0'} shrink-0 transition-all duration-200 overflow-hidden border-r border-white/[0.06]`}>
-        <div className="w-64 h-full flex flex-col overflow-y-auto console-scroll p-3 gap-3">
-          {/* Session controls */}
-          <div>
-            <SectionLabel>Controls</SectionLabel>
-            <div className="grid grid-cols-2 gap-1.5 mt-2">
-              <SidebarBtn icon={<RiRefreshLine />} label="Reconnect" onClick={() => act('/api/reconnect')} />
-              <SidebarBtn
-                icon={state?.mic_muted ? <TbMicrophoneOff className="text-rose" /> : <TbMicrophone />}
-                label={state?.mic_muted ? 'Unmute' : 'Mute'}
-                onClick={() => act('/api/toggle-mute')}
-                active={state?.mic_muted}
-              />
-              <SidebarBtn icon={<RiDeleteBinLine />} label="Clear Session" onClick={() => act('/api/clear-session')} />
-              <SidebarBtn icon={<RiDeleteBinLine />} label="Clear Console" onClick={clearLogs} muted />
-            </div>
+        <div className="w-64 h-full flex flex-col overflow-y-auto console-scroll p-3 gap-2.5">
+          {/* Quick actions - icon row */}
+          <div className="flex items-center gap-1 p-1.5 bg-surface/50 rounded-lg">
+            <IconBtn
+              icon={<RiRefreshLine size={15} />}
+              label="Reconnect"
+              onClick={() => act('/api/reconnect')}
+            />
+            <IconBtn
+              icon={state?.mic_muted ? <TbMicrophoneOff size={15} /> : <TbMicrophone size={15} />}
+              label={state?.mic_muted ? 'Unmute' : 'Mute'}
+              onClick={() => act('/api/toggle-mute')}
+              variant={state?.mic_muted ? 'danger' : 'default'}
+            />
+            <IconBtn
+              icon={<RiDeleteBinLine size={15} />}
+              label="Clear Session"
+              onClick={() => act('/api/clear-session')}
+            />
+            <IconBtn
+              icon={<RiDeleteBinLine size={15} />}
+              label="Clear Console"
+              onClick={clearLogs}
+              variant="muted"
+            />
           </div>
 
-          <Divider />
-
-          {/* Session status */}
-          <div>
-            <SectionLabel>Session</SectionLabel>
-            <div className="mt-2 space-y-2">
+          {/* Session + VRChat */}
+          <SidebarSection label="Session">
+            <div className="space-y-1.5">
               <StatusRow
                 label="Session"
                 value={state?.session_handle?.exists ? 'Active' : 'Inactive'}
@@ -97,22 +104,17 @@ export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
                 <StatusRow label="Players" value={String(state?.vrchat?.player_count)} />
               )}
             </div>
-          </div>
-
-          <Divider />
+          </SidebarSection>
 
           {/* Usage */}
-          <div>
-            <SectionLabel>Usage</SectionLabel>
-            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+          <SidebarSection label="Usage">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
               <UsageRow label="Prompt" value={formatNumber(usage?.prompt_tokens)} />
               <UsageRow label="Response" value={formatNumber(usage?.response_tokens)} />
               <UsageRow label="Total" value={formatNumber(usage?.total_tokens)} />
               <UsageRow label="Tools" value={formatNumber(usage?.tool_calls)} />
             </div>
-          </div>
-
-          <Divider />
+          </SidebarSection>
 
           {/* Personality */}
           <PersonalitySelector
@@ -123,46 +125,38 @@ export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
 
           {/* Now playing */}
           {music?.is_playing && (
-            <>
-              <Divider />
-              <div>
-                <SectionLabel>Now Playing</SectionLabel>
-                <div className="mt-2">
-                  <p className="text-xs text-text truncate mb-2">{music.song_name || 'Unknown'}</p>
-                  <div className="h-1 bg-background rounded-full overflow-hidden mb-1">
-                    <div
-                      className="h-full bg-accent rounded-full transition-all"
-                      style={{ width: music.duration > 0 ? `${(music.position / music.duration) * 100}%` : '0%' }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-text-muted/50 font-title mb-2">
-                    <span>{formatTime(music.position)}</span>
-                    <span>{formatTime(music.duration)}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => act('/api/pause-music')} className="p-1 hover:text-accent transition-colors text-xs"><RiPauseFill /></button>
-                    <button onClick={() => act('/api/resume-music')} className="p-1 hover:text-accent transition-colors text-xs"><RiPlayFill /></button>
-                    <button onClick={() => act('/api/stop-music')} className="p-1 hover:text-rose transition-colors text-xs"><RiStopFill /></button>
-                    <div className="ml-auto flex items-center gap-1">
-                      <RiVolumeUpFill className="text-text-muted/40 text-[10px]" />
-                      <input
-                        type="range" min={0} max={100} value={volume}
-                        onChange={e => { setVolume(+e.target.value); act('/api/set-volume', { volume: +e.target.value }) }}
-                        className="w-14 accent-accent h-0.5"
-                      />
-                      <span className="text-text-muted/40 text-[10px] font-title">{volume}%</span>
-                    </div>
-                  </div>
+            <SidebarSection label="Now Playing">
+              <p className="text-xs text-text truncate mb-2">{music.song_name || 'Unknown'}</p>
+              <div className="h-1 bg-background rounded-full overflow-hidden mb-1">
+                <div
+                  className="h-full bg-accent rounded-full transition-all"
+                  style={{ width: music.duration > 0 ? `${(music.position / music.duration) * 100}%` : '0%' }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-text-muted/50 font-title mb-2">
+                <span>{formatTime(music.position)}</span>
+                <span>{formatTime(music.duration)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={() => act('/api/pause-music')} className="p-1 hover:text-accent transition-colors text-xs"><RiPauseFill /></button>
+                <button onClick={() => act('/api/resume-music')} className="p-1 hover:text-accent transition-colors text-xs"><RiPlayFill /></button>
+                <button onClick={() => act('/api/stop-music')} className="p-1 hover:text-rose transition-colors text-xs"><RiStopFill /></button>
+                <div className="ml-auto flex items-center gap-1">
+                  <RiVolumeUpFill className="text-text-muted/40 text-[10px]" />
+                  <input
+                    type="range" min={0} max={100} value={volume}
+                    onChange={e => { setVolume(+e.target.value); act('/api/set-volume', { volume: +e.target.value }) }}
+                    className="w-14 accent-accent h-0.5"
+                  />
+                  <span className="text-text-muted/40 text-[10px] font-title">{volume}%</span>
                 </div>
               </div>
-            </>
+            </SidebarSection>
           )}
 
           {/* Recent memories */}
-          <Divider />
-          <div>
-            <SectionLabel>Recent Memories</SectionLabel>
-            <div className="mt-2 space-y-1.5">
+          <SidebarSection label="Recent Memories">
+            <div className="space-y-1.5">
               {state?.recent_memories?.memories?.length ? (
                 state.recent_memories.memories.slice(0, 4).map((m, i) => (
                   <div key={i} className="text-[11px] border-l-2 border-accent/20 pl-2 py-0.5">
@@ -174,7 +168,7 @@ export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
                 <p className="text-text-muted/40 text-[11px] italic">No memories yet</p>
               )}
             </div>
-          </div>
+          </SidebarSection>
         </div>
       </div>
 
@@ -275,33 +269,30 @@ export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
 
 /* -- Sidebar subcomponents -- */
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SidebarSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <h3 className="font-title text-[10px] text-text-muted/50 uppercase tracking-wider">{children}</h3>
+    <div className="bg-surface/40 rounded-lg p-3 border border-white/[0.04]">
+      <h3 className="font-title text-[10px] text-text-muted/50 uppercase tracking-wider mb-2">{label}</h3>
+      {children}
+    </div>
   )
 }
 
-function Divider() {
-  return <div className="h-px bg-white/[0.06]" />
-}
-
-function SidebarBtn({ icon, label, onClick, active, muted }: {
-  icon: React.ReactNode; label: string; onClick: () => void; active?: boolean; muted?: boolean
+function IconBtn({ icon, label, onClick, variant = 'default' }: {
+  icon: React.ReactNode; label: string; onClick: () => void; variant?: 'default' | 'danger' | 'muted'
 }) {
+  const styles = {
+    default: 'text-accent/70 hover:text-accent hover:bg-accent/15',
+    danger: 'text-rose/80 hover:text-rose hover:bg-rose/15',
+    muted: 'text-text-muted/40 hover:text-text-muted hover:bg-white/[0.06]',
+  }
   return (
     <button
       onClick={onClick}
       title={label}
-      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-title transition-colors w-full ${
-        active
-          ? 'bg-rose/10 text-rose'
-          : muted
-            ? 'bg-white/[0.03] text-text-muted/60 hover:text-text-muted hover:bg-white/[0.06]'
-            : 'bg-accent/8 text-accent/80 hover:bg-accent/15 hover:text-accent'
-      }`}
+      className={`p-2 rounded-lg transition-colors flex-1 flex items-center justify-center ${styles[variant]}`}
     >
       {icon}
-      <span className="truncate">{label}</span>
     </button>
   )
 }
@@ -329,12 +320,8 @@ function PersonalitySelector({ personalities, current, onSwitch }: {
 }) {
   if (!personalities.length) return null
   return (
-    <div>
-      <SectionLabel>
-        <RiVipCrownLine className="inline mr-1 text-accent/50" />
-        Personality
-      </SectionLabel>
-      <div className="flex flex-wrap gap-1 mt-2">
+    <SidebarSection label="Personality">
+      <div className="flex flex-wrap gap-1">
         {personalities.map(p => (
           <button
             key={p.id}
@@ -349,6 +336,6 @@ function PersonalitySelector({ personalities, current, onSwitch }: {
           </button>
         ))}
       </div>
-    </div>
+    </SidebarSection>
   )
 }
