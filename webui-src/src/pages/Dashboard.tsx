@@ -213,43 +213,41 @@ export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
         {/* Bottom input area */}
         <div className="shrink-0 border-t border-white/[0.06] px-4 py-3">
           <div className="max-w-4xl mx-auto">
-            <form onSubmit={handleSubmit} className="relative">
-              <div className="bg-surface border border-white/[0.08] rounded-xl overflow-hidden focus-within:border-accent/30 transition-colors">
+            <form onSubmit={handleSubmit}>
+              <div className="flex items-center gap-1.5 bg-surface border border-white/[0.08] rounded-xl px-3 py-1.5 focus-within:border-accent/30 transition-colors">
                 {inputMode === 'message' ? (
                   <input
                     value={text}
                     onChange={e => setText(e.target.value)}
                     placeholder="Send a message to the model..."
-                    className="w-full bg-transparent px-4 py-3 pr-24 text-sm text-text placeholder:text-text-muted/40 focus:outline-none"
+                    className="flex-1 bg-transparent py-1.5 text-sm text-text placeholder:text-text-muted/40 focus:outline-none min-w-0"
                   />
                 ) : (
                   <input
                     value={sysText}
                     onChange={e => setSysText(e.target.value)}
                     placeholder="Send a system instruction..."
-                    className="w-full bg-transparent px-4 py-3 pr-24 text-sm text-text placeholder:text-text-muted/40 focus:outline-none"
+                    className="flex-1 bg-transparent py-1.5 text-sm text-text placeholder:text-text-muted/40 focus:outline-none min-w-0"
                   />
                 )}
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setInputMode(inputMode === 'message' ? 'system' : 'message')}
-                    title={inputMode === 'message' ? 'Switch to system instruction' : 'Switch to message'}
-                    className={`p-1.5 rounded-lg transition-colors ${
-                      inputMode === 'system'
-                        ? 'text-accent bg-accent/10'
-                        : 'text-text-muted/50 hover:text-text-muted hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    <RiSettings3Line size={16} />
-                  </button>
-                  <button
-                    type="submit"
-                    className="p-2 bg-accent text-background rounded-lg hover:bg-accent-dim transition-colors"
-                  >
-                    <RiArrowUpLine size={16} />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setInputMode(inputMode === 'message' ? 'system' : 'message')}
+                  title={inputMode === 'message' ? 'Switch to system instruction' : 'Switch to message'}
+                  className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                    inputMode === 'system'
+                      ? 'text-accent bg-accent/10'
+                      : 'text-text-muted/50 hover:text-text-muted hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <RiSettings3Line size={16} />
+                </button>
+                <button
+                  type="submit"
+                  className="p-2 bg-accent text-background rounded-lg hover:bg-accent-dim transition-colors shrink-0"
+                >
+                  <RiArrowUpLine size={16} />
+                </button>
               </div>
               <div className="flex items-center justify-between mt-1.5 px-1">
                 <span className="text-[10px] text-text-muted/30 font-title">
