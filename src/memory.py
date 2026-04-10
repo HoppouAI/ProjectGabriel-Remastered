@@ -1054,8 +1054,9 @@ def get_memory_content_for_prompt(count: int = 10) -> str:
 
 async def recall_memories(query: str, context: str = "", api_key: str = "", personality_prompt: str = "") -> Dict[str, Any]:
     """
-    Agentic memory recall: fetches ALL memories, sends them to Gemini Flash Lite
-    to summarize relevant information in-character. 15s timeout.
+    Agentic memory recall: fetches memories, sends them to Gemini Flash Lite
+    to summarize relevant information in-character. 30s timeout.
+    Tries keyword search first, falls back to all memories if too few results.
     """
     if not memory_system.is_available():
         return {"result": "error", "message": "Memory system unavailable"}
@@ -1063,9 +1064,16 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
     if not api_key:
         return {"result": "error", "message": "No API key available for recall agent"}
 
-    # Fetch ALL memories (not search-filtered — let the sub-agent decide relevance)
-    all_memories = memory_system.list_memories(limit=500)
-    memories_found = all_memories.get("memories", [])
+    # Try keyword search first to reduce prompt size
+    search_result = memory_system.search(term=query, limit=100)
+    searched = search_result.get("memories", []) if search_result.get("success") else []
+
+    # Fall back to all memories if search found very few
+    if len(searched) < 5:
+        all_memories = memory_system.list_memories(limit=200)
+        memories_found = all_memories.get("memories", [])
+    else:
+        memories_found = searched
 
     if not memories_found:
         return {"result": "ok", "summary": "No memories stored yet.", "count": 0}
@@ -1103,26 +1111,23 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
 
         client = genai.Client(api_key=api_key)
 
-        # 15-second timeout
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
                 model="gemini-3.1-flash-lite-preview",
                 contents=user_prompt,
                 config=gtypes.GenerateContentConfig(
                     system_instruction=system_prompt,
-                    temperature=0.7,
                     max_output_tokens=1024,
-                    thinking_config=gtypes.ThinkingConfig(thinking_budget=2048),
                 ),
             ),
-            timeout=15.0,
+            timeout=30.0,
         )
 
         summary = response.text if response.text else "Could not generate summary."
         return {"result": "ok", "summary": summary, "count": len(memories_found)}
 
     except asyncio.TimeoutError:
-        logger.warning("Recall agent timed out after 15s")
+        logger.warning("Recall agent timed out after 30s")
         return {"result": "error", "message": "Couldn't summarize memories at this time."}
     except Exception as e:
         logger.error(f"Recall agent failed: {e}")
