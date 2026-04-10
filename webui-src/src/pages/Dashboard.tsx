@@ -49,7 +49,7 @@ export default function Dashboard({ state, logs, clearLogs, onToast }: Props) {
     if (inputMode === 'message') {
       if (text.trim()) { act('/api/send-text', { text }); setText('') }
     } else {
-      if (sysText.trim()) { act('/api/send-system-instruction', { instruction: sysText }); setSysText('') }
+      if (sysText.trim()) { act('/api/send-system-instruction', { text: sysText }); setSysText('') }
     }
   }
 

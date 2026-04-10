@@ -32,11 +32,11 @@ export default function Memories({ onToast }: Props) {
       if (typeFilter !== 'all') params.set('type', typeFilter)
       params.set('limit', '100')
       const qs = params.toString()
-      const [mems, st] = await Promise.all([
-        api<Memory[]>(`/api/memories?${qs}`),
+      const [memsResp, st] = await Promise.all([
+        api<{ memories: Memory[]; count: number }>(`/api/memories?${qs}`),
         api<MemoryStats>('/api/memories/stats'),
       ])
-      setMemories(mems)
+      setMemories(memsResp.memories)
       setStats(st)
     } catch (e: unknown) {
       onToast((e as Error).message, 'error')
