@@ -31,7 +31,7 @@ export default function App() {
         activeTab={tab}
         onTabChange={setTab}
       />
-      <main className={tab === 'dashboard' ? '' : 'max-w-[1600px] mx-auto px-4 py-4'}>
+      <main className={tab === 'dashboard' || tab === 'memories' ? '' : 'max-w-[1600px] mx-auto px-4 py-4'}>
         {tab === 'dashboard' && (
           <Dashboard state={state} logs={logs} clearLogs={clearLogs} onToast={addToast} />
         )}
