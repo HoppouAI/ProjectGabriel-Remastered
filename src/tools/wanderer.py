@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class WandererTools(BaseTool):
+    tool_key = "wanderer"
 
     def declarations(self, config=None):
         wanderer_enabled = True

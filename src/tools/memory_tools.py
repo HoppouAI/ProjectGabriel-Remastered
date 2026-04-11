@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class MemoryTools(BaseTool):
+    tool_key = "memory"
 
     def declarations(self, config=None):
         return [

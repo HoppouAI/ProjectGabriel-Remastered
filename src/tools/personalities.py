@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class PersonalityTools(BaseTool):
+    tool_key = "personalities"
 
     def declarations(self, config=None):
         return [

@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class MovementTools(BaseTool):
+    tool_key = "movement"
 
     def declarations(self, config=None):
         return [
