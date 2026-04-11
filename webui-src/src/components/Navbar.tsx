@@ -20,58 +20,69 @@ const tabs: { id: Tab; label: string; icon: typeof RiDashboardLine }[] = [
 
 export default function Navbar({ appName, isConnected, isMuted, activeTab, onTabChange }: NavbarProps) {
   return (
-    <header className="sticky top-0 z-50 bg-surface/80 backdrop-blur-md border-b border-white/[0.06]">
-      <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center gap-6">
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <span className="font-title font-bold text-accent text-lg tracking-tight">
+    <header className="sticky top-0 z-50 bg-surface/90 backdrop-blur-xl border-b border-white/[0.06]">
+      <div className="flex items-center h-12 px-4">
+        {/* Brand */}
+        <div className="flex items-baseline gap-2 shrink-0 mr-6">
+          <span className="font-title font-bold text-text text-[15px] tracking-tight">
             {appName}
           </span>
-          <span className="text-text-muted text-xs font-title">Control Panel</span>
+          <span className="text-text-muted/40 text-[10px] font-title uppercase tracking-widest">
+            Panel
+          </span>
         </div>
 
+        {/* Divider */}
+        <div className="w-px h-5 bg-white/[0.08] mr-4 shrink-0" />
+
         {/* Tabs */}
-        <nav className="flex gap-1 ml-4">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => onTabChange(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === t.id
-                  ? 'bg-accent/15 text-accent'
-                  : 'text-text-muted hover:text-text hover:bg-white/[0.04]'
-              }`}
-            >
-              <t.icon className="text-base" />
-              {t.label}
-            </button>
-          ))}
+        <nav className="flex items-center gap-0.5">
+          {tabs.map(t => {
+            const active = activeTab === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => onTabChange(t.id)}
+                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all duration-150 ${
+                  active
+                    ? 'text-text bg-white/[0.07]'
+                    : 'text-text-muted/60 hover:text-text-muted hover:bg-white/[0.03]'
+                }`}
+              >
+                <t.icon size={14} className={active ? 'text-accent' : ''} />
+                {t.label}
+              </button>
+            )
+          })}
         </nav>
 
-        {/* Status */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="flex-1" />
+
+        {/* Status badges */}
+        <div className="flex items-center gap-2">
           {isMuted && (
-            <span className="flex items-center gap-1 text-rose text-xs font-title">
-              <TbMicrophoneOff />
-              Muted
-            </span>
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose/10 text-rose text-[11px] font-title">
+              <TbMicrophoneOff size={13} />
+              <span>Muted</span>
+            </div>
           )}
-          <span className={`flex items-center gap-1.5 text-xs font-title ${
-            isConnected ? 'text-mint' : 'text-text-muted'
+          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-title ${
+            isConnected
+              ? 'bg-mint/10 text-mint'
+              : 'bg-white/[0.04] text-text-muted/50'
           }`}>
             {isConnected ? (
               <>
-                <HiOutlineWifi className="text-sm" />
-                <span className="w-1.5 h-1.5 rounded-full bg-mint animate-pulse-dot" />
-                Connected
+                <HiOutlineWifi size={13} />
+                <span>Connected</span>
               </>
             ) : (
               <>
-                <HiOutlineStatusOffline className="text-sm" />
-                Disconnected
+                <HiOutlineStatusOffline size={13} />
+                <span>Offline</span>
               </>
             )}
-          </span>
+          </div>
         </div>
       </div>
     </header>
