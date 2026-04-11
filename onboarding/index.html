@@ -1,0 +1,617 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProjectGabriel - Setup</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <h1>Project<span>Gabriel</span></h1>
+    <p>Configuration</p>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-item active" data-section="general" onclick="showSection('general')">
+      <span class="icon"><i class="fas fa-cog"></i></span> General
+    </div>
+    <div class="nav-item" data-section="gemini" onclick="showSection('gemini')">
+      <span class="icon"><i class="fas fa-key"></i></span> Gemini API
+      <span class="badge">required</span>
+    </div>
+    <div class="nav-item" data-section="audio" onclick="showSection('audio')">
+      <span class="icon"><i class="fas fa-headphones"></i></span> Audio
+    </div>
+    <div class="nav-item" data-section="vrchat" onclick="showSection('vrchat')">
+      <span class="icon"><i class="fas fa-gamepad"></i></span> VRChat
+    </div>
+    <div class="nav-divider"></div>
+    <div class="nav-item" data-section="prompt" onclick="showSection('prompt')">
+      <span class="icon"><i class="fas fa-comment-dots"></i></span> AI Prompt
+    </div>
+    <div class="nav-divider"></div>
+    <div class="nav-item" data-section="features" onclick="showSection('features')">
+      <span class="icon"><i class="fas fa-puzzle-piece"></i></span> Features
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <button class="btn-save-all" id="saveBtn" onclick="saveAll()">Save & Finish</button>
+  </div>
+</nav>
+
+<!-- Main Content -->
+<div class="main">
+
+  <!-- General -->
+  <div class="section active" id="sec-general">
+    <div class="section-header">
+      <h2>General</h2>
+      <p>Basic application settings.</p>
+    </div>
+    <div id="overwriteWarning" class="info-box warn" style="display:none;">
+      <i class="fas fa-exclamation-triangle" style="margin-right:6px;"></i> A config.yml already exists. Saving will overwrite it.
+    </div>
+    <div class="card">
+      <div class="field">
+        <label>App Name</label>
+        <input type="text" id="app_name" value="Gabriel" placeholder="Gabriel">
+        <div class="hint">Your AI companion's name. Shown in the dashboard and VRChat chatbox.</div>
+      </div>
+    </div>
+    <div class="section-nav">
+      <button class="btn-next" onclick="navigateNext('general', 'gemini')">Next: Gemini API <i class="fas fa-arrow-right" style="margin-left:6px;"></i></button>
+    </div>
+  </div>
+
+  <!-- Gemini API -->
+  <div class="section" id="sec-gemini">
+    <div class="section-header">
+      <h2>Gemini API</h2>
+      <p>Connect your Google AI API key to power the live audio session.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Authentication</div>
+      <div class="field">
+        <label>API Key <span class="req">*</span></label>
+        <input type="text" id="gemini_api_key" placeholder="AIza...">
+        <div class="hint">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a></div>
+      </div>
+      <div class="field">
+        <label>Backup API Keys</label>
+        <div id="backupKeysList"></div>
+        <button class="btn-add" onclick="addBackupKey()">+ Add backup key</button>
+        <div class="hint">Optional. Auto-rotated on 429 quota errors.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Model & Voice</div>
+      <div class="row">
+        <div class="field">
+          <label>Model</label>
+          <select id="gemini_model">
+            <option value="gemini-3.1-flash-live-preview">gemini-3.1-flash-live-preview</option>
+            <option value="gemini-2.5-flash-native-audio-preview-09-2025">gemini-2.5-flash-native-audio-preview-09-2025</option>
+            <option value="gemini-2.5-flash-native-audio-preview-12-2025">gemini-2.5-flash-native-audio-preview-12-2025</option>
+          </select>
+          <div class="hint">gemini-3.1-flash-live-preview has the lowest latency.</div>
+        </div>
+        <div class="field">
+          <label>Voice</label>
+          <select id="gemini_voice">
+            <option value="Puck">Puck (Upbeat)</option>
+            <option value="Charon">Charon (Informative)</option>
+            <option value="Kore">Kore (Firm)</option>
+            <option value="Fenrir">Fenrir (Excitable)</option>
+            <option value="Aoede">Aoede (Breezy)</option>
+            <option value="Leda">Leda (Youthful)</option>
+            <option value="Orus">Orus (Firm)</option>
+            <option value="Zephyr">Zephyr (Bright)</option>
+            <option value="Callirrhoe">Callirrhoe (Easy-going)</option>
+            <option value="Autonoe">Autonoe (Bright)</option>
+            <option value="Enceladus">Enceladus (Breathy)</option>
+            <option value="Iapetus">Iapetus (Clear)</option>
+            <option value="Umbriel">Umbriel (Easy-going)</option>
+            <option value="Algieba">Algieba (Smooth)</option>
+            <option value="Despina">Despina (Smooth)</option>
+            <option value="Erinome">Erinome (Clear)</option>
+            <option value="Algenib">Algenib (Gravelly)</option>
+            <option value="Rasalgethi">Rasalgethi (Informative)</option>
+            <option value="Laomedeia">Laomedeia (Upbeat)</option>
+            <option value="Achernar">Achernar (Soft)</option>
+            <option value="Alnilam">Alnilam (Firm)</option>
+            <option value="Schedar">Schedar (Even)</option>
+            <option value="Gacrux">Gacrux (Mature)</option>
+            <option value="Pulcherrima">Pulcherrima (Forward)</option>
+            <option value="Achird">Achird (Friendly)</option>
+            <option value="Zubenelgenubi">Zubenelgenubi (Casual)</option>
+            <option value="Vindemiatrix">Vindemiatrix (Gentle)</option>
+            <option value="Sadachbia">Sadachbia (Lively)</option>
+            <option value="Sadaltager">Sadaltager (Knowledgeable)</option>
+            <option value="Sulafat">Sulafat (Warm)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Temperature</label>
+        <div class="range-row">
+          <input type="range" id="gemini_temp" min="0" max="2" step="0.1" value="1.0" oninput="document.getElementById('tempVal').textContent=this.value">
+          <span class="range-value" id="tempVal">1.0</span>
+        </div>
+        <div class="hint">0 = focused and deterministic, 2 = creative and random.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Voice Activity Detection (VAD)</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">How the system detects when you start and stop speaking.</p>
+      <div class="field">
+        <label>VAD Mode</label>
+        <select id="vad_mode" onchange="updateVadOptions()">
+          <option value="auto">Auto (Gemini server-side)</option>
+          <option value="silero">Silero (local model, more stable)</option>
+        </select>
+        <div class="hint">Silero is recommended for 3.1 models. Prevents stalls from background noise and gives more stable turn-taking. Requires PyTorch.</div>
+      </div>
+      <div id="vadAutoOptions" class="cond visible">
+        <div class="row">
+          <div class="field">
+            <label>Start Sensitivity</label>
+            <select id="vad_start">
+              <option value="START_SENSITIVITY_HIGH">High (triggers faster)</option>
+              <option value="START_SENSITIVITY_LOW">Low (more selective)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>End Sensitivity</label>
+            <select id="vad_end">
+              <option value="END_SENSITIVITY_HIGH">High (ends quicker)</option>
+              <option value="END_SENSITIVITY_LOW">Low (waits longer)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Silence Duration (ms)</label>
+        <div class="range-row">
+          <input type="range" id="vad_silence" min="100" max="1000" step="50" value="200" oninput="document.getElementById('silenceVal').textContent=this.value+'ms'">
+          <span class="range-value" id="silenceVal">200ms</span>
+        </div>
+        <div class="hint">How long silence must last before speech is considered finished.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Thinking</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Controls the AI's inner reasoning before answering. Available on supported models.</p>
+      <div id="thinkingLevelField" class="field">
+        <label>Thinking Level</label>
+        <select id="thinking_level">
+          <option value="minimal">Minimal (lowest latency)</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High (most thorough)</option>
+        </select>
+        <div class="hint">For 3.1 models. Higher = more thorough but slower responses.</div>
+      </div>
+      <div id="thinkingBudgetField" class="field" style="display:none;">
+        <label>Thinking Budget (tokens)</label>
+        <input type="number" id="thinking_budget" placeholder="null (model default)" min="0" max="32768">
+        <div class="hint">For 2.5 models. Set to 0 to disable thinking, or leave empty for dynamic.</div>
+      </div>
+    </div>
+    <div class="section-nav">
+      <button class="btn-back" onclick="showSection('general')"><i class="fas fa-arrow-left" style="margin-right:6px;"></i> Back</button>
+      <button class="btn-next" onclick="navigateNext('gemini', 'audio')">Next: Audio <i class="fas fa-arrow-right" style="margin-left:6px;"></i></button>
+    </div>
+  </div>
+
+  <!-- Audio -->
+  <div class="section" id="sec-audio">
+    <div class="section-header">
+      <h2>Audio</h2>
+      <p>Microphone and speaker device configuration.</p>
+    </div>
+    <div class="info-box accent">
+      <i class="fas fa-lightbulb" style="margin-right:6px;color:var(--accent)"></i> <strong>For VRChat:</strong> Set Input Device to <strong>"CABLE Output"</strong> and Output Device to <strong>"Hi-Fi Cable Input"</strong>. Then in VRChat, set the mic to <strong>"Hi-Fi Cable Output"</strong>.
+    </div>
+    <div class="card">
+      <div class="row">
+        <div class="field">
+          <label>Input Device (Microphone)</label>
+          <select id="audio_input">
+            <option value="null">System Default</option>
+          </select>
+          <div class="hint">The mic Gabriel listens to.</div>
+        </div>
+        <div class="field">
+          <label>Output Device (Speaker)</label>
+          <select id="audio_output">
+            <option value="null">System Default</option>
+          </select>
+          <div class="hint">Where Gabriel's voice plays.</div>
+        </div>
+      </div>
+    </div>
+    <div class="section-nav">
+      <button class="btn-back" onclick="showSection('gemini')"><i class="fas fa-arrow-left" style="margin-right:6px;"></i> Back</button>
+      <button class="btn-next" onclick="navigateNext('audio', 'vrchat')">Next: VRChat <i class="fas fa-arrow-right" style="margin-left:6px;"></i></button>
+    </div>
+  </div>
+
+  <!-- VRChat -->
+  <div class="section" id="sec-vrchat">
+    <div class="section-header">
+      <h2>VRChat</h2>
+      <p>OSC connection and optional VRChat API credentials.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">OSC Connection</div>
+      <div class="row">
+        <div class="field">
+          <label>IP Address</label>
+          <input type="text" id="osc_ip" value="127.0.0.1">
+        </div>
+        <div class="field">
+          <label>Send Port</label>
+          <input type="number" id="osc_send_port" value="9000">
+        </div>
+        <div class="field">
+          <label>Receive Port</label>
+          <input type="number" id="osc_recv_port" value="9001">
+        </div>
+      </div>
+      <div class="hint">Default values work for most setups.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">VRChat API (Optional)</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Enables avatar switching, friend info, world search, and more.</p>
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="vrc_username" placeholder="Optional">
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="vrc_password" placeholder="Optional">
+        </div>
+        <div class="field">
+          <label>TOTP Secret</label>
+          <input type="text" id="vrc_totp" placeholder="Optional (for auto 2FA)">
+          <div class="hint">Base32 secret from your authenticator app.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="toggle-row" onclick="toggleCheck('idle_chatbox_enabled')" style="margin-bottom:0;">
+        <div class="toggle-info">
+          <div class="card-title" style="margin-bottom:2px;">Idle Chatbox</div>
+          <p style="font-size:12px;color:var(--text-muted);">Show a customizable banner in VRChat chatbox when the AI is idle.</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="idle_chatbox_enabled"><span class="slider"></span></label>
+      </div>
+      <div class="cond" id="idleChatboxOptions">
+        <div class="field" style="margin-top:12px;">
+          <label>Banner Title</label>
+          <input type="text" id="idle_banner" value="Gabriel AI" placeholder="Gabriel AI">
+          <div class="hint">Header text at the top of the chatbox banner.</div>
+        </div>
+        <div class="field">
+          <label>Line 1</label>
+          <input type="text" id="idle_line1" value="VRChat AI Assistant" placeholder="VRChat AI Assistant">
+        </div>
+        <div class="field">
+          <label>Line 2</label>
+          <input type="text" id="idle_line2" value="Listening for voice" placeholder="Listening for voice">
+        </div>
+        <div class="field">
+          <label>Line 3</label>
+          <input type="text" id="idle_line3" placeholder="(optional, leave blank to skip)">
+          <div class="hint">Up to 3 lines of text between dividers. Empty lines are skipped.</div>
+        </div>
+      </div>
+    </div>
+    <div class="section-nav">
+      <button class="btn-back" onclick="showSection('audio')"><i class="fas fa-arrow-left" style="margin-right:6px;"></i> Back</button>
+      <button class="btn-next" onclick="navigateNext('vrchat', 'prompt')">Next: AI Prompt <i class="fas fa-arrow-right" style="margin-left:6px;"></i></button>
+    </div>
+  </div>
+
+  <!-- AI Prompt -->
+  <div class="section" id="sec-prompt">
+    <div class="section-header">
+      <h2>AI Prompt</h2>
+      <p>Configure your AI's persona and system prompt. This creates your prompts.yml file.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Choose a Starting Point</div>
+      <div class="template-card selected" data-tpl="template" onclick="selectTemplate('template')">
+        <h4><i class="fas fa-file-alt" style="margin-right:6px;"></i> Use Template</h4>
+        <p>Fill in the blanks to create your AI's persona. Great for first-time setup.</p>
+      </div>
+      <div class="template-card" data-tpl="generate" onclick="selectTemplate('generate')">
+        <h4><i class="fas fa-wand-magic-sparkles" style="margin-right:6px;"></i> Generate with AI</h4>
+        <p>Describe your character and Gemini will generate a detailed prompt for you.</p>
+      </div>
+      <div class="template-card" data-tpl="custom" onclick="selectTemplate('custom')">
+        <h4><i class="fas fa-pen" style="margin-right:6px;"></i> Write Custom Prompt</h4>
+        <p>Write the full system prompt yourself from scratch.</p>
+      </div>
+      <div class="template-card" data-tpl="skip" onclick="selectTemplate('skip')">
+        <h4><i class="fas fa-forward" style="margin-right:6px;"></i> Skip</h4>
+        <p>Don't generate prompts.yml. You'll edit it manually later.</p>
+      </div>
+    </div>
+
+    <!-- Template mode -->
+    <div class="cond" id="promptTemplate">
+      <div class="card">
+        <div class="card-title">Character Details</div>
+        <div class="row">
+          <div class="field">
+            <label>Character Name</label>
+            <input type="text" id="char_name" placeholder="e.g. Gabriel">
+            <div class="hint">Your AI's in-character name.</div>
+          </div>
+          <div class="field">
+            <label>Age</label>
+            <input type="text" id="char_age" placeholder="e.g. 22">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Description</label>
+            <input type="text" id="char_desc" placeholder="e.g. laid-back Canadian guy">
+            <div class="hint">Short one-line description.</div>
+          </div>
+          <div class="field">
+            <label>Location / Origin</label>
+            <input type="text" id="char_location" placeholder="e.g. Toronto, Canada">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Backstory & Personality</div>
+        <div class="field">
+          <label>Background</label>
+          <textarea id="char_background" rows="3" placeholder="Family, education, interests, hobbies, how they ended up in VRChat..."></textarea>
+          <div class="hint">What's their story? What do they care about?</div>
+        </div>
+        <div class="field">
+          <label>Personality Traits</label>
+          <textarea id="char_personality" rows="3" placeholder="Friendly but sarcastic, loves bad puns, gets excited about music, tends to ramble when nervous..."></textarea>
+          <div class="hint">How do they act? What makes them unique?</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Identity Details (Appends)</div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">These are automatically appended to the prompt to give extra context.</p>
+        <div class="field">
+          <label>Avatar Appearance</label>
+          <textarea id="char_appearance" rows="2" placeholder="Describe what your VRChat avatar looks like..."></textarea>
+          <div class="hint">So the AI knows what it looks like when people ask.</div>
+        </div>
+        <div class="field">
+          <label>Personal Details / Lore</label>
+          <textarea id="char_details" rows="2" placeholder="Friends, favorite hangout spots, running jokes, etc."></textarea>
+          <div class="hint">Extra details the AI should know about itself.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Prompt Preview</div>
+        <div style="background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:'Cascadia Code','JetBrains Mono',monospace;font-size:12px;white-space:pre-wrap;line-height:1.6;color:var(--text-muted);max-height:300px;overflow-y:auto;" id="promptPreview">
+          Fill in the fields above to see a preview...
+        </div>
+      </div>
+    </div>
+
+    <!-- Generate with AI mode -->
+    <div class="cond" id="promptGenerate">
+      <div class="card">
+        <div class="card-title">Describe Your Character</div>
+        <div class="info-box accent">
+          <i class="fas fa-info-circle" style="margin-right:6px;"></i>
+          Uses the Gemini API key you entered before. The generated prompt will follow the recommended format.
+        </div>
+        <div class="field">
+          <label>Character Name</label>
+          <input type="text" id="gen_name" placeholder="e.g. Gabriel">
+        </div>
+        <div class="field">
+          <label>Character Description</label>
+          <textarea id="gen_description" rows="4" placeholder="Tell Gemini about your character: who they are, their personality, accent, quirks, backstory, age, where they're from, what they like, how they talk... The more detail the better."></textarea>
+          <div class="hint">Be as descriptive as you want. Gemini will format it into a proper VRChat AI prompt.</div>
+        </div>
+        <div class="field">
+          <label>Voice / Speech Style</label>
+          <input type="text" id="gen_voice_style" placeholder="e.g. sarcastic, speaks with a Southern US accent, uses lots of slang">
+          <div class="hint">How should the AI sound? Accent, tone, mannerisms.</div>
+        </div>
+        <div class="field">
+          <label>Avatar Appearance (Optional)</label>
+          <textarea id="gen_appearance" rows="2" placeholder="What does the VRChat avatar look like?"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          <button class="btn-save-all" id="generateBtn" onclick="generatePrompt()" style="flex:1;max-width:200px;">
+            <i class="fas fa-wand-magic-sparkles" style="margin-right:6px;"></i> Generate
+          </button>
+          <span id="genStatus" style="font-size:12px;color:var(--text-muted);align-self:center;"></span>
+        </div>
+      </div>
+      <div class="cond" id="genResultContainer">
+        <div class="card">
+          <div class="card-title">Generated Prompt</div>
+          <div style="background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:'Cascadia Code','JetBrains Mono',monospace;font-size:12px;white-space:pre-wrap;line-height:1.6;color:var(--text-muted);max-height:400px;overflow-y:auto;" id="genResult"></div>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="btn-add" onclick="generatePrompt()" style="flex:1;"><i class="fas fa-rotate" style="margin-right:4px;"></i> Regenerate</button>
+            <button class="btn-save-all" onclick="acceptGenerated()" style="flex:1;">Accept & Use This</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom mode -->
+    <div class="cond" id="promptCustom">
+      <div class="card">
+        <div class="card-title">Custom System Prompt</div>
+        <div class="field">
+          <label>Prompt Name</label>
+          <input type="text" id="custom_prompt_name" value="default" placeholder="default">
+          <div class="hint">The key name in prompts.yml. Reference in config.yml as gemini.prompt.</div>
+        </div>
+        <div class="field">
+          <label>Character Name</label>
+          <input type="text" id="custom_char_name" placeholder="e.g. Gabriel">
+        </div>
+        <div class="field">
+          <label>Description</label>
+          <input type="text" id="custom_desc" placeholder="Brief description">
+        </div>
+        <div class="field">
+          <label>Full Prompt</label>
+          <textarea id="custom_prompt" rows="14" style="font-family:'Cascadia Code','JetBrains Mono',monospace;font-size:12px;" placeholder="**Persona:**&#10;You are ...&#10;&#10;**Conversational Rules:**&#10;...&#10;&#10;**General Guidelines:**&#10;...&#10;&#10;**Guardrails:**&#10;..."></textarea>
+          <div class="hint">Structure: **Persona:** -> **Conversational Rules:** -> **General Guidelines:** -> **Guardrails:**</div>
+        </div>
+      </div>
+    </div>
+    <div class="section-nav">
+      <button class="btn-back" onclick="showSection('vrchat')"><i class="fas fa-arrow-left" style="margin-right:6px;"></i> Back</button>
+      <button class="btn-next" onclick="navigateNext('prompt', 'features')">Next: Features <i class="fas fa-arrow-right" style="margin-left:6px;"></i></button>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <div class="section" id="sec-features">
+    <div class="section-header">
+      <h2>Features</h2>
+      <p>Toggle optional modules. All of these can be changed later in config.yml.</p>
+    </div>
+    <div class="card">
+      <div class="toggle-row" onclick="toggleCheck('feat_vision')">
+        <div class="toggle-info">
+          <h4>Screen Vision</h4>
+          <p>The AI sees your screen via periodic screenshots.</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="feat_vision" checked><span class="slider"></span></label>
+      </div>
+      <div class="cond visible" id="visionOptions">
+        <div class="row" style="margin:8px 0;">
+          <div class="field">
+            <label>Monitor</label>
+            <select id="vision_monitor">
+              <option value="1">Primary Monitor</option>
+              <option value="2">Monitor 2</option>
+              <option value="3">Monitor 3</option>
+              <option value="0">All Monitors Combined</option>
+            </select>
+            <div class="hint">Which screen to capture.</div>
+          </div>
+          <div class="field">
+            <label>Capture Interval</label>
+            <div class="range-row">
+              <input type="range" id="vision_interval" min="0.5" max="5" step="0.5" value="1.0" oninput="document.getElementById('visionIntVal').textContent=this.value+'s'">
+              <span class="range-value" id="visionIntVal">1.0s</span>
+            </div>
+            <div class="hint">Seconds between screenshots. Lower = more responsive, uses more tokens.</div>
+          </div>
+        </div>
+      </div>
+      <div class="toggle-row" onclick="toggleCheck('feat_memory')">
+        <div class="toggle-info">
+          <h4>Memory System</h4>
+          <p>Persistent memory across sessions.</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="feat_memory" checked><span class="slider"></span></label>
+      </div>
+      <div class="cond" id="memoryOptions">
+        <div class="field" style="margin:8px 0;">
+          <label>Memory Backend</label>
+          <select id="memory_backend">
+            <option value="sqlite">SQLite (local, no setup)</option>
+            <option value="mongo">MongoDB Atlas (cloud)</option>
+          </select>
+        </div>
+      </div>
+      <div class="toggle-row" onclick="toggleCheck('feat_yolo')">
+        <div class="toggle-info">
+          <h4>Person Tracking (YOLO)</h4>
+          <p>Follow players via YOLOv8. Needs GPU for best performance.</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="feat_yolo"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" onclick="toggleCheck('feat_face')">
+        <div class="toggle-info">
+          <h4>Face Tracking</h4>
+          <p>Smooth face-tracking. Makes the AI look at people.</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="feat_face"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" onclick="toggleCheck('feat_wanderer')">
+        <div class="toggle-info">
+          <h4>Wanderer</h4>
+          <p>Random autonomous walking behavior.</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="feat_wanderer"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" onclick="toggleCheck('feat_emotions')">
+        <div class="toggle-info">
+          <h4>Emotion System</h4>
+          <p>Avatar animations and expressions via OSC.</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="feat_emotions"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" onclick="toggleCheck('feat_musicgen')">
+        <div class="toggle-info">
+          <h4>Music Generation</h4>
+          <p>AI-powered real-time instrumental music (Lyria).</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="feat_musicgen"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div class="section-nav">
+      <button class="btn-back" onclick="showSection('prompt')"><i class="fas fa-arrow-left" style="margin-right:6px;"></i> Back</button>
+      <button class="btn-next" onclick="confirmSave()"><i class="fas fa-save" style="margin-right:6px;"></i> Save & Finish</button>
+    </div>
+  </div>
+
+  <!-- Done -->
+  <div class="section" id="sec-done">
+    <div class="done-screen">
+      <div class="icon"><i class="fas fa-check-circle" style="color:var(--success);"></i></div>
+      <h2>You're all set!</h2>
+      <p>Configuration saved to:</p>
+      <div class="filepath" id="savedPath">config.yml</div>
+      <div class="cmd">
+        <span>$</span> python supervisor.py<br>
+        <span>$</span> <span style="color:var(--text-muted);"># or just run run.bat</span>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);">
+        Edit config.yml anytime for advanced settings. See config.yml.example for docs.<br>
+        This window will close automatically.
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal">
+    <h3><i class="fas fa-exclamation-triangle" style="margin-right:8px;"></i>Missing Configuration</h3>
+    <p>Some settings haven't been configured yet. You can still save, but you may want to go back and fill these in:</p>
+    <ul class="warn-list" id="warnList"></ul>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Go Back</button>
+      <button class="btn-confirm" onclick="closeModal(); saveAll(true)">Save Anyway</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
