@@ -123,16 +123,6 @@ echo.
 echo   [5/5] Setting up config files...
 echo.
 
-set "NEED_KEY=0"
-
-if not exist "config.yml" (
-    copy /y "config.yml.example" "config.yml" > nul
-    echo        Created config.yml
-    set "NEED_KEY=1"
-) else (
-    echo        config.yml already exists, skipping.
-)
-
 for %%f in (prompts appends personalities) do (
     if not exist "config\prompts\%%f.yml" (
         if exist "config\prompts\%%f.yml.example" (
@@ -151,22 +141,32 @@ if not exist "config\voices.yml" (
 echo.
 
 :: =======================================================
-:: Done
+:: Configuration Wizard
 :: =======================================================
 echo   ====================================================
 echo           Setup complete!
 echo   ====================================================
 echo.
-echo   To run Gabriel:
-echo     .venv\Scripts\activate
-echo     python supervisor.py
-echo.
 
-if "%NEED_KEY%"=="1" (
-    echo   Open config.yml and add your Gemini API key before starting.
+if exist "config.yml" (
+    echo   config.yml already exists.
     echo.
+    choice /C YN /M "  Launch the configuration wizard anyway?"
+    if errorlevel 2 goto done
 )
 
+echo.
+echo   Launching configuration wizard...
+echo   A browser window will open. Fill in your settings and click Save.
+echo.
+
+.venv\Scripts\python.exe configurator.py
+
+:done
+echo.
+echo   To run Gabriel:
+echo     run.bat
+echo.
 pause
 
 exit /b 0

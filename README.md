@@ -60,13 +60,20 @@ Optional:
 
 Just run `setup.bat` in the project root. It will:
 
-- Download UV (the package manager) into a local `.uv` folder
+- Download UV (the package manager) into a local `bin` folder
 - Create a Python 3.12 virtual environment
 - Install all dependencies
 - Detect if you have an NVIDIA GPU and ask if you want CUDA PyTorch
 - Copy all the example config files for you
+- Launch the **Configuration Wizard** in your browser
 
-Once it finishes you just need to fill in your API key in `config.yml`.
+The configuration wizard is an interactive dashboard that walks you through every setting: API keys, model and voice selection, audio devices, VRChat OSC, AI persona creation, and feature toggles. It can also generate a custom AI persona for you using Gemini. When you click Save & Finish, it writes your `config.yml` and prompt files automatically.
+
+If you already have a `config.yml`, setup.bat will ask before launching the wizard. You can also run it again anytime:
+
+```bash
+.venv\Scripts\python.exe configurator.py
+```
 
 ### Manual Setup
 
@@ -116,6 +123,8 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ---
 
 ## Configuration
+
+> **If you used `setup.bat`, the configuration wizard already handled all of this for you.** The sections below are for manual setup or if you want to tweak things after the initial wizard run.
 
 ### 1. Main Config
 
@@ -320,6 +329,7 @@ See [social_server/README.md](social_server/README.md) for full API docs and con
 ```
 main.py              -- Core application logic
 supervisor.py        -- Process supervisor (auto-restart on crash)
+configurator.py      -- Interactive setup wizard (serves onboarding UI)
 control_server.py    -- FastAPI WebUI (dashboard + memory manager)
 src/
   gemini_live.py     -- Gemini Live session (audio streaming, tool dispatch)
@@ -333,6 +343,7 @@ src/
   tools/             -- Gemini function tool modules
 discord_bot/         -- Discord selfbot (separate Gemini Live session)
 social_server/       -- Social messaging API server (Node.js)
+onboarding/          -- Configuration wizard UI (HTML/CSS/JS)
 config/
   voices.yml         -- Voice configuration
   prompts/           -- System prompts, appends, personalities (YAML)
