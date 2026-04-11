@@ -10,7 +10,7 @@ import {
 } from 'react-icons/ri'
 import {
   TbMicrophone, TbMicrophoneOff, TbLayoutSidebarLeftCollapse,
-  TbLayoutSidebarLeftExpand, TbBrain, TbActivity,
+  TbLayoutSidebarLeftExpand,
 } from 'react-icons/tb'
 
 interface Props {
@@ -157,28 +157,12 @@ export default function Dashboard({ state, logs, clearLogs, addLog, onToast }: P
           </button>
 
           <div className="flex-1" />
-
-          {/* Status indicators */}
-          <div className="flex items-center gap-4 text-xs font-title">
-            {usage && (
-              <div className="flex items-center gap-1.5 text-text-muted/60">
-                <TbBrain size={14} />
-                <span>{formatNumber(usage.total_tokens)} tokens</span>
-              </div>
-            )}
-            {state?.session_handle?.exists && (
-              <div className="flex items-center gap-1.5 text-mint/70">
-                <TbActivity size={14} />
-                <span>Live</span>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Console / Chat area */}
         <div className="flex-1 min-h-0 overflow-hidden">
           <div className="h-full max-w-4xl mx-auto px-4 py-3">
-            <Console logs={logs} />
+            <Console logs={logs} appName={state?.app_name || 'Gabriel'} personality={state?.current_personality} />
           </div>
         </div>
 

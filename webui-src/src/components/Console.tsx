@@ -264,9 +264,11 @@ function SystemNotice({ items }: { items: SystemItem[] }) {
 
 interface ConsoleProps {
   logs: ConsoleEntry[]
+  appName?: string
+  personality?: string | null
 }
 
-export default function Console({ logs }: ConsoleProps) {
+export default function Console({ logs, appName = 'Gabriel', personality }: ConsoleProps) {
   const endRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const autoScrollRef = useRef(true)
@@ -325,7 +327,7 @@ export default function Console({ logs }: ConsoleProps) {
             </div>
             {/* Content */}
             <div className="flex-1 min-w-0">
-              <span className="text-xs font-title text-text-muted/40 mb-1 block">Gabriel</span>
+              <span className="text-xs font-title text-text-muted/40 mb-1 block">{personality || appName}</span>
               <ThinkingBlock text={a.thinking} streaming={a.streaming && !!a.thinking && !a.response} />
               <ToolCallBlock calls={a.toolCalls} />
               {a.response ? (
