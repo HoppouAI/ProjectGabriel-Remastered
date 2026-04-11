@@ -18,7 +18,9 @@ from pydantic import BaseModel
 
 SESSION_HANDLE_FILE = Path("session_handle.txt")
 MUSIC_DIR = Path("sfx/music")
-ALLOWED_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
+SUBTITLE_EXTENSIONS = {".srt", ".lrc"}
+ALLOWED_EXTENSIONS = AUDIO_EXTENSIONS | SUBTITLE_EXTENSIONS
 ARCHIVE_EXTENSIONS = {".zip", ".7z", ".rar"}
 MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 STATIC_DIR = Path(__file__).parent / "webui"

@@ -116,7 +116,7 @@ export default function Music({ onToast }: Props) {
           <div className="text-center">
             <p className="text-sm text-text">Drop music files here or click to upload</p>
             <p className="text-xs text-text-muted mt-1">
-              Supports .mp3, .wav, .ogg, .flac, .m4a
+              Supports .mp3, .wav, .ogg, .flac, .m4a, .srt, .lrc
               {sevenZip && ', .7z, .zip, .rar'}
             </p>
           </div>
@@ -128,7 +128,7 @@ export default function Music({ onToast }: Props) {
           ref={fileRef}
           type="file"
           multiple
-          accept=".mp3,.wav,.ogg,.flac,.m4a,.7z,.zip,.rar"
+          accept=".mp3,.wav,.ogg,.flac,.m4a,.srt,.lrc,.7z,.zip,.rar"
           onChange={e => e.target.files && upload(e.target.files)}
           className="hidden"
         />
