@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class DiscordTools(BaseTool):
+    tool_key = "discord"
     """Tools for the main VRChat AI to interact with Discord via the selfbot."""
 
     def declarations(self, config=None):

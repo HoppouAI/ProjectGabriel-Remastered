@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class VoiceTools(BaseTool):
+    tool_key = "voice"
 
     def declarations(self, config=None):
         return [

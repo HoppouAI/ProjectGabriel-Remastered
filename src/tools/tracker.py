@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class TrackerTools(BaseTool):
+    tool_key = "tracker"
 
     def declarations(self, config=None):
         tracker_enabled = True

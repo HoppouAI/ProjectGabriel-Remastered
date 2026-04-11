@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class SoundboardTools(BaseTool):
+    tool_key = "soundboard"
 
     def declarations(self, config=None):
         return [

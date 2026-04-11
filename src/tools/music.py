@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class MusicTools(BaseTool):
+    tool_key = "music"
 
     def declarations(self, config=None):
         return [

@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class VRChatAPITools(BaseTool):
+    tool_key = "vrchat_api"
 
     def declarations(self, config=None):
         return [

@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class SystemTools(BaseTool):
+    tool_key = "system"
 
     def declarations(self, config=None):
         return [

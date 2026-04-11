@@ -15,6 +15,8 @@ def get_registered_tools():
 
 
 class BaseTool:
+    tool_key = None
+
     def __init__(self, handler):
         self.handler = handler
 

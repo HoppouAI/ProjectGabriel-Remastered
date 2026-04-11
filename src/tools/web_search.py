@@ -14,6 +14,7 @@ MAX_READ_CONTENT = 8000
 
 @register_tool
 class WebSearchTools(BaseTool):
+    tool_key = "web_search"
 
     def declarations(self, config=None):
         if config and not config.get("web_search", "enabled", default=False):

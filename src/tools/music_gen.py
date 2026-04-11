@@ -15,6 +15,7 @@ SCALE_OPTIONS = [
 
 @register_tool
 class MusicGenTools(BaseTool):
+    tool_key = "music_gen"
 
     def declarations(self, config=None):
         if config and not config.get("music_gen", "enabled", default=False):

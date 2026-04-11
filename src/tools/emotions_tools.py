@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class EmotionTools(BaseTool):
+    tool_key = "emotions"
     # Emotion declarations are generated dynamically from src.emotions
     # and added in get_tool_declarations() -- this class only registers
     # itself so the handler knows to route emotion calls.

@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 @register_tool
 class SocialTools(BaseTool):
+    tool_key = "social"
     """Tools for social messaging via the ProjectGabriel Social Server."""
 
     def declarations(self, config=None):

@@ -563,3 +563,43 @@ social:
   # Messages arrive as context (turn_complete=false). After this delay
   # with no new messages, the AI is nudged to consider replying (turn_complete=true).
   idle_reply_delay: 300
+
+# ══════════════════════════════════════════════════════════
+# Tool Enable/Disable
+# ══════════════════════════════════════════════════════════
+# Toggle individual tool groups on or off. When disabled, the tool's
+# declarations are removed from Gemini so the AI won't try to use them.
+# All tools are enabled by default. Some tools also have their own
+# master switches elsewhere in config (yolo.enabled, music_gen.enabled, etc.)
+# that still apply independently.
+tools:
+  soundboard:
+    enabled: true      # searchSoundboard, playSoundboard, stopSoundboard, playRandomSoundboard
+  music:
+    enabled: true      # listMusic, playMusic, stopMusic, pauseMusic, resumeMusic, setMusicVolume
+  voice:
+    enabled: true      # setVoiceBoost, toggleVrchatMic, switchTTSProvider, listTTSProviders, listVoices, setVoicePitch
+  personalities:
+    enabled: true      # listPersonalities, switchPersonality, getCurrentPersonality
+  movement:
+    enabled: true      # vrchatCrouch, vrchatCrawl, vrchatMove, vrchatStop, vrchatJump, vrchatGrab, vrchatDrop, vrchatUse, vrchatLook, vrchatLookVertical
+  tracker:
+    enabled: true      # startFollow, stopFollow, setFollowDistance
+  wanderer:
+    enabled: true      # startWander, stopWander
+  vrchat_api:
+    enabled: true      # searchAvatars, switchAvatar, getInstancePlayers, invitePlayer, requestInvite, inviteSelfToInstance, getOwnAvatar, getAvatarInfo, searchWorlds, updateStatus, getCurrentStatus, getFriendInfo, getMutualFriends, boopPlayer
+  system:
+    enabled: true      # getSystemSpecs
+  memory:
+    enabled: true      # saveMemory, searchMemories, deleteMemory, listMemories, recallMemories
+  emotions:
+    enabled: true      # emotion, stopAnimation (also requires emotions.enabled)
+  discord:
+    enabled: true      # sendDiscordMessage, relayToDiscord, getDiscordStatus (also requires discord_bot.enabled)
+  music_gen:
+    enabled: true      # startMusicGen, stopMusicGen, pauseMusicGen, resumeMusicGen, steerMusicGen, setMusicGenVolume (also requires music_gen.enabled)
+  web_search:
+    enabled: true      # webSearch, readWebpage (also requires web_search.enabled)
+  social:
+    enabled: true      # socialSendMessage, socialFetchMessages, socialFetchMessagesByUser, socialGetOnline, socialSendFriendRequest, socialAcceptFriend, socialDenyFriend, socialRemoveFriend, socialListFriends, socialGetPendingRequests, socialBlockUser, socialUnblockUser, socialGetProfile (also requires social.enabled)
