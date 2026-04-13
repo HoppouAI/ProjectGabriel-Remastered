@@ -222,6 +222,7 @@ config/prompts/prompts.yml
 config/prompts/personalities.yml
 config/prompts/Backup/
 config/voices.yml
+*.back
 /sfx/music/srt
 /voices
 /dev
