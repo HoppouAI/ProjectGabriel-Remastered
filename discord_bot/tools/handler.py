@@ -14,6 +14,7 @@ class DiscordToolHandler:
         self._personality_prompt = None  # Set by PersonalityTool on switch
         self._discord_client = None  # Set by bot after login
         self._conversations = None  # Set by bot after init
+        self._tool_sent_message = False  # Set by sendDiscordMessage, checked by bot to avoid double sends
         self._tools = []
         self._load_tools()
 
