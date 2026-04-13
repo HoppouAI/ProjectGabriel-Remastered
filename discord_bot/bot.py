@@ -617,6 +617,7 @@ class DiscordBot:
             async with self._response_lock:
                 # Set current channel inside lock so tools target the right channel
                 self._tool_handler._current_channel = last_message.channel
+                self._tool_handler._tool_sent_message = False
 
                 async with last_message.channel.typing():
                     delay = self.config.typing_delay_ms / 1000.0
@@ -725,18 +726,25 @@ class DiscordBot:
         prompt = (
             f"[CHANNEL: left-on-read followup]\n"
             f"{user_display} (ID:{user.id}) has not responded to your last message for "
-            f"{minutes} minutes. Send a short follow-up message complaining about being "
-            f"left on read. Ping them using <@{user.id}>. Be dramatic, funny, or annoyed "
-            f"about being ignored. Keep it to 1-2 sentences max."
+            f"{minutes} minutes. Respond with a short follow-up complaining about being "
+            f"left on read. Mention them with <@{user.id}>. Be dramatic, funny, or annoyed "
+            f"about being ignored. Keep it to 1-2 sentences max. Do NOT use any tools, just respond directly."
         )
 
         try:
             async with self._response_lock:
                 self._tool_handler._current_channel = bot_message.channel
+                self._tool_handler._tool_sent_message = False
                 response = await asyncio.wait_for(
                     self._gemini.send_message(prompt),
                     timeout=30.0,
                 )
+
+            # If the AI already sent a message via sendDiscordMessage tool, skip the reply
+            if self._tool_handler._tool_sent_message:
+                self._tool_handler._tool_sent_message = False
+                logger.debug(f"Follow-up in {channel_id}: skipped reply (tool already sent message)")
+                return
 
             if response and not response.startswith("[Error:"):
                 response = re.sub(r'^\[CHANNEL:[^\]]*\]\s*', '', response)

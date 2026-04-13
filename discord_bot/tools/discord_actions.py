@@ -355,6 +355,7 @@ class DiscordActionsTool:
                     if channel:
                         await channel.send(message)
                         self._log_sent_message(str(cid), message)
+                        self.handler._tool_sent_message = True
                         return {"result": "ok", "sent_to": f"channel:{cid}"}
                 except (ValueError, Exception):
                     pass
@@ -373,6 +374,7 @@ class DiscordActionsTool:
                 dm = await user.create_dm()
                 await dm.send(message)
                 self._log_sent_message(str(dm.id), message)
+                self.handler._tool_sent_message = True
                 return {"result": "ok", "sent_to": str(user)}
 
             return {"result": "error", "message": f"Could not find user or channel: {target}"}
@@ -673,18 +675,23 @@ class DiscordActionsTool:
             return {"result": "error", "message": "Discord client not connected"}
 
         try:
-            friends = client.friends
+            relationships = client.friends  # List[Relationship], not List[User]
             friend_list = []
-            for user in friends:
-                friend_list.append({
+            for rel in relationships:
+                user = rel.user
+                entry = {
                     "username": user.name,
                     "display_name": user.display_name or user.name,
                     "id": str(user.id),
-                })
+                }
+                if rel.nick:
+                    entry["nickname"] = rel.nick
+                friend_list.append(entry)
                 self._cache_user(user)
             friend_list.sort(key=lambda f: f["username"].lower())
             return {"result": "ok", "count": len(friend_list), "friends": friend_list}
         except Exception as e:
+            logger.error(f"getFriendsList failed: {e}", exc_info=True)
             return {"result": "error", "message": str(e)}
 
     async def _list_group_chats(self, args):
@@ -708,10 +715,17 @@ class DiscordActionsTool:
 
     async def _transfer_ownership(self, args):
         import discord
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
         channel = None
         group_id = args.get("group_id", "").strip()
         if group_id:
-            channel = self.handler._discord_client.get_channel(int(group_id))
+            try:
+                channel = client.get_channel(int(group_id))
+            except ValueError:
+                return {"result": "error", "message": f"Invalid group ID: {group_id}"}
         if not channel:
             channel = getattr(self.handler, "_current_channel", None)
         if not channel or not isinstance(channel, discord.GroupChannel):
@@ -817,7 +831,10 @@ class DiscordActionsTool:
         channel = None
         group_id = args.get("group_id", "").strip()
         if group_id:
-            channel = client.get_channel(int(group_id))
+            try:
+                channel = client.get_channel(int(group_id))
+            except ValueError:
+                return {"result": "error", "message": f"Invalid group ID: {group_id}"}
         if not channel:
             channel = getattr(self.handler, "_current_channel", None)
         if not channel or not isinstance(channel, discord.GroupChannel):
