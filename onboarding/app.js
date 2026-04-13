@@ -2,6 +2,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
 let defaults = {};
+let existingConfig = null;
 let selectedTemplate = 'template';
 
 async function init() {
@@ -11,17 +12,31 @@ async function init() {
     applyDefaults();
   } catch (e) {}
 
+  // Load existing config.yml if present and prefill
+  try {
+    const res = await fetch('/api/load-config');
+    const data = await res.json();
+    if (data.exists && data.config) {
+      existingConfig = data.config;
+      prefillFromExisting(existingConfig);
+      $('#overwriteWarning').style.display = 'block';
+    }
+  } catch (e) {}
+
   try {
     const res = await fetch('/api/audio-devices');
     const devices = await res.json();
     populateAudioDevices(devices);
+    // After populating device options, select existing values
+    if (existingConfig && existingConfig.audio) {
+      if (existingConfig.audio.input_device != null)
+        $('#audio_input').value = existingConfig.audio.input_device;
+      if (existingConfig.audio.output_device != null)
+        $('#audio_output').value = existingConfig.audio.output_device;
+    }
   } catch (e) {}
 
-  try {
-    const res = await fetch('/api/check-config');
-    const data = await res.json();
-    if (data.exists) $('#overwriteWarning').style.display = 'block';
-  } catch (e) {}
+  // Remove the old check-config call (load-config handles it now)
 
   $('#feat_memory').addEventListener('change', () => {
     $('#memoryOptions').classList.toggle('visible', $('#feat_memory').checked);
@@ -125,6 +140,102 @@ function applyDefaults() {
     }
     $('#idleChatboxOptions').classList.toggle('visible', ic.enabled === true);
   }
+}
+
+function prefillFromExisting(cfg) {
+  // Gemini
+  if (cfg.app_name) $('#app_name').value = cfg.app_name;
+  if (cfg.gemini) {
+    const g = cfg.gemini;
+    if (g.api_key) $('#gemini_api_key').value = g.api_key;
+    if (g.backup_keys && Array.isArray(g.backup_keys)) {
+      g.backup_keys.forEach(key => {
+        if (!key) return;
+        const list = $('#backupKeysList');
+        const row = document.createElement('div');
+        row.className = 'key-row';
+        row.innerHTML = `<input type="text" class="backup-key" placeholder="AIza..." value="${key}"><button class="btn-rm" onclick="this.parentElement.remove()" title="Remove">&times;</button>`;
+        list.appendChild(row);
+      });
+    }
+    if (g.model) {
+      const opt = $(`#gemini_model option[value="${g.model}"]`);
+      if (opt) opt.selected = true;
+    }
+    if (g.prompt) {
+      const opt = $(`#gemini_prompt option[value="${g.prompt}"]`);
+      if (opt) opt.selected = true;
+    }
+    if (g.voice) {
+      const opt = $(`#gemini_voice option[value="${g.voice}"]`);
+      if (opt) opt.selected = true;
+    }
+    if (g.temperature != null) {
+      $('#gemini_temp').value = g.temperature;
+      $('#tempVal').textContent = g.temperature;
+    }
+    if (g.vad) {
+      if (g.vad.mode) { $('#vad_mode').value = g.vad.mode; updateVadOptions(); }
+      if (g.vad.start_of_speech_sensitivity) $('#vad_start').value = g.vad.start_of_speech_sensitivity;
+      if (g.vad.end_of_speech_sensitivity) $('#vad_end').value = g.vad.end_of_speech_sensitivity;
+      if (g.vad.silence_duration_ms != null) {
+        $('#vad_silence').value = g.vad.silence_duration_ms;
+        $('#silenceVal').textContent = g.vad.silence_duration_ms + 'ms';
+      }
+    }
+    if (g.thinking) {
+      if (g.thinking.level) $('#thinking_level').value = g.thinking.level;
+      if (g.thinking.budget != null) $('#thinking_budget').value = g.thinking.budget;
+    }
+    updateThinkingFields();
+  }
+  // Audio devices are handled after populateAudioDevices in init()
+  // VRChat OSC
+  if (cfg.vrchat) {
+    if (cfg.vrchat.osc_ip) $('#osc_ip').value = cfg.vrchat.osc_ip;
+    if (cfg.vrchat.osc_send_port) $('#osc_send_port').value = cfg.vrchat.osc_send_port;
+    if (cfg.vrchat.osc_receive_port) $('#osc_recv_port').value = cfg.vrchat.osc_receive_port;
+    if (cfg.vrchat.idle_chatbox) {
+      const ic = cfg.vrchat.idle_chatbox;
+      $('#idle_chatbox_enabled').checked = ic.enabled === true;
+      if (ic.banner) $('#idle_banner').value = ic.banner;
+      if (ic.lines && Array.isArray(ic.lines)) {
+        if (ic.lines[0] != null) $('#idle_line1').value = ic.lines[0];
+        if (ic.lines[1] != null) $('#idle_line2').value = ic.lines[1];
+        if (ic.lines[2] != null) $('#idle_line3').value = ic.lines[2];
+      }
+      $('#idleChatboxOptions').classList.toggle('visible', ic.enabled === true);
+    }
+  }
+  // VRChat API credentials
+  if (cfg.vrchat_api) {
+    if (cfg.vrchat_api.username) $('#vrc_username').value = cfg.vrchat_api.username;
+    if (cfg.vrchat_api.password) $('#vrc_password').value = cfg.vrchat_api.password;
+    if (cfg.vrchat_api.totp_secret) $('#vrc_totp').value = cfg.vrchat_api.totp_secret;
+  }
+  // Features
+  if (cfg.vision) {
+    $('#feat_vision').checked = cfg.vision.enabled !== false;
+    if (cfg.vision.monitor != null) $('#vision_monitor').value = cfg.vision.monitor;
+    if (cfg.vision.interval != null) {
+      $('#vision_interval').value = cfg.vision.interval;
+      $('#visionIntVal').textContent = cfg.vision.interval + 's';
+    }
+    $('#visionOptions').classList.toggle('visible', $('#feat_vision').checked);
+  }
+  if (cfg.memory) {
+    $('#feat_memory').checked = cfg.memory.enabled !== false;
+    if (cfg.memory.backend) {
+      const opt = $(`#memory_backend option[value="${cfg.memory.backend}"]`);
+      if (opt) opt.selected = true;
+    }
+    $('#memoryOptions').classList.toggle('visible', $('#feat_memory').checked);
+  }
+  if (cfg.yolo) $('#feat_yolo').checked = cfg.yolo.enabled === true;
+  if (cfg.face_tracker) $('#feat_face').checked = cfg.face_tracker.enabled === true;
+  if (cfg.wanderer) $('#feat_wanderer').checked = cfg.wanderer.enabled === true;
+  if (cfg.emotions) $('#feat_emotions').checked = cfg.emotions.enabled === true;
+  if (cfg.music_gen) $('#feat_musicgen').checked = cfg.music_gen.enabled === true;
 }
 
 function populateAudioDevices(devices) {
