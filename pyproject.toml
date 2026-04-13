@@ -24,6 +24,7 @@ dependencies = [
     "pyaudio>=0.2.14",
     "python-osc>=1.8.0",
     "pyyaml>=6.0",
+    "ruamel.yaml>=0.18.0",
     "pygame>=2.5.0",
     "numpy>=1.24.0",
     "scipy>=1.11.0",

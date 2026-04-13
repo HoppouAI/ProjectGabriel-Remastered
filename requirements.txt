@@ -2,6 +2,7 @@ google-genai>=1.0.0
 pyaudio
 python-osc
 pyyaml
+ruamel.yaml
 pygame
 numpy
 scipy
