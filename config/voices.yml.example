@@ -6,6 +6,7 @@
 #   qwen3     - Voice clone from an audio file (ref_audio + ref_text)
 #   hoppou    - Predefined voice name on Hoppou AI
 #   chirp3_hd - Google Cloud Chirp 3 HD voice name + language
+#   tiktok    - TikTok TTS voice code (free, session ID required)
 #
 # A single voice can define settings for multiple providers.
 # When switching, the tool picks the matching provider section.
@@ -29,6 +30,8 @@ voices:
     chirp3_hd:
       voice: "Kore"              # Chirp 3 HD voice name
       language_code: "en-US"
+    tiktok:
+      voice: "en_us_001"         # TikTok voice code
 
   # Example: Chirp 3 HD only voice
   # japanese_narrator:
@@ -47,3 +50,10 @@ voices:
   #     ref_audio: "voices/my_voice.wav"
   #     ref_text: "Hello, this is a sample of my voice."
   #     xvec_only: false
+
+  # Example: TikTok TTS voice
+  # tiktok_narrator:
+  #   display_name: "TikTok Narrator"
+  #   description: "The classic TikTok narrator voice"
+  #   tiktok:
+  #     voice: "en_male_narration"
