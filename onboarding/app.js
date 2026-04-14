@@ -201,7 +201,6 @@ function prefillFromExisting(cfg) {
       if (opt) opt.selected = true;
     }
     if (cfg.tts.tiktok) {
-      if (cfg.tts.tiktok.session_id) $('#tiktok_session_id').value = cfg.tts.tiktok.session_id;
       if (cfg.tts.tiktok.voice) {
         const opt = $(`#tiktok_voice option[value="${cfg.tts.tiktok.voice}"]`);
         if (opt) opt.selected = true;
@@ -379,7 +378,6 @@ function buildTtsConfig() {
   const ttsConfig = { provider: provider };
   if (provider === 'tiktok') {
     ttsConfig.tiktok = {
-      session_id: $('#tiktok_session_id').value.trim(),
       voice: $('#tiktok_voice').value,
     };
   }
@@ -612,13 +610,6 @@ function validateSection(section) {
       valid = false;
     }
   }
-  if (section === 'audio') {
-    if ($('#tts_provider').value === 'tiktok' && !$('#tiktok_session_id').value.trim()) {
-      markFieldError($('#tiktok_session_id'), 'A TikTok session ID is needed for TikTok TTS.');
-      $('#tiktok_session_id').focus();
-      valid = false;
-    }
-  }
   return valid;
 }
 
@@ -652,9 +643,6 @@ function getWarnings() {
   const outputDev = $('#audio_output').value;
   if (inputDev === 'null' && outputDev === 'null') {
     warnings.push({ icon: 'fa-headphones', text: 'Audio devices left on System Default', section: 'audio' });
-  }
-  if ($('#tts_provider').value === 'tiktok' && !$('#tiktok_session_id').value.trim()) {
-    warnings.push({ icon: 'fa-cookie-bite', text: 'TikTok TTS selected but no session ID provided', section: 'audio' });
   }
   return warnings;
 }

@@ -243,23 +243,16 @@
           <option value="qwen3">Qwen3 (local server)</option>
           <option value="hoppou">Hoppou AI (cloud)</option>
           <option value="chirp3_hd">Chirp 3 HD (Google Cloud)</option>
-          <option value="tiktok">TikTok TTS (free, session ID needed)</option>
+          <option value="tiktok">TikTok TTS (free, no setup needed)</option>
         </select>
         <div class="hint">Which voice engine to use. Gemini native requires no extra setup. Other providers need additional configuration.</div>
       </div>
       <div class="cond" id="tiktokOptions">
         <div class="info-box accent" style="margin-bottom:12px;">
-          <i class="fas fa-cookie-bite" style="margin-right:6px;color:var(--accent)"></i>
-          TikTok TTS needs a session ID from your browser cookies.
-          Log in to <strong>tiktok.com</strong>, open a cookie editor extension, find the <strong>"sessionid"</strong> cookie, and paste its value below.
+          <i class="fas fa-volume-up" style="margin-right:6px;color:var(--accent)"></i>
+          TikTok TTS is free and requires no setup. Just pick a voice below.
         </div>
-        <div class="row">
-          <div class="field">
-            <label>TikTok Session ID</label>
-            <input type="text" id="tiktok_session_id" placeholder="paste your sessionid cookie here">
-            <div class="hint">From TikTok browser cookies. Expires periodically, just update it when needed.</div>
-          </div>
-          <div class="field">
+        <div class="field">
             <label>Voice</label>
             <select id="tiktok_voice">
               <optgroup label="English US">
@@ -312,7 +305,6 @@
             </select>
             <div class="hint">The TikTok voice to use.</div>
           </div>
-        </div>
       </div>
     </div>
     <div class="section-nav">
