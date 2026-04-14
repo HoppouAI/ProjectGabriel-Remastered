@@ -1199,9 +1199,6 @@ class GeminiLiveSession:
                             if self._audio_gated:
                                 # User is speaking while model is talking, interrupt!
                                 self._ungate_audio()
-                                # Interrupt external TTS immediately so it stops buffering audio
-                                if self._tts:
-                                    self._tts.interrupt()
                                 logger.debug("Silero detected speech while gated, ungating for interruption")
                             if not self._manual_vad_speaking:
                                 await self._send_activity_start(session)
