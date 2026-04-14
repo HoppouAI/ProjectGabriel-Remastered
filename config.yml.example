@@ -152,11 +152,12 @@ gemini:
 # "qwen3"     = discard Gemini audio, use Qwen3 TTS server instead
 # "hoppou"    = discard Gemini audio, use Hoppou AI cloud TTS
 # "chirp3_hd" = discard Gemini audio, use Google Cloud Chirp 3: HD streaming TTS
+# "tiktok"    = discard Gemini audio, use TikTok's TTS API (free, no API key needed)
 tts:
   provider: "gemini"
 
   # Providers the AI can switch to at runtime via the switchTTSProvider tool.
-  # Must be a list of provider names: "gemini", "qwen3", "hoppou", "chirp3_hd"
+  # Must be a list of provider names: "gemini", "qwen3", "hoppou", "chirp3_hd", "tiktok"
   switchable_providers: ["gemini"]
 
   # Qwen3 TTS server settings (only used when provider is "qwen3")
@@ -226,6 +227,50 @@ tts:
     language_code: "en-US"
     # Speaking rate (0.25 to 2.0, 1.0 = normal)
     speaking_rate: 1.0
+
+  # TikTok TTS settings (only used when provider is "tiktok")
+  # Uses TikTok's internal TTS API (same method as TTS Voice Wizard).
+  # Free, no API key needed, just a TikTok session ID from your browser cookies.
+  # See: https://github.com/oscie57/tiktok-voice/wiki/Obtaining-SessionID
+  tiktok:
+    # Your TikTok session ID (get from browser cookies after logging in to tiktok.com)
+    # Open Cookie Editor extension, find "sessionid", paste the value here.
+    session_id: ""
+    # Voice code to use. Full list: https://github.com/oscie57/tiktok-voice/wiki/Voice-Codes
+    #
+    # Popular voices:
+    #   en_us_001   English US Female 1          en_us_006   English US Male 1
+    #   en_us_002   English US Female 2          en_us_007   English US Male 2
+    #   en_us_009   English US Male 3            en_us_010   English US Male 4
+    #   en_uk_001   English UK Male 1            en_uk_003   English UK Male 2
+    #   en_au_001   English AU Female             en_au_002   English AU Male
+    #   en_male_narration   Narrator             en_male_funny   Wacky
+    #   en_female_emotional   Peaceful           en_male_cody   Serious
+    #
+    # Disney voices:
+    #   en_us_ghostface   Ghost Face             en_us_chewbacca   Chewbacca
+    #   en_us_c3po   C3PO                        en_us_stitch   Stitch
+    #   en_us_rocket   Rocket                    en_us_stormtrooper   Stormtrooper
+    #   en_female_madam_leota   Madame Leota     en_male_ghosthost   Ghost Host
+    #   en_male_pirate   Pirate
+    #
+    # Singing voices:
+    #   en_female_f08_salut_damour   Alto         en_male_m03_lobby   Tenor
+    #   en_male_m03_sunshine_soon   Sunshine Soon
+    #   en_female_f08_warmy_breeze   Warmy Breeze
+    #   en_female_ht_f08_glorious   Glorious
+    #   en_male_sing_funny_it_goes_up   It Goes Up
+    #   en_male_m2_xhxs_m03_silly   Chipmunk
+    #   en_female_ht_f08_wonderful_world   Dramatic
+    #
+    # Other languages:
+    #   fr_001 / fr_002   French                 de_001 / de_002   German
+    #   es_002   Spanish                         es_mx_002   Spanish MX
+    #   br_001 / br_003 / br_004 / br_005   Portuguese BR
+    #   jp_001 / jp_003 / jp_005 / jp_006   Japanese
+    #   kr_002 / kr_003 / kr_004   Korean
+    #   id_001   Indonesian
+    voice: "en_us_001"
 
 audio:
   # Audio device indices - null uses system default
