@@ -26,7 +26,7 @@ The original was getting messy and hard to maintain. This version is a full rewr
 - Persistent memory system backed by MongoDB Atlas or SQLite
 - Switchable personalities (at runtime via tools)
 - VRChat REST API client (avatar switching, friend info, world search, status updates)
-- Multiple TTS providers (Gemini native, Qwen3 server, Hoppou AI cloud, Google Cloud Chirp 3 HD)
+- Multiple TTS providers (Gemini native, Qwen3 server, Hoppou AI cloud, Google Cloud Chirp 3 HD, TikTok TTS)
 - API key rotation for handling quota limits automatically
 - Autonomous wandering behavior
 - Emotion and animation system via OSC

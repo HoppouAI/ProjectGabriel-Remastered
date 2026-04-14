@@ -28,7 +28,7 @@ src/
   instance_monitor.py    -- VRChat instance join/leave monitoring via API polling
   wanderer.py            -- Random autonomous wandering behavior via OSC movement
   idle_chatbox.py        -- Idle chatbox banner display in VRChat chatbox
-  tts.py                 -- Google Cloud TTS integration for voice synthesis
+  tts.py                 -- TTS providers (Qwen3, Hoppou, Chirp 3 HD, TikTok) for voice synthesis
   myinstants.py          -- MyInstants.com sound search & download
   memory.py              -- Persistent memory system (MongoDB Atlas / SQLite)
   emotions.py            -- Avatar emotion/animation system via OSC
