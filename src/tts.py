@@ -1014,7 +1014,7 @@ class TikTokTTSProvider:
     Text has a 300 byte (UTF-8) limit per request so sentences are chunked.
     """
 
-    _API_URL = "https://tiktok-tts.weilnet.workers.dev/api/generation"
+    _API_URL = "https://ottsy.weilbyte.dev/api/generation"
     _CHAR_LIMIT = 300
 
     def __init__(self, config, voice_override=None):
