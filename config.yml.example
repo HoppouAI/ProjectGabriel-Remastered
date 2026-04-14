@@ -24,7 +24,7 @@ gemini:
   model: "gemini-2.5-flash-native-audio-preview-09-2025"
 
   # System prompt -- select a named prompt from config/prompts/prompts.yml
-  prompt: "normal"
+  prompt: "default"
 
   # ── Voice Configuration ──
   # Prebuilt voice name. Available voices:
