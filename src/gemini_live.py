@@ -719,6 +719,7 @@ class GeminiLiveSession:
                     self._out_queue = asyncio.Queue(maxsize=5)
                     self._audio_in_queue = asyncio.Queue()
                     self._stream_closing = False
+                    self._playback_interrupted = False
                     self._audio_stream_active = False
                     self._audio_gated = False
                     self._manual_vad_speaking = False
@@ -1242,6 +1243,9 @@ class GeminiLiveSession:
                 raise
 
     async def _play_audio_loop(self, output_stream):
+        # Write in small sub-chunks so interrupt can bail out fast
+        # ~85ms per chunk at 24kHz 16-bit mono
+        CHUNK_BYTES = 4096
         while True:
             try:
                 audio_data = await self._audio_in_queue.get()
@@ -1251,7 +1255,15 @@ class GeminiLiveSession:
                 if audio_data:
                     if self._save_audio:
                         self._audio_recording.extend(audio_data)
-                    await asyncio.to_thread(output_stream.write, audio_data)
+                    # Chunked write so we can stop quickly on interrupt
+                    for i in range(0, len(audio_data), CHUNK_BYTES):
+                        if self._playback_interrupted:
+                            break
+                        await asyncio.to_thread(
+                            output_stream.write, audio_data[i:i + CHUNK_BYTES]
+                        )
+                    if self._playback_interrupted:
+                        self._playback_interrupted = False
             except asyncio.CancelledError:
                 return
             except OSError:
@@ -1508,6 +1520,7 @@ class GeminiLiveSession:
                         # Interrupt external TTS provider
                         if self._tts:
                             self._tts.interrupt()
+                        self._playback_interrupted = True
                         while not self._audio_in_queue.empty():
                             try:
                                 self._audio_in_queue.get_nowait()
@@ -1522,6 +1535,7 @@ class GeminiLiveSession:
                         # Interrupt TTS -- model will regenerate after tool response
                         if self._tts:
                             self._tts.interrupt()
+                        self._playback_interrupted = True
                         # Finalize user message immediately - model has processed input
                         self._conv_logger.finalize_user_message()
                         if self._pending_finalize_task:
