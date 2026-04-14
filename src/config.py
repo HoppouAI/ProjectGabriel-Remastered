@@ -380,6 +380,10 @@ class Config:
         return self.tts_provider == "chirp3_hd"
 
     @property
+    def tts_tiktok_enabled(self):
+        return self.tts_provider == "tiktok"
+
+    @property
     def vrchat_api_username(self):
         return self.get("vrchat_api", "username", default="")
 
