@@ -229,13 +229,9 @@ tts:
     speaking_rate: 1.0
 
   # TikTok TTS settings (only used when provider is "tiktok")
-  # Uses TikTok's internal TTS API (same method as TTS Voice Wizard).
-  # Free, no API key needed, just a TikTok session ID from your browser cookies.
-  # See: https://github.com/oscie57/tiktok-voice/wiki/Obtaining-SessionID
+  # Uses the free community Weilbyte TikTok TTS proxy (no auth needed).
+  # See: https://github.com/Weilbyte/tiktok-tts
   tiktok:
-    # Your TikTok session ID (get from browser cookies after logging in to tiktok.com)
-    # Open Cookie Editor extension, find "sessionid", paste the value here.
-    session_id: ""
     # Voice code to use. Full list: https://github.com/oscie57/tiktok-voice/wiki/Voice-Codes
     #
     # Popular voices:

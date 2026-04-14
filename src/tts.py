@@ -1005,22 +1005,19 @@ class Chirp3HDTTSProvider:
 
 
 class TikTokTTSProvider:
-    """Streams output transcription text through TikTok's TTS API.
+    """Streams output transcription text through the Weilbyte TikTok TTS API.
 
-    Uses the same TikTok TTS endpoint that TTS Voice Wizard and other
-    community projects use. Requires a TikTok session ID obtained from
-    the browser cookie. Returns MP3 audio as base64, which gets decoded
-    to PCM for playback.
+    Uses the free community proxy at tiktok-tts.weilnet.workers.dev which
+    wraps TikTok's internal TTS service. No authentication required.
+    Returns base64 MP3 audio which gets decoded to PCM for playback.
 
-    Text has a 200 char limit per request so sentences are chunked.
+    Text has a 300 byte (UTF-8) limit per request so sentences are chunked.
     """
 
-    _API_URL = "https://api16-normal-v6.tiktokv.com/media/api/text/speech/invoke/"
-    _USER_AGENT = "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; es_ES; SM-G988N; Build/NRD90M;tt-ok/3.12.13.1)"
-    _CHAR_LIMIT = 200
+    _API_URL = "https://tiktok-tts.weilnet.workers.dev/api/generation"
+    _CHAR_LIMIT = 300
 
     def __init__(self, config, voice_override=None):
-        self._session_id = config.get("tts", "tiktok", "session_id", default="")
         vo = voice_override or {}
         self._voice = vo.get("voice", config.get("tts", "tiktok", "voice", default="en_us_001"))
         self._target_sr = config.get("audio", "receive_sample_rate", default=24000)
@@ -1043,9 +1040,6 @@ class TikTokTTSProvider:
 
     def start(self):
         if self._running:
-            return
-        if not self._session_id:
-            logger.error("TikTok TTS requires a session_id (tts.tiktok.session_id)")
             return
         self._running = True
         self._interrupted = False
@@ -1221,14 +1215,14 @@ class TikTokTTSProvider:
 
     @staticmethod
     def _prepare_text(text: str) -> str:
-        """Clean text for the TikTok API (same sanitization as oscie57/tiktok-voice)."""
+        """Clean text for the TikTok TTS API."""
         t = text.replace("+", "plus")
         t = t.replace("&", "and")
         t = t.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
         return t
 
     async def _synthesize_async(self, text: str, sub_q: asyncio.Queue):
-        """Call TikTok TTS API and decode the base64 MP3 response to PCM."""
+        """Call Weilbyte TikTok TTS API and decode the base64 MP3 response to PCM."""
         if not self._client:
             sub_q.put_nowait(None)
             return
@@ -1236,39 +1230,26 @@ class TikTokTTSProvider:
         async with self._synth_semaphore:
             try:
                 cleaned = self._prepare_text(text)
-                # TikTok API has a 200 char limit, chunk if needed
                 chunks = self._chunk_text(cleaned, self._CHAR_LIMIT)
 
                 for chunk in chunks:
                     if self._interrupted or not self._running:
                         return
 
-                    encoded_text = chunk.replace(" ", "+")
                     resp = await self._client.post(
-                        f"{self._API_URL}?text_speaker={self._voice}&req_text={encoded_text}&speaker_map_type=0&aid=1233",
-                        headers={
-                            "User-Agent": self._USER_AGENT,
-                            "Cookie": f"sessionid={self._session_id}",
-                        },
+                        self._API_URL,
+                        json={"text": chunk, "voice": self._voice},
+                        headers={"Content-Type": "application/json"},
                     )
                     resp.raise_for_status()
                     data = resp.json()
 
-                    status_code = data.get("status_code", -1)
-                    if status_code != 0:
-                        msg = data.get("message", "Unknown error")
-                        if "session" in msg.lower():
-                            logger.error("TikTok TTS: session ID is invalid or expired")
-                        else:
-                            logger.error("TikTok TTS error (code %d): %s", status_code, msg)
+                    if data.get("data") is None:
+                        error_msg = data.get("error", "Unknown error")
+                        logger.error("TikTok TTS error: %s", error_msg)
                         return
 
-                    v_str = data.get("data", {}).get("v_str", "")
-                    if not v_str:
-                        logger.error("TikTok TTS: no audio data in response")
-                        return
-
-                    pcm = self._decode_mp3_b64(v_str)
+                    pcm = self._decode_mp3_b64(data["data"])
                     if pcm and not self._interrupted:
                         sub_q.put_nowait(pcm)
 
