@@ -204,6 +204,9 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/api/check-config":
             self._json_response({"exists": CONFIG_OUTPUT.exists()})
 
+        elif self.path == "/api/check-prompts":
+            self._json_response({"exists": PROMPTS_OUTPUT.exists()})
+
         elif self.path == "/api/load-config":
             existing = load_existing_config()
             if existing:
