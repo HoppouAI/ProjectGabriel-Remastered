@@ -58,6 +58,16 @@ async function init() {
   $('#tts_provider').addEventListener('change', updateTtsOptions);
   updateTtsOptions();
 
+  // If prompts.yml already exists, auto-select skip to avoid overwriting
+  try {
+    const res = await fetch('/api/check-prompts');
+    const data = await res.json();
+    if (data.exists) {
+      selectTemplate('skip');
+      showToast('Existing prompts.yml detected, prompt step set to Skip to avoid overwriting.', 'success');
+    }
+  } catch (e) {}
+
   ['char_name','char_age','char_desc','char_location','char_background','char_personality'].forEach(id => {
     document.getElementById(id).addEventListener('input', updatePreview);
   });
