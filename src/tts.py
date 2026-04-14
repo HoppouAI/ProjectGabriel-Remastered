@@ -1216,7 +1216,8 @@ class TikTokTTSProvider:
     @staticmethod
     def _prepare_text(text: str) -> str:
         """Clean text for the TikTok TTS API."""
-        t = text.replace("+", "plus")
+        t = text.replace("*", "")
+        t = t.replace("+", "plus")
         t = t.replace("&", "and")
         t = t.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
         return t
