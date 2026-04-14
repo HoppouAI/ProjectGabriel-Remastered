@@ -113,6 +113,11 @@ async def main(save_audio=False):
         tts_provider = Chirp3HDTTSProvider(config)
         tts_provider.start()
         logger.info("Using Chirp 3 HD TTS provider (Gemini audio will be discarded)")
+    elif config.tts_tiktok_enabled:
+        from src.tts import TikTokTTSProvider
+        tts_provider = TikTokTTSProvider(config)
+        tts_provider.start()
+        logger.info("Using TikTok TTS provider (Gemini audio will be discarded)")
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
     session._save_audio = save_audio
