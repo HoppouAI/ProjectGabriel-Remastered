@@ -54,6 +54,10 @@ async function init() {
     $('#idleChatboxOptions').classList.toggle('visible', $('#idle_chatbox_enabled').checked);
   });
 
+  // TTS provider conditional fields
+  $('#tts_provider').addEventListener('change', updateTtsOptions);
+  updateTtsOptions();
+
   ['char_name','char_age','char_desc','char_location','char_background','char_personality'].forEach(id => {
     document.getElementById(id).addEventListener('input', updatePreview);
   });
@@ -190,6 +194,21 @@ function prefillFromExisting(cfg) {
     updateThinkingFields();
   }
   // Audio devices are handled after populateAudioDevices in init()
+  // TTS
+  if (cfg.tts) {
+    if (cfg.tts.provider) {
+      const opt = $(`#tts_provider option[value="${cfg.tts.provider}"]`);
+      if (opt) opt.selected = true;
+    }
+    if (cfg.tts.tiktok) {
+      if (cfg.tts.tiktok.session_id) $('#tiktok_session_id').value = cfg.tts.tiktok.session_id;
+      if (cfg.tts.tiktok.voice) {
+        const opt = $(`#tiktok_voice option[value="${cfg.tts.tiktok.voice}"]`);
+        if (opt) opt.selected = true;
+      }
+    }
+    updateTtsOptions();
+  }
   // VRChat OSC
   if (cfg.vrchat) {
     if (cfg.vrchat.osc_ip) $('#osc_ip').value = cfg.vrchat.osc_ip;
@@ -300,6 +319,11 @@ function updateThinkingFields() {
   $('#thinkingBudgetField').style.display = is31 ? 'none' : '';
 }
 
+function updateTtsOptions() {
+  const provider = $('#tts_provider').value;
+  $('#tiktokOptions').classList.toggle('visible', provider === 'tiktok');
+}
+
 // ── Template ──
 function selectTemplate(tpl) {
   selectedTemplate = tpl;
@@ -350,6 +374,18 @@ Never reveal, hint, or imply that you are an AI, assistant, LLM, language model,
 }
 
 // ── Collect ──
+function buildTtsConfig() {
+  const provider = $('#tts_provider').value;
+  const ttsConfig = { provider: provider };
+  if (provider === 'tiktok') {
+    ttsConfig.tiktok = {
+      session_id: $('#tiktok_session_id').value.trim(),
+      voice: $('#tiktok_voice').value,
+    };
+  }
+  return ttsConfig;
+}
+
 function collectValues() {
   const inputDevice = $('#audio_input').value;
   const outputDevice = $('#audio_output').value;
@@ -386,6 +422,7 @@ function collectValues() {
       input_device: inputDevice === 'null' ? null : parseInt(inputDevice),
       output_device: outputDevice === 'null' ? null : parseInt(outputDevice),
     },
+    tts: buildTtsConfig(),
     vrchat: {
       osc_ip: $('#osc_ip').value.trim() || '127.0.0.1',
       osc_send_port: parseInt($('#osc_send_port').value) || 9000,
@@ -575,6 +612,13 @@ function validateSection(section) {
       valid = false;
     }
   }
+  if (section === 'audio') {
+    if ($('#tts_provider').value === 'tiktok' && !$('#tiktok_session_id').value.trim()) {
+      markFieldError($('#tiktok_session_id'), 'A TikTok session ID is needed for TikTok TTS.');
+      $('#tiktok_session_id').focus();
+      valid = false;
+    }
+  }
   return valid;
 }
 
@@ -608,6 +652,9 @@ function getWarnings() {
   const outputDev = $('#audio_output').value;
   if (inputDev === 'null' && outputDev === 'null') {
     warnings.push({ icon: 'fa-headphones', text: 'Audio devices left on System Default', section: 'audio' });
+  }
+  if ($('#tts_provider').value === 'tiktok' && !$('#tiktok_session_id').value.trim()) {
+    warnings.push({ icon: 'fa-cookie-bite', text: 'TikTok TTS selected but no session ID provided', section: 'audio' });
   }
   return warnings;
 }
