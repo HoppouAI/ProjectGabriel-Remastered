@@ -227,15 +227,17 @@ class EmotionInput(BaseModel):
     emotion: str
 
 class MemoryCreateInput(BaseModel):
-    key: str
+    key: str | None = None
     content: str
     category: str = "general"
     memory_type: str = "long_term"
+    tags: list[str] | None = None
 
 class MemoryUpdateInput(BaseModel):
     content: str | None = None
     category: str | None = None
     memory_type: str | None = None
+    tags: list[str] | None = None
 
 class MemoryPinInput(BaseModel):
     pin: bool = True
@@ -611,11 +613,13 @@ async def list_memories(
 @app.post("/api/memories")
 async def create_memory(body: MemoryCreateInput):
     mgr = _get_memory_mgr()
+    key = body.key or f"webui_{int(datetime.utcnow().timestamp() * 1000)}"
     res = mgr.save(
-        key=body.key,
+        key=key,
         content=body.content,
         category=body.category,
         memory_type=body.memory_type,
+        tags=body.tags,
     )
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("message", "Create failed"))
@@ -648,6 +652,7 @@ async def update_memory(key: str, body: MemoryUpdateInput):
         content=body.content,
         category=body.category,
         memory_type=body.memory_type,
+        tags=body.tags,
     )
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("message", "Update failed"))
