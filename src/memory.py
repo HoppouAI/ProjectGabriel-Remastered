@@ -12,7 +12,6 @@ Usage:
     from src.memory import memory_system, get_memory_tools, handle_memory_function_call
 """
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -1266,15 +1265,12 @@ def get_memory_content_for_prompt(count: int = 10) -> str:
 
 async def recall_memories(query: str, context: str = "", api_key: str = "", personality_prompt: str = "") -> Dict[str, Any]:
     """
-    RAG-powered memory recall: uses vector search for semantic retrieval,
-    then sends relevant memories to Gemini Flash Lite for summarization.
-    Falls back to keyword search if vector search is unavailable.
+    Memory recall: uses vector search for semantic retrieval when RAG is enabled,
+    falls back to keyword search otherwise. Returns formatted memories directly
+    for the main Gemini session to summarize (no separate API call).
     """
     if not memory_system.is_available():
         return {"result": "error", "message": "Memory system unavailable"}
-    
-    if not api_key:
-        return {"result": "error", "message": "No API key available for recall agent"}
 
     # Use RAG vector search when enabled, otherwise legacy keyword path
     memories_found = []
@@ -1299,7 +1295,7 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
     if not memories_found:
         return {"result": "ok", "summary": "No memories stored yet.", "count": 0}
 
-    # Format memories for the sub-agent
+    # Format memories for the main model to process directly
     memory_lines = []
     for mem in memories_found:
         key = mem.get("key", "unknown")
@@ -1314,47 +1310,20 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
 
     memories_block = "\n".join(memory_lines)
 
-    system_prompt = (
-        "You are a memory recall assistant. You have been given relevant memories and a search query. "
-        "Your job is to find every relevant memory and provide a concise, accurate summary. "
-        "Include specific details like names, dates, events, and quotes. "
-        "If the query is about a person, include everything you know about them. "
-        "If nothing is relevant, say so clearly. "
-        "Keep your response under 300 words. Be direct and informative."
+    instructions = (
+        "These are YOUR memories. Summarize the relevant ones for the query below. "
+        "Speak in first person ('I remember...'), use actual names from the memories, "
+        "and don't assume the current speaker was involved in every memory. "
+        "Be concise and include specific details like names, dates, and events."
     )
-    if personality_prompt:
-        system_prompt += f"\n\nDeliver the summary in-character as: {personality_prompt[:300]}"
 
-    user_prompt = f"QUERY: {query}"
-    if context:
-        user_prompt += f"\nCONTEXT: {context}"
-    user_prompt += f"\n\n=== MEMORIES ({len(memories_found)} found via {search_method} search) ===\n{memories_block}"
-
-    try:
-        from google import genai
-        from google.genai import types as gtypes
-
-        client = genai.Client(api_key=api_key)
-
-        response = await asyncio.wait_for(
-            client.aio.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
-                contents=user_prompt,
-                config=gtypes.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    max_output_tokens=1024,
-                ),
-            ),
-            timeout=30.0,
-        )
-
-        summary = response.text if response.text else "Could not generate summary."
-        logger.info(f"Recall completed via {search_method} search ({len(memories_found)} memories)")
-        return {"result": "ok", "summary": summary, "count": len(memories_found)}
-
-    except asyncio.TimeoutError:
-        logger.warning("Recall agent timed out after 30s")
-        return {"result": "error", "message": "Couldn't summarize memories at this time."}
-    except Exception as e:
-        logger.error(f"Recall agent failed: {e}")
-        return {"result": "error", "message": "Couldn't summarize memories at this time."}
+    logger.info(f"Recall completed via {search_method} search ({len(memories_found)} memories)")
+    return {
+        "result": "ok",
+        "instructions": instructions,
+        "query": query,
+        "context": context,
+        "memories": memories_block,
+        "count": len(memories_found),
+        "search_method": search_method,
+    }
