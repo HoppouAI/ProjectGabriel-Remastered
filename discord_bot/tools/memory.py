@@ -145,13 +145,10 @@ class DiscordMemoryTool:
         return {"result": "error", "message": res.get("message")}
 
     async def _recall(self, args):
-        api_key = self.handler.config.api_key
         try:
             return await recall_memories(
                 query=args.get("query", ""),
                 context=args.get("context", ""),
-                api_key=api_key,
-                personality_prompt="",
             )
         except Exception as e:
             logger.error(f"Discord recall failed: {e}")

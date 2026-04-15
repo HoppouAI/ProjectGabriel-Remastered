@@ -168,17 +168,10 @@ class MemoryTools(BaseTool):
         emo = get_emotion_system()
         if emo:
             emo.start_thinking()
-        api_key = self.config.api_key if self.config else ""
-        personality_prompt = ""
-        if self.personality:
-            current = self.personality.get_current()
-            personality_prompt = current.get("prompt", "")
         try:
             return await recall_memories(
                 query=args.get("query", ""),
                 context=args.get("context", ""),
-                api_key=api_key,
-                personality_prompt=personality_prompt,
             )
         finally:
             self.audio.stop_thinking_sound()
