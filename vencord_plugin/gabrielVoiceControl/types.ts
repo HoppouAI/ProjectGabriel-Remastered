@@ -29,6 +29,7 @@ export type CommandOp =
     | "get_voice_state"    // Get current voice connection state
     | "set_mute"           // Mute/unmute self
     | "set_deaf"           // Deafen/undeafen self
+    | "find_user"          // Search for a user by name/display name
     | "ping";              // Health check
 
 // Events the plugin can push to the AI

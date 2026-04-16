@@ -65,6 +65,104 @@ async function stopRinging(channelId: string): Promise<boolean> {
     }
 }
 
+// --- User Lookup ---
+
+function handleFindUser(args: any): any {
+    const query = (args.query || "").toLowerCase().trim();
+    if (!query) return { success: false, error: "query required" };
+
+    const UserStore = findStore("UserStore");
+    const RelationshipStore = findStore("RelationshipStore");
+    const ChannelStore = findStore("ChannelStore");
+    const GuildStore = findStore("GuildStore");
+    const GuildMemberStore = findStore("GuildMemberStore");
+
+    if (!UserStore) return { success: false, error: "UserStore unavailable" };
+
+    const results: Array<{
+        id: string; username: string; display_name: string | null;
+        avatar: string | null; dm_channel_id: string | null;
+        is_friend: boolean; mutual_guild_ids: string[];
+    }> = [];
+    const seen = new Set<string>();
+
+    const addUser = (user: any) => {
+        if (!user || seen.has(user.id)) return;
+        const uname = (user.username || "").toLowerCase();
+        const gname = (user.globalName || "").toLowerCase();
+        if (!uname.includes(query) && !gname.includes(query)) return;
+        seen.add(user.id);
+
+        const dmId = ChannelStore?.getDMFromUserId?.(user.id) || null;
+        const isFriend = RelationshipStore?.isFriend?.(user.id) || false;
+
+        // Find mutual guilds
+        const mutualGuilds: string[] = [];
+        if (GuildStore && GuildMemberStore) {
+            for (const guild of Object.values(GuildStore.getGuilds()) as any[]) {
+                if (GuildMemberStore.getMember(guild.id, user.id)) {
+                    mutualGuilds.push(guild.id);
+                }
+            }
+        }
+
+        results.push({
+            id: user.id,
+            username: user.username,
+            display_name: user.globalName || null,
+            avatar: user.avatar || null,
+            dm_channel_id: dmId,
+            is_friend: isFriend,
+            mutual_guild_ids: mutualGuilds,
+        });
+    };
+
+    // 1. Search friends
+    if (RelationshipStore) {
+        const friends = RelationshipStore.getFriendIDs?.() || [];
+        for (const fid of friends) {
+            addUser(UserStore.getUser(fid));
+        }
+    }
+
+    // 2. Search DM channels (recent contacts)
+    if (ChannelStore) {
+        const channels = ChannelStore.getSortedPrivateChannels?.() || [];
+        for (const ch of channels) {
+            if (ch.recipients) {
+                for (const rid of ch.recipients) {
+                    addUser(UserStore.getUser(rid));
+                }
+            }
+        }
+    }
+
+    // 3. Search guild members (if few results so far)
+    if (results.length < 10 && GuildStore && GuildMemberStore) {
+        for (const guild of Object.values(GuildStore.getGuilds()) as any[]) {
+            const members = GuildMemberStore.getMembers(guild.id);
+            if (members) {
+                for (const m of members) {
+                    addUser(UserStore.getUser(m.userId));
+                    if (results.length >= 20) break;
+                }
+            }
+            if (results.length >= 20) break;
+        }
+    }
+
+    // Sort: friends first, then by exact match
+    results.sort((a, b) => {
+        if (a.is_friend !== b.is_friend) return a.is_friend ? -1 : 1;
+        const aExact = a.username.toLowerCase() === query || (a.display_name || "").toLowerCase() === query;
+        const bExact = b.username.toLowerCase() === query || (b.display_name || "").toLowerCase() === query;
+        if (aExact !== bExact) return aExact ? -1 : 1;
+        return 0;
+    });
+
+    return { success: true, data: { users: results.slice(0, 20), count: results.length } };
+}
+
 // --- Command Handlers (use lazy store lookups to avoid module-eval crashes) ---
 
 async function handleJoinVoice(args: any) {
@@ -257,6 +355,7 @@ async function processCommand(cmd: any): Promise<any> {
         case "get_voice_state": return handleGetVoiceState();
         case "set_mute": return handleSetMute(cmd);
         case "set_deaf": return handleSetDeaf(cmd);
+        case "find_user": return handleFindUser(cmd);
         default: return { success: false, error: `Unknown op: ${cmd.op}` };
     }
 }

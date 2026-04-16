@@ -45,6 +45,28 @@ class DiscordVoiceControlTool(BaseTool):
                 },
             ),
             types.FunctionDeclaration(
+                name="discord_findUser",
+                description="Search for a Discord user by username or display name. Returns matching users with their IDs and DM channel IDs.\n**Invocation Condition:** Call when you need to find a Discord user's ID to call them, or look up someone by name.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "Username or display name to search for"},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="discord_callUserByName",
+                description="Find a Discord user by name and call them. Searches friends/contacts, creates DM if needed, then rings.\n**Invocation Condition:** Call when asked to call a Discord user and you only have their name, not their ID.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Username or display name of the person to call"},
+                    },
+                    "required": ["name"],
+                },
+            ),
+            types.FunctionDeclaration(
                 name="discord_leaveVoice",
                 description="Leave the current Discord voice channel or hang up.\n**Invocation Condition:** Call when asked to leave Discord voice or hang up a call.",
                 parameters={"type": "OBJECT", "properties": {}},
@@ -61,6 +83,15 @@ class DiscordVoiceControlTool(BaseTool):
             return None
 
         from discord_bot.tools.voice_control import _send_command
+
+        # callUserByName is handled specially (find_user + call_user_by_id chain)
+        if name == "discord_callUserByName":
+            return await self._call_by_name(args)
+        if name == "discord_findUser":
+            res = await _send_command("find_user", query=args.get("query", ""))
+            if res.get("success"):
+                return {"result": "ok", **res.get("data", {})}
+            return {"result": "error", "message": res.get("error", "Unknown error")}
 
         op_map = {
             "discord_joinVoice": "join_voice",
@@ -84,3 +115,27 @@ class DiscordVoiceControlTool(BaseTool):
         if res.get("success"):
             return {"result": "ok", **res.get("data", {})}
         return {"result": "error", "message": res.get("error", "Unknown error")}
+
+    async def _call_by_name(self, args):
+        """Find user by name then call them."""
+        from discord_bot.tools.voice_control import _send_command
+        query = args.get("name", "").strip()
+        if not query:
+            return {"result": "error", "message": "name required"}
+
+        find_res = await _send_command("find_user", query=query)
+        if not find_res.get("success"):
+            return {"result": "error", "message": find_res.get("error", "Find user failed")}
+
+        users = find_res.get("data", {}).get("users", [])
+        if not users:
+            return {"result": "error", "message": f"No Discord user found matching '{query}'"}
+
+        # Pick the best match (first result - sorted by friend status + exact match)
+        target = users[0]
+        user_id = target["id"]
+
+        call_res = await _send_command("call_user_by_id", user_id=user_id)
+        if call_res.get("success"):
+            return {"result": "ok", "called_user": target["username"], "user_id": user_id, **call_res.get("data", {})}
+        return {"result": "error", "message": call_res.get("error", "Call failed")}
