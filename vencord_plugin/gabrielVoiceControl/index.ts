@@ -233,7 +233,7 @@ export default definePlugin({
         port: {
             type: OptionType.NUMBER,
             description: "WebSocket server port (localhost only)",
-            default: 6463,
+            default: 9473,
         },
     },
 
@@ -249,7 +249,7 @@ export default definePlugin({
                 console.error("[GabrielVoice] Native helpers not available");
                 return;
             }
-            const port = this.settings?.store?.port ?? 6463;
+            const port = this.settings?.store?.port ?? 9473;
             const result = await native.startServer(port);
             if (!result?.success) {
                 console.error("[GabrielVoice] Failed to start server:", result?.error);

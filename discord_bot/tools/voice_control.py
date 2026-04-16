@@ -17,7 +17,7 @@ _ws_connection = None
 _ws_lock = asyncio.Lock()
 
 
-async def _get_ws(port: int = 6463):
+async def _get_ws(port: int = 9473):
     """Get or create a WebSocket connection to the Vencord plugin."""
     global _ws_connection
     async with _ws_lock:
@@ -43,7 +43,7 @@ async def _get_ws(port: int = 6463):
             return None
 
 
-async def _send_command(op: str, port: int = 6463, **kwargs) -> dict:
+async def _send_command(op: str, port: int = 9473, **kwargs) -> dict:
     """Send a command to the Vencord plugin and wait for the response."""
     ws = await _get_ws(port)
     if ws is None:
@@ -75,7 +75,7 @@ class VoiceControlTool:
 
     def __init__(self, handler):
         self.handler = handler
-        self._port = 6463
+        self._port = 9473
 
     def declarations(self):
         return [
