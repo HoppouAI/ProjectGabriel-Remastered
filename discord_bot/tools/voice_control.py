@@ -81,45 +81,36 @@ class VoiceControlTool:
         return [
             types.FunctionDeclaration(
                 name="joinVoiceChannel",
-                description="Join a voice channel in a Discord server or DM. Requires the GabrielVoiceControl Vencord plugin.\n**Invocation Condition:** Call when someone asks you to join a voice channel, VC, or voice chat in a server. You need the voice channel ID.",
+                description="Join a Discord voice channel. Requires the GabrielVoiceControl Vencord plugin.\n**Invocation Condition:** Call when asked to join a voice channel, VC, or voice chat.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "channel_id": {"type": "STRING", "description": "The voice channel ID to join"},
+                        "channel_id": {"type": "STRING", "description": "Voice channel ID to join"},
                     },
                     "required": ["channel_id"],
                 },
             ),
             types.FunctionDeclaration(
                 name="callUser",
-                description="Start a voice call in a DM or group DM by channel ID. Joins voice and rings the recipients. Requires the GabrielVoiceControl Vencord plugin.\n**Invocation Condition:** Call when someone asks you to call them or start a voice call. Leave channel_id empty to use the current channel.",
+                description="Call someone on Discord. Provide ONE of: channel_id (DM channel), user_id (their Discord ID), or name (username/display name). Creates a DM if needed, joins voice, and rings them.\n**Invocation Condition:** Call when asked to call someone, start a voice call, or ring a user.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "channel_id": {"type": "STRING", "description": "The DM/group DM channel ID to call. If omitted, uses the current channel."},
+                        "channel_id": {"type": "STRING", "description": "DM/group DM channel ID"},
+                        "user_id": {"type": "STRING", "description": "Discord user ID"},
+                        "name": {"type": "STRING", "description": "Username or display name to search and call"},
                     },
                     "required": [],
                 },
             ),
             types.FunctionDeclaration(
-                name="callUserById",
-                description="Start a voice call with a specific user by their user ID. Creates a DM if needed, then joins voice and rings them.\n**Invocation Condition:** Call when you want to call a specific Discord user and you have their user ID but not a channel ID.",
-                parameters={
-                    "type": "OBJECT",
-                    "properties": {
-                        "user_id": {"type": "STRING", "description": "The Discord user ID to call"},
-                    },
-                    "required": ["user_id"],
-                },
-            ),
-            types.FunctionDeclaration(
                 name="leaveVoiceChannel",
-                description="Leave the current voice channel or hang up a call. Also stops ringing.\n**Invocation Condition:** Call when asked to leave voice, hang up, disconnect from VC, or end the call.",
+                description="Leave voice or hang up a call.\n**Invocation Condition:** Call when asked to leave voice, hang up, disconnect, or end the call.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="findUser",
-                description="Search for a Discord user by username or display name. Returns matching users with IDs and DM channel IDs.\n**Invocation Condition:** Call when you need to find a Discord user by name to get their ID or DM channel.",
+                description="Search for a Discord user by name. Returns matching users with IDs, DM channels, and friend status.\n**Invocation Condition:** Call when you need to look up a Discord user by name without calling them.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -129,19 +120,8 @@ class VoiceControlTool:
                 },
             ),
             types.FunctionDeclaration(
-                name="callUserByName",
-                description="Find a Discord user by name and call them. Searches friends/contacts, creates DM if needed, then rings.\n**Invocation Condition:** Call when asked to call someone by their name and you don't have their ID or channel ID.",
-                parameters={
-                    "type": "OBJECT",
-                    "properties": {
-                        "name": {"type": "STRING", "description": "Username or display name of the person to call"},
-                    },
-                    "required": ["name"],
-                },
-            ),
-            types.FunctionDeclaration(
                 name="getVoiceState",
-                description="Get your current voice connection status, who is in the channel, and mute/deaf state.\n**Invocation Condition:** Call when you need to check if you are in a voice channel or who is in the call.",
+                description="Get current voice state (channel, users, mute/deaf status).\n**Invocation Condition:** Call when you need to check voice status or who's in a call.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
         ]
@@ -155,22 +135,7 @@ class VoiceControlTool:
             return {"result": "ok", **res.get("data", {})} if res.get("success") else {"result": "error", "message": res.get("error")}
 
         elif name == "callUser":
-            channel_id = args.get("channel_id")
-            if not channel_id:
-                ch = getattr(self.handler, "_current_channel", None)
-                if ch:
-                    channel_id = str(ch.id)
-                else:
-                    return {"result": "error", "message": "No channel_id and no current channel"}
-            res = await _send_command("call_user", self._port, channel_id=channel_id)
-            return {"result": "ok", **res.get("data", {})} if res.get("success") else {"result": "error", "message": res.get("error")}
-
-        elif name == "callUserById":
-            user_id = args.get("user_id")
-            if not user_id:
-                return {"result": "error", "message": "user_id required"}
-            res = await _send_command("call_user_by_id", self._port, user_id=user_id)
-            return {"result": "ok", **res.get("data", {})} if res.get("success") else {"result": "error", "message": res.get("error")}
+            return await self._handle_call(args)
 
         elif name == "leaveVoiceChannel":
             res = await _send_command("leave_voice", self._port)
@@ -183,27 +148,42 @@ class VoiceControlTool:
             res = await _send_command("find_user", self._port, query=query)
             return {"result": "ok", **res.get("data", {})} if res.get("success") else {"result": "error", "message": res.get("error")}
 
-        elif name == "callUserByName":
-            query = args.get("name", "").strip()
-            if not query:
-                return {"result": "error", "message": "name required"}
-            # Find user first
-            find_res = await _send_command("find_user", self._port, query=query)
-            if not find_res.get("success"):
-                return {"result": "error", "message": find_res.get("error", "Find user failed")}
-            users = find_res.get("data", {}).get("users", [])
-            if not users:
-                return {"result": "error", "message": f"No Discord user found matching '{query}'"}
-            target = users[0]
-            user_id = target["id"]
-            # Call the best match
-            call_res = await _send_command("call_user_by_id", self._port, user_id=user_id)
-            if call_res.get("success"):
-                return {"result": "ok", "called_user": target["username"], "user_id": user_id, **call_res.get("data", {})}
-            return {"result": "error", "message": call_res.get("error", "Call failed")}
-
         elif name == "getVoiceState":
             res = await _send_command("get_voice_state", self._port)
             return {"result": "ok", **res.get("data", {})} if res.get("success") else {"result": "error", "message": res.get("error")}
 
         return None
+
+    async def _handle_call(self, args):
+        """Unified call handler: channel_id > user_id > name > current channel."""
+        channel_id = args.get("channel_id")
+        user_id = args.get("user_id")
+        name = (args.get("name") or "").strip()
+
+        if channel_id:
+            res = await _send_command("call_user", self._port, channel_id=channel_id)
+        elif user_id:
+            res = await _send_command("call_user_by_id", self._port, user_id=user_id)
+        elif name:
+            find_res = await _send_command("find_user", self._port, query=name)
+            if not find_res.get("success"):
+                return {"result": "error", "message": find_res.get("error", "Find user failed")}
+            users = find_res.get("data", {}).get("users", [])
+            if not users:
+                return {"result": "error", "message": f"No Discord user found matching '{name}'"}
+            target = users[0]
+            res = await _send_command("call_user_by_id", self._port, user_id=target["id"])
+            if res.get("success"):
+                return {"result": "ok", "called_user": target["username"], "user_id": target["id"], **res.get("data", {})}
+            return {"result": "error", "message": res.get("error", "Call failed")}
+        else:
+            # Fall back to current channel if in a DM
+            ch = getattr(self.handler, "_current_channel", None)
+            if ch:
+                res = await _send_command("call_user", self._port, channel_id=str(ch.id))
+            else:
+                return {"result": "error", "message": "Provide channel_id, user_id, or name"}
+
+        if res.get("success"):
+            return {"result": "ok", **res.get("data", {})}
+        return {"result": "error", "message": res.get("error", "Unknown error")}
