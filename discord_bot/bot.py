@@ -688,14 +688,19 @@ class DiscordBot:
                 self._conversations.add_message(channel_id, "assistant", response)
                 self._cooldowns[channel_id] = time.time()
 
-                # Schedule left-on-read follow-up
-                if last_sent:
+                # Schedule left-on-read follow-up (20% chance, skip if conversation ended naturally)
+                if last_sent and random.random() < 0.2 and not self._looks_like_conversation_end(response):
                     old = self._followup_tasks.pop(channel_id, None)
                     if old and not old.done():
                         old.cancel()
                     self._followup_tasks[channel_id] = asyncio.create_task(
                         self._followup_on_read(channel_id, last_sent, last_message.author)
                     )
+                else:
+                    # Cancel any existing follow-up if we're not scheduling a new one
+                    old = self._followup_tasks.pop(channel_id, None)
+                    if old and not old.done():
+                        old.cancel()
 
         except asyncio.CancelledError:
             logger.info(f"Response interrupted in {channel_id}")
@@ -703,6 +708,21 @@ class DiscordBot:
             logger.warning(f"No permission to send in {channel_id}")
         except Exception as e:
             logger.error(f"Response error: {e}")
+
+    _CONVERSATION_END_PATTERNS = re.compile(
+        r'\b(bye|goodbye|good\s*night|gn|later|cya|see\s*ya|see\s*you|'
+        r'take\s*care|peace\s*out|ttyl|talk\s*to\s*you\s*later|'
+        r'gotta\s*go|heading\s*out|signing\s*off|nighty?\s*night|'
+        r'sweet\s*dreams|sleep\s*well|have\s*a\s*good\s*(one|night|day)|'
+        r'catch\s*you\s*later|farewell|adios|sayonara)\b',
+        re.IGNORECASE,
+    )
+
+    def _looks_like_conversation_end(self, response: str) -> bool:
+        """Check if the AI's last response looks like a natural conversation ending."""
+        # Only check the last ~200 chars to avoid matching mid-conversation goodbyes
+        tail = response[-200:] if len(response) > 200 else response
+        return bool(self._CONVERSATION_END_PATTERNS.search(tail))
 
     async def _followup_on_read(self, channel_id, bot_message, user):
         """Wait 5-15 minutes, then send a follow-up if no one responded."""
