@@ -29,7 +29,6 @@ class ToolHandler:
         from src.tools import music_gen as music_gen_tools  # noqa: F401
         from src.tools import web_search as web_search_tools  # noqa: F401
         from src.tools import social as social_tools  # noqa: F401
-        from src.tools import voice_control as voice_control_tools  # noqa: F401
         from src.tools._base import get_registered_tools
 
         self._tools = [cls(self) for cls in get_registered_tools()]
