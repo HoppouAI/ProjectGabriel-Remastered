@@ -33,5 +33,6 @@ pynput
 pyotp
 nltk
 websockets
+chromadb
 # pymongo is optional - only needed for MongoDB Atlas memory backend
 # install separately with: uv pip install pymongo

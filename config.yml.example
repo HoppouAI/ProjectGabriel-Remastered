@@ -462,12 +462,29 @@ memory:
   prompt_memory_count: 15
 
   # RAG System (semantic memory recall via embeddings + vector search)
-  # Requires MongoDB backend. When disabled, uses legacy keyword recall.
-  # Note: Gemini embedding API has a 100 RPM limit on free tier.
+  # When disabled, uses legacy keyword recall.
   rag_enabled: false
+
+  # RAG provider: "gemini" (cloud, requires MongoDB) or "local" (ChromaDB + LM Studio)
+  # "gemini" - uses Gemini embedding API + MongoDB Atlas vector search
+  # "local"  - uses local embedding model via LM Studio + ChromaDB vector DB (no cloud needed)
+  rag_provider: "gemini"
+
+  # -- Gemini RAG settings (rag_provider: "gemini") --
+  # Requires MongoDB backend. Gemini embedding API has 100 RPM limit on free tier.
   embedding_model: "gemini-embedding-001"   # Gemini embedding model
   embedding_dims: 768                       # Output dimensions (lower = faster, max 3072)
-  vector_min_score: 0.82                    # Min cosine similarity for vector search results (0.0-1.0, higher = stricter)
+
+  # -- Local RAG settings (rag_provider: "local") --
+  # Requires LM Studio running with an embedding model loaded.
+  # Works with any backend (sqlite or mongo).
+  # See README for setup instructions.
+  lm_studio_url: "http://localhost:1234"          # LM Studio server URL
+  local_embedding_model: "text-embedding-embeddinggemma-300m-qat"  # Model loaded in LM Studio
+  chroma_dir: "gabriel_chroma_db"                 # ChromaDB storage directory
+
+  vector_min_score: 0.82                    # Min cosine similarity for search results (0.0-1.0, higher = stricter)
+                                            # Recommended: 0.82 for gemini, 0.55-0.65 for local
 
 # ══════════════════════════════════════════════════════════
 # Avatar Emotion/Animation System

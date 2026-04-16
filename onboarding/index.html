@@ -607,6 +607,30 @@
             <option value="mongo">MongoDB Atlas (cloud)</option>
           </select>
         </div>
+        <div class="toggle-row" onclick="toggleCheck('feat_rag')" style="padding:8px 0;">
+          <div class="toggle-info">
+            <h4>Semantic Memory (RAG)</h4>
+            <p>Vector search for smarter memory recall.</p>
+          </div>
+          <label class="toggle"><input type="checkbox" id="feat_rag"><span class="slider"></span></label>
+        </div>
+        <div class="cond" id="ragOptions">
+          <div class="field" style="margin:8px 0;">
+            <label>RAG Provider</label>
+            <select id="rag_provider" onchange="updateRAGFields()">
+              <option value="local">Local (LM Studio + ChromaDB)</option>
+              <option value="gemini">Gemini (cloud, requires MongoDB)</option>
+            </select>
+            <div class="hint">Local uses LM Studio for embeddings. No cloud calls needed.</div>
+          </div>
+          <div id="localRagFields">
+            <div class="field" style="margin:8px 0;">
+              <label>LM Studio URL</label>
+              <input type="text" id="lm_studio_url" value="http://localhost:1234" placeholder="http://localhost:1234">
+              <div class="hint">URL of your LM Studio local server.</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="toggle-row" onclick="toggleCheck('feat_yolo')">
         <div class="toggle-info">

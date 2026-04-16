@@ -199,6 +199,35 @@ gemini:
 
 The Silero model is downloaded automatically on first use via `torch.hub` and cached locally. It requires PyTorch which is already included in the project dependencies.
 
+### 6. Local RAG with LM Studio (Optional)
+
+The memory system supports local semantic search using [LM Studio](https://lmstudio.ai/) for embeddings and ChromaDB as the vector database. This is a fully offline alternative to the cloud-based Gemini embedding + MongoDB Atlas vector search setup.
+
+**Setup:**
+
+1. Download and install [LM Studio](https://lmstudio.ai/)
+2. In LM Studio, search for and download the embedding model: `text-embedding-embeddinggemma-300m-qat`
+3. Go to the **Local Server** tab in LM Studio and start the server (default port 1234)
+4. Make sure the embedding model is loaded
+
+**Configure in `config.yml`:**
+
+```yaml
+memory:
+  enabled: true
+  backend: "sqlite"  # works with both sqlite and mongo
+  rag_enabled: true
+  rag_provider: "local"
+  lm_studio_url: "http://localhost:1234"
+  local_embedding_model: "text-embedding-embeddinggemma-300m-qat"
+  chroma_dir: "gabriel_chroma_db"
+  vector_min_score: 0.60   # local models need a lower threshold than gemini (0.55-0.65 recommended)
+```
+
+On first startup, existing memories are automatically synced into ChromaDB. The `vector_min_score` should be lower for local models (around 0.55-0.65) compared to Gemini embeddings (0.82).
+
+If you prefer cloud embeddings instead, set `rag_provider: "gemini"` which uses Gemini's embedding API with MongoDB Atlas vector search (requires MongoDB backend).
+
 ---
 
 ## Audio Routing

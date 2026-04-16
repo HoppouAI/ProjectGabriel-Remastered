@@ -43,6 +43,10 @@ async function init() {
   });
   if ($('#feat_memory').checked) $('#memoryOptions').classList.add('visible');
 
+  $('#feat_rag').addEventListener('change', () => {
+    $('#ragOptions').classList.toggle('visible', $('#feat_rag').checked);
+  });
+
   $('#feat_vision').addEventListener('change', () => {
     $('#visionOptions').classList.toggle('visible', $('#feat_vision').checked);
   });
@@ -257,7 +261,15 @@ function prefillFromExisting(cfg) {
       const opt = $(`#memory_backend option[value="${cfg.memory.backend}"]`);
       if (opt) opt.selected = true;
     }
+    if (cfg.memory.rag_enabled) $('#feat_rag').checked = true;
+    if (cfg.memory.rag_provider) {
+      const ropt = $(`#rag_provider option[value="${cfg.memory.rag_provider}"]`);
+      if (ropt) ropt.selected = true;
+    }
+    if (cfg.memory.lm_studio_url) $('#lm_studio_url').value = cfg.memory.lm_studio_url;
     $('#memoryOptions').classList.toggle('visible', $('#feat_memory').checked);
+    $('#ragOptions').classList.toggle('visible', $('#feat_rag').checked);
+    updateRAGFields();
   }
   if (cfg.yolo) $('#feat_yolo').checked = cfg.yolo.enabled === true;
   if (cfg.face_tracker) $('#feat_face').checked = cfg.face_tracker.enabled === true;
@@ -331,6 +343,11 @@ function updateThinkingFields() {
 function updateTtsOptions() {
   const provider = $('#tts_provider').value;
   $('#tiktokOptions').classList.toggle('visible', provider === 'tiktok');
+}
+
+function updateRAGFields() {
+  const provider = $('#rag_provider').value;
+  $('#localRagFields').style.display = provider === 'local' ? '' : 'none';
 }
 
 // ── Template ──
@@ -455,7 +472,13 @@ function collectValues() {
       monitor: parseInt($('#vision_monitor').value),
       interval: parseFloat($('#vision_interval').value),
     },
-    memory: { enabled: $('#feat_memory').checked, backend: $('#memory_backend').value },
+    memory: {
+      enabled: $('#feat_memory').checked,
+      backend: $('#memory_backend').value,
+      rag_enabled: $('#feat_rag').checked,
+      rag_provider: $('#rag_provider').value,
+      lm_studio_url: $('#lm_studio_url').value || 'http://localhost:1234',
+    },
     yolo: { enabled: $('#feat_yolo').checked },
     face_tracker: { enabled: $('#feat_face').checked },
     wanderer: { enabled: $('#feat_wanderer').checked },
