@@ -112,6 +112,10 @@ class AudioManager:
         self._pitch_semitones = 0.0
         self._pitch_shifter = None
         self._low_quality = False
+        self._lq_downsample = 4      # Downsample factor (2-8)
+        self._lq_bitcrush = 256.0    # Quantization step (64=harsh, 512=mild)
+        self._lq_noise = 800.0       # White noise intensity (0-3000)
+        self._lq_glitch = 0.03       # Glitch probability per chunk (0.0-0.2)
         self._setup_devices()
 
     def _setup_devices(self):
@@ -238,26 +242,47 @@ class AudioManager:
         self.boost_level = max(0, min(10, level))
         logger.info(f"Voice boost set to {self.boost_level}")
 
-    def set_low_quality(self, enabled: bool):
+    def set_low_quality(self, enabled: bool, **kwargs):
         self._low_quality = enabled
-        logger.info(f"Low quality mic {'enabled' if enabled else 'disabled'}")
+        if "downsample" in kwargs:
+            self._lq_downsample = max(1, min(8, int(kwargs["downsample"])))
+        if "bitcrush" in kwargs:
+            self._lq_bitcrush = max(16.0, min(1024.0, float(kwargs["bitcrush"])))
+        if "noise" in kwargs:
+            self._lq_noise = max(0.0, min(3000.0, float(kwargs["noise"])))
+        if "glitch" in kwargs:
+            self._lq_glitch = max(0.0, min(0.2, float(kwargs["glitch"])))
+        logger.info(f"Low quality mic {'enabled' if enabled else 'disabled'}"
+                     + (f" (ds={self._lq_downsample}, bc={self._lq_bitcrush}, "
+                        f"noise={self._lq_noise}, glitch={self._lq_glitch})" if enabled else ""))
 
     def get_low_quality(self) -> bool:
         return self._low_quality
 
-    def _apply_low_quality(self, samples: np.ndarray) -> np.ndarray:
-        # Downsample to ~4kHz then back up (bitcrushing/aliasing)
-        factor = 4
-        downsampled = samples[::factor]
-        samples = np.repeat(downsampled, factor)[:len(samples)] if len(samples) > 0 else samples
+    def get_low_quality_settings(self) -> dict:
+        return {
+            "enabled": self._low_quality,
+            "downsample": self._lq_downsample,
+            "bitcrush": self._lq_bitcrush,
+            "noise": self._lq_noise,
+            "glitch": self._lq_glitch,
+        }
 
-        # Bitcrush: reduce bit depth to ~8 bits
-        step = 256.0
+    def _apply_low_quality(self, samples: np.ndarray) -> np.ndarray:
+        # Downsample then back up (bitcrushing/aliasing)
+        factor = self._lq_downsample
+        if factor > 1:
+            downsampled = samples[::factor]
+            samples = np.repeat(downsampled, factor)[:len(samples)] if len(samples) > 0 else samples
+
+        # Bitcrush: reduce bit depth
+        step = self._lq_bitcrush
         samples = np.round(samples / step) * step
 
         # Add white noise
-        noise = np.random.normal(0, 800, len(samples)).astype(np.float32)
-        samples = samples + noise
+        if self._lq_noise > 0:
+            noise = np.random.normal(0, self._lq_noise, len(samples)).astype(np.float32)
+            samples = samples + noise
 
         # Simple bandpass via high-pass + low-pass (telephone band ~300-3400Hz)
         # Single-pole IIR filters for cheapness
@@ -281,7 +306,7 @@ class AudioManager:
             lp_out[i] = lp_out[i - 1] + alpha_lp * (hp_out[i] - lp_out[i - 1])
 
         # Random micro-glitches: occasionally repeat a small chunk
-        if np.random.random() < 0.03 and len(lp_out) > 200:
+        if self._lq_glitch > 0 and np.random.random() < self._lq_glitch and len(lp_out) > 200:
             pos = np.random.randint(0, len(lp_out) - 100)
             lp_out[pos:pos + 50] = lp_out[pos:pos + 50][[0] * 50]  # stutter
 
