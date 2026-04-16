@@ -68,6 +68,21 @@ class MemoryTools(BaseTool):
                 },
             ),
             types.FunctionDeclaration(
+                name="updateMemory",
+                description="Update an existing memory's content, category, type, or tags. Use this to correct or expand memories without deleting and re-creating them.\n**Invocation Condition:** Call when you need to fix, correct, update, or expand an existing memory. Use searchMemories or listMemories first to find the key.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "key": {"type": "STRING", "description": "The memory key to update"},
+                        "content": {"type": "STRING", "description": "New content (replaces old). Use actual names, never 'user' or 'the user'"},
+                        "category": {"type": "STRING", "description": "New category (optional)"},
+                        "memoryType": {"type": "STRING", "description": "New type: long_term, short_term, or quick_note (optional)"},
+                        "tags": {"type": "STRING", "description": "New comma-separated tags (optional, replaces old tags)"},
+                    },
+                    "required": ["key"],
+                },
+            ),
+            types.FunctionDeclaration(
                 name="recallMemories",
                 description="Deep memory recall and summarization agent. Searches ALL memories using AI to find and summarize everything relevant. THIS is the tool to use when asked to remember, recall, or summarize anything. Results are YOUR OWN memories, speak in first person ('I remember...') not third person ('It is said that...'). Pay attention to NAMES in each memory, do not assume the current speaker was involved in every recalled memory.\n**Invocation Condition:** ALWAYS use this instead of searchMemories when asked to summarize, recall, remember, or tell what you know about something. Use when someone references past events, asks about people, or says 'summarize'. This is your PRIMARY memory tool.",
                 parameters={
@@ -86,6 +101,8 @@ class MemoryTools(BaseTool):
             return await self._save(args)
         elif name == "searchMemories":
             return await self._search(args)
+        elif name == "updateMemory":
+            return await self._update(args)
         elif name == "deleteMemory":
             return await self._delete(args)
         elif name == "listMemories":
@@ -133,6 +150,25 @@ class MemoryTools(BaseTool):
             tags=tags_list,
         )
         return {"result": "ok"} if res.get("success") else {"result": "error", "message": res.get("message")}
+
+    async def _update(self, args):
+        key = args.get("key")
+        if not key:
+            return {"result": "error", "message": "key required"}
+        content = args.get("content")
+        category = args.get("category")
+        memory_type = args.get("memoryType")
+        tags_raw = args.get("tags")
+        tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()] if isinstance(tags_raw, str) else None
+
+        if not any([content, category, memory_type, tags_list]):
+            return {"result": "error", "message": "At least one field to update is required (content, category, memoryType, or tags)"}
+
+        res = memory_system.update(
+            key=key, content=content, category=category,
+            memory_type=memory_type, tags=tags_list,
+        )
+        return {"result": "ok", "key": key} if res.get("success") else {"result": "error", "message": res.get("message")}
 
     async def _search(self, args):
         search_term = args.get("searchTerm")
