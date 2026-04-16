@@ -118,6 +118,28 @@ class VoiceControlTool:
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
+                name="findUser",
+                description="Search for a Discord user by username or display name. Returns matching users with IDs and DM channel IDs.\n**Invocation Condition:** Call when you need to find a Discord user by name to get their ID or DM channel.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {"type": "STRING", "description": "Username or display name to search for"},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="callUserByName",
+                description="Find a Discord user by name and call them. Searches friends/contacts, creates DM if needed, then rings.\n**Invocation Condition:** Call when asked to call someone by their name and you don't have their ID or channel ID.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING", "description": "Username or display name of the person to call"},
+                    },
+                    "required": ["name"],
+                },
+            ),
+            types.FunctionDeclaration(
                 name="getVoiceState",
                 description="Get your current voice connection status, who is in the channel, and mute/deaf state.\n**Invocation Condition:** Call when you need to check if you are in a voice channel or who is in the call.",
                 parameters={"type": "OBJECT", "properties": {}},
@@ -153,6 +175,32 @@ class VoiceControlTool:
         elif name == "leaveVoiceChannel":
             res = await _send_command("leave_voice", self._port)
             return {"result": "ok"} if res.get("success") else {"result": "error", "message": res.get("error")}
+
+        elif name == "findUser":
+            query = args.get("query", "").strip()
+            if not query:
+                return {"result": "error", "message": "query required"}
+            res = await _send_command("find_user", self._port, query=query)
+            return {"result": "ok", **res.get("data", {})} if res.get("success") else {"result": "error", "message": res.get("error")}
+
+        elif name == "callUserByName":
+            query = args.get("name", "").strip()
+            if not query:
+                return {"result": "error", "message": "name required"}
+            # Find user first
+            find_res = await _send_command("find_user", self._port, query=query)
+            if not find_res.get("success"):
+                return {"result": "error", "message": find_res.get("error", "Find user failed")}
+            users = find_res.get("data", {}).get("users", [])
+            if not users:
+                return {"result": "error", "message": f"No Discord user found matching '{query}'"}
+            target = users[0]
+            user_id = target["id"]
+            # Call the best match
+            call_res = await _send_command("call_user_by_id", self._port, user_id=user_id)
+            if call_res.get("success"):
+                return {"result": "ok", "called_user": target["username"], "user_id": user_id, **call_res.get("data", {})}
+            return {"result": "error", "message": call_res.get("error", "Call failed")}
 
         elif name == "getVoiceState":
             res = await _send_command("get_voice_state", self._port)
