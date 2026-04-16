@@ -66,6 +66,17 @@ class VoiceTools(BaseTool):
                     "required": ["semitones"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="toggleLowQualityMic",
+                description="Toggle a hilariously bad mic quality effect. When enabled, your voice sounds like it's coming through a dollar store webcam mic from 2005 -- bitcrushed, noisy, telephone-band filtered, with random stuttery glitches. Great for comedy bits.\n**Invocation Condition:** Call when asked to sound like a bad mic, cheap mic, low quality, crappy audio, discord call from 2010, or to toggle off the effect.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "enabled": {"type": "STRING", "description": "'true' to enable garbage mic mode, 'false' to go back to normal"},
+                    },
+                    "required": ["enabled"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -77,6 +88,10 @@ class VoiceTools(BaseTool):
             return {"result": "ok"}
         elif name == "setVoicePitch":
             return self._set_pitch(args.get("semitones", 0))
+        elif name == "toggleLowQualityMic":
+            enabled = str(args.get("enabled", "false")).lower() == "true"
+            self.audio.set_low_quality(enabled)
+            return {"result": "ok", "low_quality": enabled}
         elif name == "switchTTSProvider":
             return await self._switch_tts(args.get("provider", ""), args.get("voice"))
         elif name == "listTTSProviders":
