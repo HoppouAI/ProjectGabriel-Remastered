@@ -58,11 +58,13 @@ The injector will open and let you patch your Discord install. After patching, r
 
 Open Discord > Settings > Vencord > Plugins > search **GabrielVoiceControl** > Enable it.
 
-Configure the WebSocket port in plugin settings (default: `6463`).
+Configure the WebSocket port in plugin settings (default: `9473`).
+
+> **Note:** Do NOT use port 6463-6472 as Discord's RPC server uses those.
 
 ### 4. AI side (ProjectGabriel)
 
-The voice control tools are automatically available in both the main VRChat AI session and the Discord bot session. The AI connects to `ws://127.0.0.1:6463` on demand when a voice command is invoked.
+The voice control tools are automatically available in both the main VRChat AI session and the Discord bot session. The AI connects to `ws://127.0.0.1:9473` on demand when a voice command is invoked.
 
 **Requires `websockets` Python package** (already in requirements.txt).
 
