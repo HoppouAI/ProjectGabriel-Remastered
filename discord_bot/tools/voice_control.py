@@ -133,8 +133,11 @@ class VoiceControlTool:
                 return {"result": "error", "message": "channel_id required"}
             res = await _send_command("join_voice", self._port, channel_id=channel_id)
             if res.get("success"):
-                await self._relay_voice_state("joined voice channel")
-                return {"result": "ok", **res.get("data", {})}
+                data = res.get("data", {})
+                recipients = data.get("recipients", [])
+                called = ", ".join(recipients) if recipients else None
+                await self._relay_voice_state("joined voice channel", called_user=called)
+                return {"result": "ok", **data}
             return {"result": "error", "message": res.get("error")}
 
         elif name == "callUser":
@@ -169,8 +172,22 @@ class VoiceControlTool:
 
         if channel_id:
             res = await _send_command("call_user", self._port, channel_id=channel_id)
+            if res.get("success"):
+                data = res.get("data", {})
+                recipients = data.get("recipients", [])
+                called_user = ", ".join(recipients) if recipients else None
+                await self._relay_voice_state("started a call", called_user=called_user)
+                return {"result": "ok", **data}
+            return {"result": "error", "message": res.get("error", "Call failed")}
         elif user_id:
             res = await _send_command("call_user_by_id", self._port, user_id=user_id)
+            if res.get("success"):
+                data = res.get("data", {})
+                recipients = data.get("recipients", [])
+                called_user = ", ".join(recipients) if recipients else None
+                await self._relay_voice_state("started a call", called_user=called_user)
+                return {"result": "ok", **data}
+            return {"result": "error", "message": res.get("error", "Call failed")}
         elif name:
             find_res = await _send_command("find_user", self._port, query=name)
             if not find_res.get("success"):
@@ -187,15 +204,16 @@ class VoiceControlTool:
             return {"result": "error", "message": res.get("error", "Call failed")}
         else:
             ch = getattr(self.handler, "_current_channel", None)
-            if ch:
-                res = await _send_command("call_user", self._port, channel_id=str(ch.id))
-            else:
+            if not ch:
                 return {"result": "error", "message": "Provide channel_id, user_id, or name"}
-
-        if res.get("success"):
-            await self._relay_voice_state("started a call", called_user=called_user)
-            return {"result": "ok", **res.get("data", {})}
-        return {"result": "error", "message": res.get("error", "Unknown error")}
+            res = await _send_command("call_user", self._port, channel_id=str(ch.id))
+            if res.get("success"):
+                data = res.get("data", {})
+                recipients = data.get("recipients", [])
+                called_user = ", ".join(recipients) if recipients else None
+                await self._relay_voice_state("started a call", called_user=called_user)
+                return {"result": "ok", **data}
+            return {"result": "error", "message": res.get("error", "Call failed")}
 
     async def _relay_callback_safe(self, text: str):
         """Relay a message to the main VRChat session if relay is available."""
