@@ -24,12 +24,14 @@ class DiscordToolHandler:
         from discord_bot.tools.discord_actions import DiscordActionsTool
         from discord_bot.tools.system import DiscordSystemTool
         from discord_bot.tools.personalities import PersonalityTool
+        from discord_bot.tools.voice_control import VoiceControlTool
         self._tools = [
             DiscordMemoryTool(self),
             RelayTool(self),
             DiscordActionsTool(self),
             DiscordSystemTool(self),
             PersonalityTool(self),
+            VoiceControlTool(self),
         ]
 
     def set_discord_client(self, client):
