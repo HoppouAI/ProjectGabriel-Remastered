@@ -195,6 +195,8 @@ data/*.wav
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+gabriel_chroma_db/
+benchmarks/
 
 # Discord bot
 discord_bot/config.yml
