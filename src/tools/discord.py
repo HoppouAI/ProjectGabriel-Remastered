@@ -52,6 +52,11 @@ class DiscordTools(BaseTool):
                 description="Check if the Discord bot is connected and get its status.\n**Invocation Condition:** Call when asked about Discord bot status or connectivity.",
                 parameters={"type": "OBJECT", "properties": {}, "required": []},
             ),
+            types.FunctionDeclaration(
+                name="discord_hangUp",
+                description="Hang up / leave the current Discord voice call. Disconnects and stops ringing.\n**Invocation Condition:** Call when you want to end a Discord call, hang up, or leave Discord voice.",
+                parameters={"type": "OBJECT", "properties": {}, "required": []},
+            ),
         ]
 
     async def handle(self, name, args):
@@ -61,6 +66,8 @@ class DiscordTools(BaseTool):
             return await self._relay_to_discord(args)
         elif name == "getDiscordStatus":
             return await self._get_status(args)
+        elif name == "discord_hangUp":
+            return await self._hang_up()
         return None
 
     async def _send_message(self, args):
@@ -114,3 +121,14 @@ class DiscordTools(BaseTool):
             "username": str(client.user),
             "guilds": len(client.guilds),
         }
+
+    async def _hang_up(self):
+        try:
+            from discord_bot.tools.voice_control import _send_command
+            res = await _send_command("leave_voice")
+            if res.get("success"):
+                return {"result": "ok", "message": "Disconnected from Discord voice call"}
+            return {"result": "error", "message": res.get("error", "Failed to hang up")}
+        except Exception as e:
+            logger.error(f"Discord hang up failed: {e}")
+            return {"result": "error", "message": str(e)}
