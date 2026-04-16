@@ -42,12 +42,21 @@ except ImportError:
     DESCENDING = -1
     MONGO_AVAILABLE = False
 
-try:
-    import chromadb
-    CHROMA_AVAILABLE = True
-except ImportError:
-    chromadb = None
-    CHROMA_AVAILABLE = False
+# chromadb imported lazily in _init_local_rag() to save ~1.5s startup time
+chromadb = None
+CHROMA_AVAILABLE = False
+
+def _import_chromadb():
+    global chromadb, CHROMA_AVAILABLE
+    if chromadb is not None:
+        return True
+    try:
+        import chromadb as _chromadb
+        chromadb = _chromadb
+        CHROMA_AVAILABLE = True
+        return True
+    except ImportError:
+        return False
 
 try:
     import httpx as _httpx
@@ -272,7 +281,7 @@ class MemorySystem:
 
     def _init_local_rag(self):
         """Initialize local RAG with ChromaDB + LM Studio embeddings."""
-        if not CHROMA_AVAILABLE:
+        if not _import_chromadb():
             logger.warning("ChromaDB not installed, disabling local RAG (pip install chromadb)")
             self.rag_enabled = False
             return
@@ -1327,8 +1336,24 @@ class MemorySystem:
                 pass
 
 
-# Global instance
-memory_system = MemorySystem()
+class _LazyMemorySystem:
+    """Lazy proxy that defers MemorySystem() creation until first attribute access."""
+    def __init__(self):
+        self._instance = None
+
+    def _ensure(self):
+        if self._instance is None:
+            self._instance = MemorySystem()
+        return self._instance
+
+    def __getattr__(self, name):
+        return getattr(self._ensure(), name)
+
+    def __bool__(self):
+        return self._instance is not None and bool(self._instance)
+
+# Global instance (lazy -- connects on first use, not at import time)
+memory_system = _LazyMemorySystem()
 
 
 # Tool declarations for Gemini Live
