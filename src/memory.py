@@ -995,6 +995,15 @@ class MemorySystem:
 
                 self.collection.update_one({"key": key}, {"$set": updates})
 
+            # Re-embed in ChromaDB if content changed
+            if content is not None and self._chroma_collection is not None:
+                existing = self.read(key)
+                mem = existing.get("memory", {}) if existing.get("success") else {}
+                cat = category if category is not None else mem.get("category", "general")
+                mem_type = memory_type if memory_type is not None else mem.get("memory_type", MEMORY_TYPE_LONG_TERM)
+                tag_list = tags if tags is not None else mem.get("tags", [])
+                self._upsert_chroma(key, content, cat, mem_type, tag_list, datetime.utcnow().isoformat())
+
             logger.info(f"Memory updated: {key}")
             return {"success": True, "key": key}
 
