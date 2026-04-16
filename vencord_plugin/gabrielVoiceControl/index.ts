@@ -228,24 +228,30 @@ export default definePlugin({
     },
 
     async start() {
-        const port = this.settings.store.port ?? 6463;
-        const result = await Native.startServer(port);
-        if (!result.success) {
-            console.error("[GabrielVoice] Failed to start server:", result.error);
-            return;
+        try {
+            const port = this.settings?.store?.port ?? 6463;
+            const result = await Native.startServer(port);
+            if (!result?.success) {
+                console.error("[GabrielVoice] Failed to start server:", result?.error);
+                return;
+            }
+            pollInterval = setInterval(pollCommands, 100);
+            console.log("[GabrielVoice] Plugin started on port", port);
+        } catch (e) {
+            console.error("[GabrielVoice] start() error:", e);
         }
-
-        // Start polling for commands from the WS server
-        pollInterval = setInterval(pollCommands, 100); // 100ms poll = ~10 commands/sec max
-        console.log("[GabrielVoice] Plugin started, polling for commands");
     },
 
     stop() {
-        if (pollInterval) {
-            clearInterval(pollInterval);
-            pollInterval = null;
+        try {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            Native.stopServer();
+            console.log("[GabrielVoice] Plugin stopped");
+        } catch (e) {
+            console.error("[GabrielVoice] stop() error:", e);
         }
-        Native.stopServer();
-        console.log("[GabrielVoice] Plugin stopped");
     },
 });

@@ -10,13 +10,13 @@
  * Commands flow: AI sends WS command, native queues it, renderer polls and executes, result sent back
  * Events flow:  renderer detects Discord event, IPC to native, native broadcasts to AI via WS
  *
- * Uses only Node.js built-in modules (http, crypto, net) -- no external deps.
+ * Uses only Node.js built-in modules (http, crypto) -- no external deps.
+ * Uses require() for Vencord esbuild compatibility.
  */
 
-import { createServer, type IncomingMessage, type Server } from "http";
-import { createHash } from "crypto";
-import type { Socket } from "net";
-import type { IpcMainInvokeEvent } from "electron";
+/* eslint-disable @typescript-eslint/no-var-requires */
+const http = require("http");
+const crypto = require("crypto");
 
 // --- Minimal WebSocket implementation using Node.js built-ins ---
 
@@ -26,12 +26,12 @@ const CLOSING = 2;
 const CLOSED = 3;
 
 interface WSClient {
-    socket: Socket;
+    socket: any;
     state: number;
 }
 
 function acceptKey(key: string): string {
-    return createHash("sha1").update(key + WS_GUID).digest("base64");
+    return crypto.createHash("sha1").update(key + WS_GUID).digest("base64");
 }
 
 function encodeFrame(data: string): Buffer {
@@ -70,7 +70,6 @@ function wsClose(client: WSClient, code: number, reason: string) {
         const buf = Buffer.alloc(2 + Buffer.byteLength(reason, "utf-8"));
         buf.writeUInt16BE(code, 0);
         buf.write(reason, 2, "utf-8");
-        // Close frame: opcode 0x88
         const header = Buffer.alloc(2);
         header[0] = 0x88;
         header[1] = buf.length;
@@ -82,7 +81,7 @@ function wsClose(client: WSClient, code: number, reason: string) {
 
 // --- Server state ---
 
-let httpServer: Server | null = null;
+let httpServer: any = null;
 const clients = new Set<WSClient>();
 
 interface PendingCommand {
@@ -104,7 +103,6 @@ function removeClient(client: WSClient) {
     }
 }
 
-// Parse WebSocket frames from a raw TCP buffer (handles masked client frames)
 function parseFrames(buf: Buffer, callback: (opcode: number, payload: Buffer) => void): number {
     let offset = 0;
     while (offset < buf.length) {
@@ -133,7 +131,7 @@ function parseFrames(buf: Buffer, callback: (opcode: number, payload: Buffer) =>
         let payload = buf.subarray(offset + headerLen, offset + headerLen + payloadLen);
         if (masked) {
             const maskKey = buf.subarray(offset + headerLen - 4, offset + headerLen);
-            payload = Buffer.from(payload); // copy so we can mutate
+            payload = Buffer.from(payload);
             for (let i = 0; i < payload.length; i++) {
                 payload[i] ^= maskKey[i % 4];
             }
@@ -147,16 +145,16 @@ function parseFrames(buf: Buffer, callback: (opcode: number, payload: Buffer) =>
 
 // --- IPC exports (called from renderer via VencordNative.pluginHelpers) ---
 
-export function startServer(_: IpcMainInvokeEvent, port: number) {
+export function startServer(_evt: any, port: number) {
     if (httpServer) return { success: true, message: "Already running" };
 
     try {
-        httpServer = createServer((_req, res) => {
+        httpServer = http.createServer((_req: any, res: any) => {
             res.writeHead(426, { "Content-Type": "text/plain" });
             res.end("WebSocket required");
         });
 
-        httpServer.on("upgrade", (req: IncomingMessage, socket: Socket, head: Buffer) => {
+        httpServer.on("upgrade", (req: any, socket: any, head: Buffer) => {
             const ip = socket.remoteAddress;
             if (ip !== "127.0.0.1" && ip !== "::1" && ip !== "::ffff:127.0.0.1") {
                 socket.destroy();
@@ -169,7 +167,6 @@ export function startServer(_: IpcMainInvokeEvent, port: number) {
                 return;
             }
 
-            // Complete WebSocket handshake
             const accept = acceptKey(key);
             socket.write(
                 "HTTP/1.1 101 Switching Protocols\r\n" +
@@ -184,13 +181,12 @@ export function startServer(_: IpcMainInvokeEvent, port: number) {
             console.log("[GabrielVoice] AI client connected");
 
             let remainder = Buffer.alloc(0);
-            if (head.length > 0) remainder = Buffer.from(head);
+            if (head && head.length > 0) remainder = Buffer.from(head);
 
             socket.on("data", (chunk: Buffer) => {
                 remainder = Buffer.concat([remainder, chunk]);
                 const consumed = parseFrames(remainder, (opcode, payload) => {
                     if (opcode === 0x08) {
-                        // Close frame
                         client.state = CLOSED;
                         socket.end();
                         removeClient(client);
@@ -198,16 +194,14 @@ export function startServer(_: IpcMainInvokeEvent, port: number) {
                         return;
                     }
                     if (opcode === 0x09) {
-                        // Ping -> Pong
                         const pong = Buffer.alloc(2 + payload.length);
-                        pong[0] = 0x8a; // FIN + pong
+                        pong[0] = 0x8a;
                         pong[1] = payload.length;
                         payload.copy(pong, 2);
                         socket.write(pong);
                         return;
                     }
                     if (opcode === 0x01) {
-                        // Text frame
                         try {
                             const msg = JSON.parse(payload.toString("utf-8"));
                             if (!msg.op) return;
@@ -251,7 +245,7 @@ export function startServer(_: IpcMainInvokeEvent, port: number) {
     }
 }
 
-export function stopServer(_?: IpcMainInvokeEvent) {
+export function stopServer() {
     if (httpServer) {
         for (const client of clients) wsClose(client, 1000, "Plugin disabled");
         clients.clear();
@@ -263,11 +257,7 @@ export function stopServer(_?: IpcMainInvokeEvent) {
     return { success: true };
 }
 
-/**
- * Renderer polls this to get commands that need processing.
- * Returns array of { id, cmd } objects.
- */
-export function drainCommands(_?: IpcMainInvokeEvent) {
+export function drainCommands() {
     const result: Array<{ id: string; cmd: any }> = [];
     for (const [id, pending] of pendingCommands) {
         result.push({ id, cmd: pending.cmd });
@@ -275,10 +265,7 @@ export function drainCommands(_?: IpcMainInvokeEvent) {
     return result;
 }
 
-/**
- * Renderer calls this after processing a command to send the result back to the AI.
- */
-export function resolveCommand(_: IpcMainInvokeEvent, id: string, response: any) {
+export function resolveCommand(_evt: any, id: string, response: any) {
     const pending = pendingCommands.get(id);
     if (!pending) return { success: false, error: "Command not found or expired" };
 
@@ -291,11 +278,7 @@ export function resolveCommand(_: IpcMainInvokeEvent, id: string, response: any)
     return { success: true };
 }
 
-/**
- * Renderer calls this to broadcast a Discord event to all connected AI clients.
- * Events: voice_state_update, call_incoming, call_ended, user_joined_voice, user_left_voice
- */
-export function broadcastEvent(_: IpcMainInvokeEvent, event: any) {
+export function broadcastEvent(_evt: any, event: any) {
     const payload = JSON.stringify(event);
     let sent = 0;
     for (const client of clients) {
@@ -307,7 +290,7 @@ export function broadcastEvent(_: IpcMainInvokeEvent, event: any) {
     return { success: true, sent };
 }
 
-export function getStatus(_?: IpcMainInvokeEvent) {
+export function getStatus() {
     return {
         running: httpServer !== null,
         clients: clients.size,
