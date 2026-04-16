@@ -111,6 +111,7 @@ class AudioManager:
         self._thinking_channel = None  # Channel playing the thinking sound
         self._pitch_semitones = 0.0
         self._pitch_shifter = None
+        self._low_quality = False
         self._setup_devices()
 
     def _setup_devices(self):
@@ -216,6 +217,10 @@ class AudioManager:
                 self._pitch_shifter = _PitchShifter(self.config.receive_sample_rate)
             samples = self._pitch_shifter.process(samples, self._pitch_semitones)
 
+        # Low quality mic effect: downsample, bitcrush, noise, bandpass
+        if self._low_quality:
+            samples = self._apply_low_quality(samples)
+
         samples = np.clip(samples, -32767, 32767).astype(np.int16)
         return samples.tobytes()
 
@@ -232,6 +237,55 @@ class AudioManager:
     def set_boost(self, level: int):
         self.boost_level = max(0, min(10, level))
         logger.info(f"Voice boost set to {self.boost_level}")
+
+    def set_low_quality(self, enabled: bool):
+        self._low_quality = enabled
+        logger.info(f"Low quality mic {'enabled' if enabled else 'disabled'}")
+
+    def get_low_quality(self) -> bool:
+        return self._low_quality
+
+    def _apply_low_quality(self, samples: np.ndarray) -> np.ndarray:
+        # Downsample to ~4kHz then back up (bitcrushing/aliasing)
+        factor = 4
+        downsampled = samples[::factor]
+        samples = np.repeat(downsampled, factor)[:len(samples)] if len(samples) > 0 else samples
+
+        # Bitcrush: reduce bit depth to ~8 bits
+        step = 256.0
+        samples = np.round(samples / step) * step
+
+        # Add white noise
+        noise = np.random.normal(0, 800, len(samples)).astype(np.float32)
+        samples = samples + noise
+
+        # Simple bandpass via high-pass + low-pass (telephone band ~300-3400Hz)
+        # Single-pole IIR filters for cheapness
+        sr = self.config.receive_sample_rate
+        # High-pass ~300Hz
+        rc_hp = 1.0 / (2.0 * np.pi * 300.0)
+        alpha_hp = rc_hp / (rc_hp + 1.0 / sr)
+        hp_out = np.zeros_like(samples)
+        prev_in = samples[0]
+        prev_out = samples[0]
+        for i in range(1, len(samples)):
+            prev_out = alpha_hp * (prev_out + samples[i] - prev_in)
+            prev_in = samples[i]
+            hp_out[i] = prev_out
+        # Low-pass ~3400Hz
+        rc_lp = 1.0 / (2.0 * np.pi * 3400.0)
+        alpha_lp = (1.0 / sr) / (rc_lp + 1.0 / sr)
+        lp_out = np.zeros_like(hp_out)
+        lp_out[0] = hp_out[0]
+        for i in range(1, len(hp_out)):
+            lp_out[i] = lp_out[i - 1] + alpha_lp * (hp_out[i] - lp_out[i - 1])
+
+        # Random micro-glitches: occasionally repeat a small chunk
+        if np.random.random() < 0.03 and len(lp_out) > 200:
+            pos = np.random.randint(0, len(lp_out) - 100)
+            lp_out[pos:pos + 50] = lp_out[pos:pos + 50][[0] * 50]  # stutter
+
+        return lp_out
 
     def list_music(self) -> list[str]:
         from pathlib import Path
