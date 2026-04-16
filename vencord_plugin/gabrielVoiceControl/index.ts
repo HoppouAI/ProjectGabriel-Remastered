@@ -165,6 +165,19 @@ function handleFindUser(args: any): any {
 
 // --- Command Handlers (use lazy store lookups to avoid module-eval crashes) ---
 
+function getChannelRecipientNames(channelId: string): string[] {
+    const ChannelStore = findStore("ChannelStore");
+    const UserStore = findStore("UserStore");
+    const channel = ChannelStore?.getChannel(channelId);
+    if (!channel || !channel.recipients || !UserStore) return [];
+    return channel.recipients
+        .map((rid: string) => {
+            const u = UserStore.getUser(rid);
+            return u?.globalName || u?.username || null;
+        })
+        .filter(Boolean);
+}
+
 async function handleJoinVoice(args: any) {
     const channelId = args.channel_id;
     if (!channelId) return { success: false, error: "channel_id required" };
@@ -174,11 +187,12 @@ async function handleJoinVoice(args: any) {
     if (!channel) return { success: false, error: "Channel not found" };
 
     const guildId = channel.guild_id || null;
+    const recipients = guildId ? [] : getChannelRecipientNames(channelId);
 
     try {
         const VoiceActions = findByProps("selectVoiceChannel");
         await VoiceActions.selectVoiceChannel(channelId);
-        return { success: true, data: { channel_id: channelId, guild_id: guildId } };
+        return { success: true, data: { channel_id: channelId, guild_id: guildId, recipients } };
     } catch (e: any) {
         return { success: false, error: e.message };
     }
@@ -198,6 +212,8 @@ async function handleCallUser(args: any) {
     const channelId = args.channel_id;
     if (!channelId) return { success: false, error: "channel_id required" };
 
+    const recipients = getChannelRecipientNames(channelId);
+
     try {
         // Join voice in the DM/group DM channel
         const VoiceActions = findByProps("selectVoiceChannel");
@@ -206,7 +222,7 @@ async function handleCallUser(args: any) {
 
         // Ring the recipients
         const rang = await ringChannel(channelId);
-        return { success: true, data: { channel_id: channelId, rang } };
+        return { success: true, data: { channel_id: channelId, rang, recipients } };
     } catch (e: any) {
         return { success: false, error: e.message };
     }
@@ -221,6 +237,8 @@ async function handleCallUserById(args: any) {
         const channelId = await getOrCreateDMChannel(userId);
         if (!channelId) return { success: false, error: "Could not create DM channel" };
 
+        const recipients = getChannelRecipientNames(channelId);
+
         // Join voice in the DM channel
         const VoiceActions = findByProps("selectVoiceChannel");
         if (!VoiceActions) return { success: false, error: "VoiceActions not found" };
@@ -228,7 +246,7 @@ async function handleCallUserById(args: any) {
 
         // Ring the specific user
         const rang = await ringChannel(channelId, [userId]);
-        return { success: true, data: { channel_id: channelId, user_id: userId, rang } };
+        return { success: true, data: { channel_id: channelId, user_id: userId, rang, recipients } };
     } catch (e: any) {
         return { success: false, error: e.message };
     }
