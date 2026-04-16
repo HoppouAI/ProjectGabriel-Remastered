@@ -152,7 +152,19 @@ class MemorySystem:
         self._embedding_dimensions = int(self.config.get("embedding_dims", 768))
         self._embedding_client = None
         self._vector_index_checked = False
-        self.vector_min_score = float(self.config.get("vector_min_score", 0.82))
+
+        # Per-provider min score thresholds (local models produce lower similarity scores)
+        self._score_gemini = float(self.config.get("vector_min_score_gemini", 0.82))
+        self._score_local = float(self.config.get("vector_min_score_local", 0.55))
+        # legacy fallback: if old single field exists, use it for the active provider
+        legacy = self.config.get("vector_min_score")
+        if legacy is not None:
+            val = float(legacy)
+            if self.rag_provider == "local":
+                self._score_local = val
+            else:
+                self._score_gemini = val
+        self.vector_min_score = self._score_local if self.rag_provider == "local" else self._score_gemini
 
         # Local RAG config (LM Studio + ChromaDB)
         self._lm_studio_url = self.config.get("lm_studio_url", "http://localhost:1234")
