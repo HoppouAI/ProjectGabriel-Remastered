@@ -68,11 +68,15 @@ class VoiceTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="toggleLowQualityMic",
-                description="Toggle a hilariously bad mic quality effect. When enabled, your voice sounds like it's coming through a dollar store webcam mic from 2005 -- bitcrushed, noisy, telephone-band filtered, with random stuttery glitches. Great for comedy bits.\n**Invocation Condition:** Call when asked to sound like a bad mic, cheap mic, low quality, crappy audio, discord call from 2010, or to toggle off the effect.",
+                description="Toggle a hilariously bad mic quality effect. When enabled, your voice sounds like it's coming through a dollar store webcam mic from 2005 -- bitcrushed, noisy, telephone-band filtered, with random stuttery glitches. You can also tweak individual parameters to make it worse or better. Great for comedy bits.\n**Invocation Condition:** Call when asked to sound like a bad mic, cheap mic, low quality, crappy audio, discord call from 2010, or to configure/tweak the bad mic effect, or to toggle it off.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
                         "enabled": {"type": "STRING", "description": "'true' to enable garbage mic mode, 'false' to go back to normal"},
+                        "downsample": {"type": "INTEGER", "description": "Downsample factor 1-8 (higher = crunchier, default 4). 1=no downsample, 8=extremely crunchy"},
+                        "bitcrush": {"type": "NUMBER", "description": "Bitcrush step 16-1024 (lower = harsher bitcrush, default 256). 64=very harsh, 512=mild"},
+                        "noise": {"type": "NUMBER", "description": "White noise intensity 0-3000 (default 800). 0=no noise, 3000=overwhelmingly noisy"},
+                        "glitch": {"type": "NUMBER", "description": "Glitch/stutter probability 0.0-0.2 per audio chunk (default 0.03). 0=no glitches, 0.2=very glitchy"},
                     },
                     "required": ["enabled"],
                 },
@@ -90,8 +94,12 @@ class VoiceTools(BaseTool):
             return self._set_pitch(args.get("semitones", 0))
         elif name == "toggleLowQualityMic":
             enabled = str(args.get("enabled", "false")).lower() == "true"
-            self.audio.set_low_quality(enabled)
-            return {"result": "ok", "low_quality": enabled}
+            kwargs = {}
+            for param in ("downsample", "bitcrush", "noise", "glitch"):
+                if param in args:
+                    kwargs[param] = args[param]
+            self.audio.set_low_quality(enabled, **kwargs)
+            return {"result": "ok", **self.audio.get_low_quality_settings()}
         elif name == "switchTTSProvider":
             return await self._switch_tts(args.get("provider", ""), args.get("voice"))
         elif name == "listTTSProviders":
