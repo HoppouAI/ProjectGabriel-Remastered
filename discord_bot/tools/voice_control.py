@@ -92,7 +92,7 @@ class VoiceControlTool:
             ),
             types.FunctionDeclaration(
                 name="callUser",
-                description="Start a voice call in a DM or group DM. Rings the user like a real Discord call. Requires the GabrielVoiceControl Vencord plugin.\n**Invocation Condition:** Call when someone asks you to call them, start a voice call, or hop on a call. Leave target empty to call in the current DM/group DM, or specify a channel ID.",
+                description="Start a voice call in a DM or group DM by channel ID. Joins voice and rings the recipients. Requires the GabrielVoiceControl Vencord plugin.\n**Invocation Condition:** Call when someone asks you to call them or start a voice call. Leave channel_id empty to use the current channel.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -102,8 +102,19 @@ class VoiceControlTool:
                 },
             ),
             types.FunctionDeclaration(
+                name="callUserById",
+                description="Start a voice call with a specific user by their user ID. Creates a DM if needed, then joins voice and rings them.\n**Invocation Condition:** Call when you want to call a specific Discord user and you have their user ID but not a channel ID.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_id": {"type": "STRING", "description": "The Discord user ID to call"},
+                    },
+                    "required": ["user_id"],
+                },
+            ),
+            types.FunctionDeclaration(
                 name="leaveVoiceChannel",
-                description="Leave the current voice channel or hang up a call.\n**Invocation Condition:** Call when asked to leave voice, hang up, disconnect from VC, or end the call.",
+                description="Leave the current voice channel or hang up a call. Also stops ringing.\n**Invocation Condition:** Call when asked to leave voice, hang up, disconnect from VC, or end the call.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
@@ -130,6 +141,13 @@ class VoiceControlTool:
                 else:
                     return {"result": "error", "message": "No channel_id and no current channel"}
             res = await _send_command("call_user", self._port, channel_id=channel_id)
+            return {"result": "ok", **res.get("data", {})} if res.get("success") else {"result": "error", "message": res.get("error")}
+
+        elif name == "callUserById":
+            user_id = args.get("user_id")
+            if not user_id:
+                return {"result": "error", "message": "user_id required"}
+            res = await _send_command("call_user_by_id", self._port, user_id=user_id)
             return {"result": "ok", **res.get("data", {})} if res.get("success") else {"result": "error", "message": res.get("error")}
 
         elif name == "leaveVoiceChannel":

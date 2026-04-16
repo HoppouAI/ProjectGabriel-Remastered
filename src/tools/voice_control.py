@@ -24,13 +24,24 @@ class DiscordVoiceControlTool(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="discord_callUser",
-                description="Start a Discord DM voice call via the Vencord plugin.\n**Invocation Condition:** Call when asked to call someone on Discord.",
+                description="Start a Discord DM voice call via the Vencord plugin.\n**Invocation Condition:** Call when asked to call someone on Discord by channel ID.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
                         "channel_id": {"type": "STRING", "description": "The DM channel ID to call"},
                     },
                     "required": ["channel_id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="discord_callUserById",
+                description="Call a Discord user by their user ID. Creates a DM if needed, then rings them.\n**Invocation Condition:** Call when asked to call a specific Discord user and you have their user ID.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "user_id": {"type": "STRING", "description": "The Discord user ID to call"},
+                    },
+                    "required": ["user_id"],
                 },
             ),
             types.FunctionDeclaration(
@@ -54,6 +65,7 @@ class DiscordVoiceControlTool(BaseTool):
         op_map = {
             "discord_joinVoice": "join_voice",
             "discord_callUser": "call_user",
+            "discord_callUserById": "call_user_by_id",
             "discord_leaveVoice": "leave_voice",
             "discord_getVoiceState": "get_voice_state",
         }
@@ -65,6 +77,8 @@ class DiscordVoiceControlTool(BaseTool):
         kwargs = {}
         if "channel_id" in args:
             kwargs["channel_id"] = args["channel_id"]
+        if "user_id" in args:
+            kwargs["user_id"] = args["user_id"]
 
         res = await _send_command(op, **kwargs)
         if res.get("success"):
