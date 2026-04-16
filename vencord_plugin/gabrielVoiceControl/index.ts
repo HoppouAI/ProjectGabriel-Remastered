@@ -9,39 +9,34 @@ import definePlugin, { OptionType } from "@utils/types";
 import { findByProps, findStore } from "@webpack";
 import { FluxDispatcher } from "@webpack/common";
 
-// Discord internal stores and modules (found via webpack)
-const VoiceStateStore = findStore("VoiceStateStore");
-const ChannelStore = findStore("ChannelStore");
-const UserStore = findStore("UserStore");
-
-// Voice channel actions
-const VoiceActions = findByProps("selectVoiceChannel");
-const CallActions = findByProps("startCall", "stopRinging");
-
-// IPC helpers for communicating with native.ts
-const Native = VencordNative.pluginHelpers.GabrielVoiceControl as {
-    startServer(port: number): Promise<any>;
-    stopServer(): Promise<any>;
-    drainCommands(): Promise<Array<{ id: string; cmd: any }>>;
-    resolveCommand(id: string, response: any): Promise<any>;
-    broadcastEvent(event: any): Promise<any>;
-    getStatus(): Promise<any>;
-};
+// IPC helpers for communicating with native.ts (resolved lazily)
+function getNative() {
+    return VencordNative.pluginHelpers.GabrielVoiceControl as {
+        startServer(port: number): Promise<any>;
+        stopServer(): Promise<any>;
+        drainCommands(): Promise<Array<{ id: string; cmd: any }>>;
+        resolveCommand(id: string, response: any): Promise<any>;
+        broadcastEvent(event: any): Promise<any>;
+        getStatus(): Promise<any>;
+    } | undefined;
+}
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-// --- Command Handlers ---
+// --- Command Handlers (use lazy store lookups to avoid module-eval crashes) ---
 
 async function handleJoinVoice(args: any) {
     const channelId = args.channel_id;
     if (!channelId) return { success: false, error: "channel_id required" };
 
-    const channel = ChannelStore.getChannel(channelId);
+    const ChannelStore = findStore("ChannelStore");
+    const channel = ChannelStore?.getChannel(channelId);
     if (!channel) return { success: false, error: "Channel not found" };
 
     const guildId = channel.guild_id || null;
 
     try {
+        const VoiceActions = findByProps("selectVoiceChannel");
         await VoiceActions.selectVoiceChannel(channelId);
         return { success: true, data: { channel_id: channelId, guild_id: guildId } };
     } catch (e: any) {
@@ -51,6 +46,7 @@ async function handleJoinVoice(args: any) {
 
 async function handleLeaveVoice() {
     try {
+        const VoiceActions = findByProps("selectVoiceChannel");
         await VoiceActions.selectVoiceChannel(null);
         return { success: true };
     } catch (e: any) {
@@ -63,6 +59,7 @@ async function handleCallUser(args: any) {
     if (!channelId) return { success: false, error: "channel_id required" };
 
     try {
+        const CallActions = findByProps("startCall", "stopRinging");
         await CallActions.startCall(channelId);
         return { success: true, data: { channel_id: channelId } };
     } catch (e: any) {
@@ -75,7 +72,7 @@ async function handleAnswerCall(args: any) {
     if (!channelId) return { success: false, error: "channel_id required" };
 
     try {
-        // Answering = joining the voice channel of the call
+        const VoiceActions = findByProps("selectVoiceChannel");
         await VoiceActions.selectVoiceChannel(channelId);
         return { success: true, data: { channel_id: channelId } };
     } catch (e: any) {
@@ -85,6 +82,7 @@ async function handleAnswerCall(args: any) {
 
 async function handleHangUp() {
     try {
+        const VoiceActions = findByProps("selectVoiceChannel");
         await VoiceActions.selectVoiceChannel(null);
         return { success: true };
     } catch (e: any) {
@@ -93,62 +91,75 @@ async function handleHangUp() {
 }
 
 function handleGetVoiceState() {
-    const me = UserStore.getCurrentUser();
-    if (!me) return { success: false, error: "Not logged in" };
+    try {
+        const VoiceStateStore = findStore("VoiceStateStore");
+        const ChannelStore = findStore("ChannelStore");
+        const UserStore = findStore("UserStore");
 
-    const voiceStates = VoiceStateStore.getVoiceStatesForChannel(
-        VoiceStateStore.getVoiceStateForUser(me.id)?.channelId
-    );
+        const me = UserStore?.getCurrentUser();
+        if (!me) return { success: false, error: "Not logged in" };
 
-    const myState = VoiceStateStore.getVoiceStateForUser(me.id);
-    const channelId = myState?.channelId || null;
-    const channel = channelId ? ChannelStore.getChannel(channelId) : null;
+        const myState = VoiceStateStore?.getVoiceStateForUser(me.id);
+        const channelId = myState?.channelId || null;
+        const channel = channelId ? ChannelStore?.getChannel(channelId) : null;
 
-    const usersInChannel: Array<{ id: string; name: string; mute: boolean; deaf: boolean }> = [];
-    if (voiceStates) {
-        for (const [userId, state] of Object.entries(voiceStates) as any) {
-            const user = UserStore.getUser(userId);
-            usersInChannel.push({
-                id: userId,
-                name: user?.username || "Unknown",
-                mute: state.mute || state.selfMute,
-                deaf: state.deaf || state.selfDeaf,
-            });
+        const usersInChannel: Array<{ id: string; name: string; mute: boolean; deaf: boolean }> = [];
+        if (channelId) {
+            const voiceStates = VoiceStateStore?.getVoiceStatesForChannel(channelId);
+            if (voiceStates) {
+                for (const [userId, state] of Object.entries(voiceStates) as any) {
+                    const user = UserStore?.getUser(userId);
+                    usersInChannel.push({
+                        id: userId,
+                        name: user?.username || "Unknown",
+                        mute: state.mute || state.selfMute,
+                        deaf: state.deaf || state.selfDeaf,
+                    });
+                }
+            }
         }
-    }
 
-    return {
-        success: true,
-        data: {
-            connected: !!channelId,
-            channel_id: channelId,
-            guild_id: channel?.guild_id || null,
-            channel_name: channel?.name || null,
-            self_mute: myState?.selfMute || false,
-            self_deaf: myState?.selfDeaf || false,
-            users: usersInChannel,
-        },
-    };
+        return {
+            success: true,
+            data: {
+                connected: !!channelId,
+                channel_id: channelId,
+                guild_id: channel?.guild_id || null,
+                channel_name: channel?.name || null,
+                self_mute: myState?.selfMute || false,
+                self_deaf: myState?.selfDeaf || false,
+                users: usersInChannel,
+            },
+        };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
 }
 
 function handleSetMute(args: any) {
-    const mute = args.mute === true || args.mute === "true";
-    FluxDispatcher.dispatch({
-        type: "AUDIO_TOGGLE_SELF_MUTE",
-        context: "default",
-        syncRemote: true,
-    });
-    return { success: true, data: { mute } };
+    try {
+        FluxDispatcher.dispatch({
+            type: "AUDIO_TOGGLE_SELF_MUTE",
+            context: "default",
+            syncRemote: true,
+        });
+        return { success: true, data: { mute: args.mute } };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
 }
 
 function handleSetDeaf(args: any) {
-    const deaf = args.deaf === true || args.deaf === "true";
-    FluxDispatcher.dispatch({
-        type: "AUDIO_TOGGLE_SELF_DEAF",
-        context: "default",
-        syncRemote: true,
-    });
-    return { success: true, data: { deaf } };
+    try {
+        FluxDispatcher.dispatch({
+            type: "AUDIO_TOGGLE_SELF_DEAF",
+            context: "default",
+            syncRemote: true,
+        });
+        return { success: true, data: { deaf: args.deaf } };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
 }
 
 // --- Command Router ---
@@ -170,38 +181,42 @@ async function processCommand(cmd: any): Promise<any> {
 // --- Flux Event Listeners ---
 
 function onVoiceStateUpdate(event: any) {
-    Native.broadcastEvent({
-        op: "voice_state_update",
-        data: {
-            user_id: event.userId,
-            channel_id: event.channelId,
-            guild_id: event.guildId,
-        },
-    });
+    try {
+        getNative()?.broadcastEvent({
+            op: "voice_state_update",
+            data: {
+                user_id: event.userId,
+                channel_id: event.channelId,
+                guild_id: event.guildId,
+            },
+        });
+    } catch { }
 }
 
 function onCallCreate(event: any) {
-    Native.broadcastEvent({
-        op: "call_incoming",
-        data: {
-            channel_id: event.channelId,
-            ringing: event.ringing,
-        },
-    });
+    try {
+        getNative()?.broadcastEvent({
+            op: "call_incoming",
+            data: {
+                channel_id: event.channelId,
+                ringing: event.ringing,
+            },
+        });
+    } catch { }
 }
 
 // --- Polling Loop ---
 
 async function pollCommands() {
     try {
-        const commands = await Native.drainCommands();
+        const native = getNative();
+        if (!native) return;
+        const commands = await native.drainCommands();
         for (const { id, cmd } of commands) {
             const result = await processCommand(cmd);
-            await Native.resolveCommand(id, result);
+            await native.resolveCommand(id, result);
         }
-    } catch (e) {
-        // Silently ignore poll errors
-    }
+    } catch { }
 }
 
 // --- Plugin Definition ---
@@ -211,7 +226,7 @@ export default definePlugin({
     description: "Exposes Discord voice/call control to ProjectGabriel AI via WebSocket API",
     authors: [{
         name: "HoppouAI",
-        id: 0n, // Replace with your Discord user ID as BigInt
+        id: 0n,
     }],
 
     settings: {
@@ -229,8 +244,13 @@ export default definePlugin({
 
     async start() {
         try {
+            const native = getNative();
+            if (!native) {
+                console.error("[GabrielVoice] Native helpers not available");
+                return;
+            }
             const port = this.settings?.store?.port ?? 6463;
-            const result = await Native.startServer(port);
+            const result = await native.startServer(port);
             if (!result?.success) {
                 console.error("[GabrielVoice] Failed to start server:", result?.error);
                 return;
@@ -248,7 +268,7 @@ export default definePlugin({
                 clearInterval(pollInterval);
                 pollInterval = null;
             }
-            Native.stopServer();
+            getNative()?.stopServer();
             console.log("[GabrielVoice] Plugin stopped");
         } catch (e) {
             console.error("[GabrielVoice] stop() error:", e);
