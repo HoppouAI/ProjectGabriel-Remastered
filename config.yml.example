@@ -483,8 +483,10 @@ memory:
   local_embedding_model: "text-embedding-embeddinggemma-300m-qat"  # Model loaded in LM Studio
   chroma_dir: "gabriel_chroma_db"                 # ChromaDB storage directory
 
-  vector_min_score: 0.82                    # Min cosine similarity for search results (0.0-1.0, higher = stricter)
-                                            # Recommended: 0.82 for gemini, 0.55-0.65 for local
+  # Vector similarity thresholds (per-provider, since local models score lower)
+  vector_min_score_gemini: 0.82               # Gemini embeddings: higher scores, stricter threshold
+  vector_min_score_local: 0.55                # Local embeddings (LM Studio): lower scores, looser threshold
+  # vector_min_score: 0.82                    # (legacy) single threshold for both, overrides the active provider
 
 # ══════════════════════════════════════════════════════════
 # Avatar Emotion/Animation System

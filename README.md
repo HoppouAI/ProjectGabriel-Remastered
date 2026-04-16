@@ -221,10 +221,11 @@ memory:
   lm_studio_url: "http://localhost:1234"
   local_embedding_model: "text-embedding-embeddinggemma-300m-qat"
   chroma_dir: "gabriel_chroma_db"
-  vector_min_score: 0.60   # local models need a lower threshold than gemini (0.55-0.65 recommended)
+  vector_min_score_gemini: 0.82  # threshold for Gemini embeddings (higher scores)
+  vector_min_score_local: 0.55   # threshold for local embeddings (lower scores)
 ```
 
-On first startup, existing memories are automatically synced into ChromaDB. The `vector_min_score` should be lower for local models (around 0.55-0.65) compared to Gemini embeddings (0.82).
+On first startup, existing memories are automatically synced into ChromaDB. The thresholds are split per provider since local embedding models produce lower similarity scores than Gemini. Defaults are 0.82 for Gemini and 0.55 for local.
 
 If you prefer cloud embeddings instead, set `rag_provider: "gemini"` which uses Gemini's embedding API with MongoDB Atlas vector search (requires MongoDB backend).
 
