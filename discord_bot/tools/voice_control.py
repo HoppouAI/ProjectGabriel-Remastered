@@ -182,7 +182,7 @@ class VoiceControlTool:
             called_user = target.get("username", name)
             res = await _send_command("call_user_by_id", self._port, user_id=target["id"])
             if res.get("success"):
-                await self._relay_voice_state(f"started a call with {called_user}")
+                await self._relay_voice_state(f"started a call with {called_user}", called_user=called_user)
                 return {"result": "ok", "called_user": called_user, "user_id": target["id"], **res.get("data", {})}
             return {"result": "error", "message": res.get("error", "Call failed")}
         else:
@@ -193,7 +193,7 @@ class VoiceControlTool:
                 return {"result": "error", "message": "Provide channel_id, user_id, or name"}
 
         if res.get("success"):
-            await self._relay_voice_state("started a call")
+            await self._relay_voice_state("started a call", called_user=called_user)
             return {"result": "ok", **res.get("data", {})}
         return {"result": "error", "message": res.get("error", "Unknown error")}
 
@@ -207,28 +207,38 @@ class VoiceControlTool:
             except Exception as e:
                 logger.debug(f"Relay failed (non-critical): {e}")
 
-    async def _relay_voice_state(self, action: str):
+    async def _relay_voice_state(self, action: str, called_user: str = None):
         """Fetch current voice state and relay it to the main session."""
         state_res = await _send_command("get_voice_state", self._port)
         if not state_res.get("success"):
-            await self._relay_callback_safe(f"[Discord Call] You {action} on Discord.")
+            msg = f"[Discord Call] You {action} on Discord."
+            if called_user:
+                msg = f"[Discord Call] You {action} (calling {called_user}) on Discord."
+            await self._relay_callback_safe(msg)
             return
 
         data = state_res.get("data", {})
         channel_name = data.get("channel_name")
         guild_id = data.get("guild_id")
         users = data.get("users", [])
-        user_names = [u.get("name", "Unknown") for u in users]
+        # Filter out self from the user list
+        other_users = [u.get("name", "Unknown") for u in users if u.get("name") != "Unknown"]
 
         if guild_id and channel_name:
-            location = f"voice channel '{channel_name}'"
+            location = f"server voice channel '{channel_name}'"
         elif channel_name:
             location = f"'{channel_name}'"
+        elif called_user:
+            location = f"a DM call with {called_user}"
+        elif other_users:
+            location = f"a DM call with {', '.join(other_users)}"
         else:
-            location = "a DM call"
+            location = "a Discord call"
 
         parts = [f"[Discord Call] You {action} in {location}."]
-        if user_names:
-            parts.append(f"Users in call: {', '.join(user_names)}.")
+        if other_users:
+            parts.append(f"Users in call: {', '.join(other_users)}.")
+        elif called_user:
+            parts.append(f"Calling {called_user} (ringing, waiting for them to pick up).")
         parts.append("You are now in BOTH VRChat and a Discord call -- keep that in mind.")
         await self._relay_callback_safe(" ".join(parts))
