@@ -33,7 +33,7 @@ class MemoryTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="searchMemories",
-                description="Quick keyword search through stored memories. Returns raw memory entries matching the search term. Only use this for simple lookups where you need to check if a specific fact exists.\n**Invocation Condition:** Call ONLY for quick keyword lookups. Do NOT use when asked to summarize, recall, or remember -- use recallMemories instead.",
+                description="Search through stored memories using both keyword matching and semantic vector search. Returns memory entries matching the search term. Use this to find specific memories by key or content.\n**Invocation Condition:** Call for quick lookups to find specific memories. Do NOT use when asked to summarize, recall, or remember -- use recallMemories instead.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -69,7 +69,7 @@ class MemoryTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="updateMemory",
-                description="Update an existing memory's content, category, type, or tags. Use this to correct or expand memories without deleting and re-creating them.\n**Invocation Condition:** Call when you need to fix, correct, update, or expand an existing memory. Use searchMemories or listMemories first to find the key.",
+                description="Directly edit and update an existing memory in-place. This REPLACES the old content/fields with the new values you provide. The memory is modified immediately -- when you get result 'ok', the edit is already saved. Use searchMemories or listMemories first to find the exact key.\n**Invocation Condition:** Call when you need to fix, correct, update, or expand an existing memory. You MUST provide the key. After a successful update, confirm to the user that the memory was edited.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -174,10 +174,30 @@ class MemoryTools(BaseTool):
         search_term = args.get("searchTerm")
         if not search_term:
             return {"result": "error", "message": "searchTerm required"}
-        res = memory_system.search(term=search_term, limit=args.get("limit", 20))
-        if res.get("success"):
-            return {"result": "ok", "memories": res.get("memories"), "count": res.get("count")}
-        return {"result": "error", "message": res.get("message")}
+        limit = args.get("limit", 20)
+
+        # Keyword search
+        res = memory_system.search(term=search_term, limit=limit)
+        keyword_memories = res.get("memories", []) if res.get("success") else []
+
+        # Vector search (semantic) -- merge results for better recall
+        vector_memories = []
+        try:
+            vres = memory_system.vector_search(query=search_term, limit=limit)
+            if vres.get("success"):
+                vector_memories = vres.get("memories", [])
+        except Exception:
+            pass
+
+        # Merge: keyword results first, then vector results not already present
+        seen_keys = {m["key"] for m in keyword_memories}
+        merged = list(keyword_memories)
+        for m in vector_memories:
+            if m["key"] not in seen_keys:
+                seen_keys.add(m["key"])
+                merged.append(m)
+
+        return {"result": "ok", "memories": merged[:limit], "count": len(merged[:limit])}
 
     async def _delete(self, args):
         key = args.get("key")
