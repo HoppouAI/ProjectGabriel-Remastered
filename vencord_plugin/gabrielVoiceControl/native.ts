@@ -1,22 +1,13 @@
 /*
  * Gabriel Voice Control - Native (Node.js) Module
- * Runs a WebSocket server that ProjectGabriel connects to for voice control.
+ * Runs in Electron's main process via Vencord's native IPC bridge.
+ * AI connects via WS, native queues commands, renderer polls and executes.
  * Copyright (c) 2025 HoppouAI
  * SPDX-License-Identifier: GPL-3.0-or-later
- *
- * Architecture:
- *   AI (ProjectGabriel) connects via WS to native.ts, which uses IPC to talk to index.ts (renderer)
- *
- * Commands flow: AI sends WS command, native queues it, renderer polls and executes, result sent back
- * Events flow:  renderer detects Discord event, IPC to native, native broadcasts to AI via WS
- *
- * Uses only Node.js built-in modules (http, crypto) -- no external deps.
- * Uses require() for Vencord esbuild compatibility.
  */
 
-/* eslint-disable @typescript-eslint/no-var-requires */
-const http = require("http");
-const crypto = require("crypto");
+import { createServer } from "http";
+import { createHash } from "crypto";
 
 // --- Minimal WebSocket implementation using Node.js built-ins ---
 
@@ -31,7 +22,7 @@ interface WSClient {
 }
 
 function acceptKey(key: string): string {
-    return crypto.createHash("sha1").update(key + WS_GUID).digest("base64");
+    return createHash("sha1").update(key + WS_GUID).digest("base64");
 }
 
 function encodeFrame(data: string): Buffer {
@@ -41,7 +32,7 @@ function encodeFrame(data: string): Buffer {
 
     if (len < 126) {
         header = Buffer.alloc(2);
-        header[0] = 0x81; // FIN + text opcode
+        header[0] = 0x81;
         header[1] = len;
     } else if (len < 65536) {
         header = Buffer.alloc(4);
@@ -70,10 +61,10 @@ function wsClose(client: WSClient, code: number, reason: string) {
         const buf = Buffer.alloc(2 + Buffer.byteLength(reason, "utf-8"));
         buf.writeUInt16BE(code, 0);
         buf.write(reason, 2, "utf-8");
-        const header = Buffer.alloc(2);
-        header[0] = 0x88;
-        header[1] = buf.length;
-        client.socket.write(Buffer.concat([header, buf]));
+        const frame = Buffer.alloc(2);
+        frame[0] = 0x88;
+        frame[1] = buf.length;
+        client.socket.write(Buffer.concat([frame, buf]));
         client.socket.end();
         client.state = CLOSED;
     }
@@ -144,12 +135,13 @@ function parseFrames(buf: Buffer, callback: (opcode: number, payload: Buffer) =>
 }
 
 // --- IPC exports (called from renderer via VencordNative.pluginHelpers) ---
+// Electron's ipcMain.handle passes (event, ...args) so all exports receive _event first
 
-export function startServer(_evt: any, port: number) {
+export function startServer(_event: any, port: number) {
     if (httpServer) return { success: true, message: "Already running" };
 
     try {
-        httpServer = http.createServer((_req: any, res: any) => {
+        httpServer = createServer((_req: any, res: any) => {
             res.writeHead(426, { "Content-Type": "text/plain" });
             res.end("WebSocket required");
         });
@@ -245,7 +237,7 @@ export function startServer(_evt: any, port: number) {
     }
 }
 
-export function stopServer() {
+export function stopServer(_event: any) {
     if (httpServer) {
         for (const client of clients) wsClose(client, 1000, "Plugin disabled");
         clients.clear();
@@ -257,7 +249,7 @@ export function stopServer() {
     return { success: true };
 }
 
-export function drainCommands() {
+export function drainCommands(_event: any) {
     const result: Array<{ id: string; cmd: any }> = [];
     for (const [id, pending] of pendingCommands) {
         result.push({ id, cmd: pending.cmd });
@@ -265,7 +257,7 @@ export function drainCommands() {
     return result;
 }
 
-export function resolveCommand(_evt: any, id: string, response: any) {
+export function resolveCommand(_event: any, id: string, response: any) {
     const pending = pendingCommands.get(id);
     if (!pending) return { success: false, error: "Command not found or expired" };
 
@@ -278,8 +270,8 @@ export function resolveCommand(_evt: any, id: string, response: any) {
     return { success: true };
 }
 
-export function broadcastEvent(_evt: any, event: any) {
-    const payload = JSON.stringify(event);
+export function broadcastEvent(_event: any, eventData: any) {
+    const payload = JSON.stringify(eventData);
     let sent = 0;
     for (const client of clients) {
         if (client.state === OPEN) {
@@ -290,7 +282,7 @@ export function broadcastEvent(_evt: any, event: any) {
     return { success: true, sent };
 }
 
-export function getStatus() {
+export function getStatus(_event: any) {
     return {
         running: httpServer !== null,
         clients: clients.size,
