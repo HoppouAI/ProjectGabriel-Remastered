@@ -324,6 +324,10 @@ class GeminiLiveSession:
                 return
             try:
                 await self._session.send_realtime_input(text=text)
+                # Signal activity start+end so the model knows the text turn is complete
+                # Without this, the model waits for audio silence (VAD) which never comes for text-only input
+                await self._session.send_realtime_input(activity_start=types.ActivityStart())
+                await self._session.send_realtime_input(activity_end=types.ActivityEnd())
                 self._conv_logger.add_user_message(text)
                 logger.info(f"Sent text to model: {text[:50]}...")
             except Exception as e:
