@@ -82,6 +82,38 @@ def _hash_content(text: str) -> str:
     return hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()
 
 
+import re
+
+_GENERIC_SUBJECT_RE = re.compile(
+    r"(?<![a-zA-Z])"            # not preceded by a letter (avoids matching inside words)
+    r"(?:the\s+user|(?:a|the)\s+person|someone|somebody)"
+    r"(?![a-zA-Z])",            # not followed by a letter
+    re.IGNORECASE,
+)
+
+# patterns that are ok even if they contain "user" (usernames, etc.)
+_USERNAME_CONTEXT_RE = re.compile(
+    r"(?:username|user\s*(?:name|id|handle)|(?:their|my|the)\s+user(?:name|id))",
+    re.IGNORECASE,
+)
+
+def _has_generic_subject(content: str) -> bool:
+    """Check if content uses generic subjects instead of actual names.
+    Returns True if the memory should be rejected."""
+    # skip if just referencing a username field
+    if _USERNAME_CONTEXT_RE.search(content):
+        return False
+    # check if content starts with or heavily uses generic phrasing
+    lower = content.lower().strip()
+    # "User likes X" or "The user said" at the start is the main offender
+    if lower.startswith(("the user ", "user ", "a user ", "the person ", "a person ")):
+        return True
+    # also catch "User's" at the start
+    if lower.startswith(("the user's ", "user's ")):
+        return True
+    return False
+
+
 class MemorySystem:
     """Unified memory storage with MongoDB and SQLite backends."""
 
@@ -763,6 +795,13 @@ class MemorySystem:
         valid_types = [MEMORY_TYPE_LONG_TERM, MEMORY_TYPE_SHORT_TERM, MEMORY_TYPE_QUICK_NOTE]
         if memory_type not in valid_types:
             return {"success": False, "message": f"Invalid memory type: {memory_type}"}
+
+        # reject generic "the user" / "user" content, the AI should use actual names
+        if _has_generic_subject(content) and memory_type != MEMORY_TYPE_QUICK_NOTE:
+            return {
+                "success": False,
+                "message": "Memory rejected: use the person's actual name or username instead of 'the user' or 'user'. Re-save with their real name.",
+            }
 
         tags_list = list(tags) if tags else []
         content_hash = _hash_content(content)
