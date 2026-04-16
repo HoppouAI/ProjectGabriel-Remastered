@@ -563,7 +563,7 @@ class MemorySystem:
                 return {"success": True, "synced": 0, "message": "No memories to sync"}
 
             existing_ids = set(self._chroma_collection.get()["ids"])
-            to_sync = [m for m in all_mems if m["key"] not in existing_ids]
+            to_sync = [m for m in all_mems if m.get("key") and m["key"] not in existing_ids]
 
             if not to_sync:
                 return {"success": True, "synced": 0, "message": f"All {len(all_mems)} memories already in ChromaDB"}
