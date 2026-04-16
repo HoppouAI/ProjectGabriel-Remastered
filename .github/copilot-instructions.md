@@ -181,6 +181,10 @@ class MyTool(BaseTool):
 - Each tool is a separate FunctionDeclaration (avoids Gemini Live 1011 errors from complex schemas)
 - Recall sub-agent uses `gemini-3.1-flash-lite-preview` to summarize all memories
 - Recent memories injected into system prompt via `{memories}` placeholder
+- RAG providers: `gemini` (Gemini embeddings + MongoDB Atlas vector search) or `local` (LM Studio + ChromaDB)
+- Local RAG: ChromaDB for vector storage, LM Studio for embeddings (EmbeddingGemma 300M), works with any backend
+- ChromaDB auto-syncs existing memories on startup via background thread
+- `vector_min_score` should be lower for local models (0.55-0.65) vs Gemini (0.82)
 
 ### Thinking
 - Configurable via `gemini.thinking.budget` and `gemini.thinking.include_thoughts`
