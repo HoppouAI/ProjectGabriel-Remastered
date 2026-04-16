@@ -7,7 +7,7 @@
 
 import definePlugin, { OptionType } from "@utils/types";
 import { findByProps, findStore } from "@webpack";
-import { FluxDispatcher } from "@webpack/common";
+import { FluxDispatcher, RestAPI } from "@webpack/common";
 
 // IPC helpers for communicating with native.ts (resolved lazily)
 function getNative() {
@@ -22,6 +22,48 @@ function getNative() {
 }
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+// --- Helpers (DM channel creation + call ring/stop via Discord REST API) ---
+
+async function getOrCreateDMChannel(userId: string): Promise<string | null> {
+    const ChannelStore = findStore("ChannelStore");
+    const cached = ChannelStore?.getDMFromUserId?.(userId);
+    if (cached) return cached;
+
+    try {
+        const resp = await RestAPI.post({
+            url: "/users/@me/channels",
+            body: { recipients: [userId] },
+        });
+        return resp?.body?.id || null;
+    } catch {
+        return null;
+    }
+}
+
+async function ringChannel(channelId: string, recipients?: string[]): Promise<boolean> {
+    try {
+        await RestAPI.post({
+            url: `/channels/${channelId}/call/ring`,
+            body: { recipients: recipients || null },
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function stopRinging(channelId: string): Promise<boolean> {
+    try {
+        await RestAPI.post({
+            url: `/channels/${channelId}/call/stop-ringing`,
+            body: {},
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 // --- Command Handlers (use lazy store lookups to avoid module-eval crashes) ---
 
@@ -59,9 +101,36 @@ async function handleCallUser(args: any) {
     if (!channelId) return { success: false, error: "channel_id required" };
 
     try {
-        const CallActions = findByProps("startCall", "stopRinging");
-        await CallActions.startCall(channelId);
-        return { success: true, data: { channel_id: channelId } };
+        // Join voice in the DM/group DM channel
+        const VoiceActions = findByProps("selectVoiceChannel");
+        if (!VoiceActions) return { success: false, error: "VoiceActions not found" };
+        await VoiceActions.selectVoiceChannel(channelId);
+
+        // Ring the recipients
+        const rang = await ringChannel(channelId);
+        return { success: true, data: { channel_id: channelId, rang } };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
+}
+
+async function handleCallUserById(args: any) {
+    const userId = args.user_id;
+    if (!userId) return { success: false, error: "user_id required" };
+
+    try {
+        // Get or create DM channel with the user
+        const channelId = await getOrCreateDMChannel(userId);
+        if (!channelId) return { success: false, error: "Could not create DM channel" };
+
+        // Join voice in the DM channel
+        const VoiceActions = findByProps("selectVoiceChannel");
+        if (!VoiceActions) return { success: false, error: "VoiceActions not found" };
+        await VoiceActions.selectVoiceChannel(channelId);
+
+        // Ring the specific user
+        const rang = await ringChannel(channelId, [userId]);
+        return { success: true, data: { channel_id: channelId, user_id: userId, rang } };
     } catch (e: any) {
         return { success: false, error: e.message };
     }
@@ -82,8 +151,21 @@ async function handleAnswerCall(args: any) {
 
 async function handleHangUp() {
     try {
+        // Get current channel before disconnecting (to stop ringing)
+        const VoiceStateStore = findStore("VoiceStateStore");
+        const UserStore = findStore("UserStore");
+        const me = UserStore?.getCurrentUser();
+        const myState = me ? VoiceStateStore?.getVoiceStateForUser(me.id) : null;
+        const currentChannelId = myState?.channelId;
+
+        // Disconnect from voice
         const VoiceActions = findByProps("selectVoiceChannel");
         await VoiceActions.selectVoiceChannel(null);
+
+        // Stop ringing if we were in a DM/group DM
+        if (currentChannelId) {
+            await stopRinging(currentChannelId);
+        }
         return { success: true };
     } catch (e: any) {
         return { success: false, error: e.message };
@@ -169,6 +251,7 @@ async function processCommand(cmd: any): Promise<any> {
         case "join_voice": return handleJoinVoice(cmd);
         case "leave_voice": return handleLeaveVoice();
         case "call_user": return handleCallUser(cmd);
+        case "call_user_by_id": return handleCallUserById(cmd);
         case "answer_call": return handleAnswerCall(cmd);
         case "hang_up": return handleHangUp();
         case "get_voice_state": return handleGetVoiceState();

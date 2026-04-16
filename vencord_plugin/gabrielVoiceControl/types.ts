@@ -20,15 +20,16 @@ export interface WsResponse {
 
 // Commands the AI can send
 export type CommandOp =
-    | "join_voice"      // Join a voice channel (server or DM)
-    | "leave_voice"     // Leave current voice channel
-    | "call_user"       // Ring a user in DM
-    | "answer_call"     // Accept an incoming call
-    | "hang_up"         // End current call
-    | "get_voice_state" // Get current voice connection state
-    | "set_mute"        // Mute/unmute self
-    | "set_deaf"        // Deafen/undeafen self
-    | "ping";           // Health check
+    | "join_voice"         // Join a voice channel (server or DM)
+    | "leave_voice"        // Leave current voice channel
+    | "call_user"          // Ring a DM/group DM by channel_id
+    | "call_user_by_id"    // Create DM + ring a user by user_id
+    | "answer_call"        // Accept an incoming call
+    | "hang_up"            // End current call (disconnect + stop ringing)
+    | "get_voice_state"    // Get current voice connection state
+    | "set_mute"           // Mute/unmute self
+    | "set_deaf"           // Deafen/undeafen self
+    | "ping";              // Health check
 
 // Events the plugin can push to the AI
 export type EventOp =
