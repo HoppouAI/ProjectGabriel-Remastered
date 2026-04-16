@@ -105,6 +105,7 @@ class MemorySystem:
         self._embedding_dimensions = int(self.config.get("embedding_dims", 768))
         self._embedding_client = None
         self._vector_index_checked = False
+        self.vector_min_score = float(self.config.get("vector_min_score", 0.82))
 
         self._connect()
         if self.is_available():
@@ -1279,8 +1280,14 @@ async def recall_memories(query: str, context: str = "", api_key: str = "", pers
     if memory_system.rag_enabled:
         vector_result = memory_system.vector_search(query=query, limit=30)
         if vector_result.get("success") and vector_result.get("memories"):
-            memories_found = vector_result["memories"]
-            search_method = "vector"
+            # filter out low-relevance noise below the configured threshold
+            min_score = memory_system.vector_min_score
+            memories_found = [
+                m for m in vector_result["memories"]
+                if m.get("score", 0) >= min_score
+            ]
+            if memories_found:
+                search_method = "vector"
 
     # Legacy fallback: keyword search + list (used when RAG is off or vector search fails)
     if not memories_found:
