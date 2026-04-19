@@ -163,6 +163,7 @@ async def main(save_audio=False):
     # Wire face tracker speaking callback and start
     if face_tracker:
         face_tracker.set_speaking_callback(lambda: session._speaking)
+        face_tracker.set_idle_callback(lambda: session._is_idle)
         if tracker:
             face_tracker.set_player_tracker(tracker)
         if wanderer:

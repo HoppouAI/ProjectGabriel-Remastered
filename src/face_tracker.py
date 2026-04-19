@@ -49,6 +49,7 @@ class FaceTracker:
 
         # External state reference - set by main.py / gemini_live
         self._speaking_ref = None  # callable that returns True when AI is speaking
+        self._idle_ref = None  # callable that returns True when AI is idle
         self._player_tracker_ref = None  # reference to PlayerTracker to check if following
         self._wanderer_ref = None  # reference to Wanderer to check if wandering
 
@@ -79,6 +80,10 @@ class FaceTracker:
         """Set a callable that returns True when the AI is currently speaking."""
         self._speaking_ref = callback
 
+    def set_idle_callback(self, callback):
+        """Set a callable that returns True when the AI is currently idle."""
+        self._idle_ref = callback
+
     def set_player_tracker(self, tracker):
         """Set reference to PlayerTracker so face tracker yields when following."""
         self._player_tracker_ref = tracker
@@ -90,6 +95,11 @@ class FaceTracker:
     def _is_speaking(self):
         if self._speaking_ref is not None:
             return self._speaking_ref()
+        return False
+
+    def _is_idle(self):
+        if self._idle_ref is not None:
+            return self._idle_ref()
         return False
 
     def _player_tracker_active(self):
@@ -261,6 +271,12 @@ class FaceTracker:
 
                 # Pause detection when player tracker is following or wanderer is active
                 if self._player_tracker_active() or self._wanderer_active():
+                    self._zero_osc()
+                    time.sleep(0.5)
+                    continue
+
+                # Pause face tracker while AI is idle
+                if self._is_idle():
                     self._zero_osc()
                     time.sleep(0.5)
                     continue
