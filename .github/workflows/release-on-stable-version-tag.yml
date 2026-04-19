@@ -22,12 +22,12 @@ jobs:
         id: tags
         shell: bash
         run: |
-          TAGS_ON_SHA="$(git tag --points-at \"$GITHUB_SHA\")"
+          TAGS_ON_SHA="$(git tag --points-at "$GITHUB_SHA")"
           echo "Tags on commit:"
           echo "$TAGS_ON_SHA"
 
-          SEMVER_TAG="$(echo \"$TAGS_ON_SHA\" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
-          HAS_STABLE="$(echo \"$TAGS_ON_SHA\" | grep -x 'stable' || true)"
+          SEMVER_TAG="$(echo "$TAGS_ON_SHA" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
+          HAS_STABLE="$(echo "$TAGS_ON_SHA" | grep -x 'stable' || true)"
 
           if [ -n "$SEMVER_TAG" ] && [ -n "$HAS_STABLE" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
