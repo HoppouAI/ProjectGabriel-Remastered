@@ -23,6 +23,7 @@ dependencies = [
     "google-genai>=1.0.0",
     "pyaudio>=0.2.14",
     "python-osc>=1.8.0",
+    "pytz>=2024.1",
     "pyyaml>=6.0",
     "ruamel.yaml>=0.18.0",
     "pygame>=2.5.0",
