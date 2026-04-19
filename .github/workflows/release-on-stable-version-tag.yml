@@ -1,0 +1,49 @@
+name: Release on stable version tags
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tags on this commit
+        id: tags
+        shell: bash
+        run: |
+          TAGS_ON_SHA="$(git tag --points-at \"$GITHUB_SHA\")"
+          echo "Tags on commit:"
+          echo "$TAGS_ON_SHA"
+
+          SEMVER_TAG="$(echo \"$TAGS_ON_SHA\" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
+          HAS_STABLE="$(echo \"$TAGS_ON_SHA\" | grep -x 'stable' || true)"
+
+          if [ -n "$SEMVER_TAG" ] && [ -n "$HAS_STABLE" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "version_tag=$SEMVER_TAG" >> "$GITHUB_OUTPUT"
+            echo "Will publish release for version tag: $SEMVER_TAG"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "version_tag=" >> "$GITHUB_OUTPUT"
+            echo "Not publishing. Need both a semver tag and stable tag on the same commit."
+          fi
+
+      - name: Create GitHub Release
+        if: steps.tags.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tags.outputs.version_tag }}
+          name: Release ${{ steps.tags.outputs.version_tag }}
+          generate_release_notes: true
+          make_latest: true
