@@ -1699,7 +1699,36 @@ class GeminiLiveSession:
         cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
         cleaned = re.sub(r" {2,}", " ", cleaned)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-        return cleaned.strip()
+        cleaned = cleaned.strip()
+        # Convert markdown italics to Unicode small caps
+        cleaned = GeminiLiveSession._convert_markdown_italics_to_unicode(cleaned)
+        return cleaned
+
+    @staticmethod
+    def _convert_markdown_italics_to_unicode(text: str) -> str:
+        """Convert *text* markdown italics to Unicode small caps for VRChat chatbox display."""
+        if not text or "*" not in text:
+            return text
+        
+        # Unicode small caps mapping
+        small_caps_map = {
+            "A": "ᴀ", "B": "ʙ", "C": "ᴄ", "D": "ᴅ", "E": "ᴇ", "F": "ꜰ", "G": "ɢ", "H": "ʜ",
+            "I": "ɪ", "J": "ᴊ", "K": "ᴋ", "L": "ʟ", "M": "ᴍ", "N": "ɴ", "O": "ᴏ", "P": "ᴘ",
+            "Q": "Q", "R": "ʀ", "S": "ꜱ", "T": "ᴛ", "U": "ᴜ", "V": "ᴠ", "W": "ᴡ", "X": "X",
+            "Y": "ʏ", "Z": "ᴢ",
+            "a": "ᴀ", "b": "ʙ", "c": "ᴄ", "d": "ᴅ", "e": "ᴇ", "f": "ꜰ", "g": "ɢ", "h": "ʜ",
+            "i": "ɪ", "j": "ᴊ", "k": "ᴋ", "l": "ʟ", "m": "ᴍ", "n": "ɴ", "o": "ᴏ", "p": "ᴘ",
+            "q": "q", "r": "ʀ", "s": "ꜱ", "t": "ᴛ", "u": "ᴜ", "v": "ᴠ", "w": "ᴡ", "x": "x",
+            "y": "ʏ", "z": "ᴢ",
+        }
+        
+        def convert_to_small_caps(match):
+            content = match.group(1)
+            return "".join(small_caps_map.get(ch, ch) for ch in content)
+        
+        # Replace all *text* with small caps version
+        result = re.sub(r"\*([^*]+)\*", convert_to_small_caps, text)
+        return result
 
     @staticmethod
     def _normalize_song_name(name: str) -> str:
