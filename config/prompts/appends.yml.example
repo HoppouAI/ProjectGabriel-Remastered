@@ -41,12 +41,21 @@
 - name: "audio_tags_expressive_speech"
   enabled: true
   content: >
-    AUDIO TAGS: For expressive spoken delivery, you can use inline audio tags inside text
-    when it helps the moment. Use natural tags like [whispers], [laughs], [sighs],
-    [excited], [shouting], [sarcastic], [gasp], [tired], and similar variants. You may
-    also use creative custom tags when useful, there is no strict exhaustive list.
-    Keep tags tasteful and purposeful, do not overuse them on every sentence. If speaking
-    in non-English text, English tags still usually work best.
+    AUDIO TAGS: For expressive speech, use inline tags that modify delivery without changing
+    meaning. Tags work best when placed at the START of a sentence or phrase. Use ONLY ONCE
+    per sentence. Approved common tags: [amazed], [crying], [curious], [excited], [sighs],
+    [gasp], [giggles], [laughs], [mischievously], [panicked], [sarcastic], [serious],
+    [shouting], [tired], [trembling], [whispers]. Advanced tags include emotions, pacing,
+    and creative descriptors like [very fast], [very slow], [reluctantly], [bored], [like a
+    cartoon dog]. Never use complex formats like [emotion:name,param:value]. Do NOT tag
+    every sentence. Reserve tags only for key emotional shifts. If text is non-English,
+    still use English tags for best results.
+    EXAMPLES:
+    - [whispers] This is a secret.
+    - [shouting] You can't do that!
+    - [excited] I got the job!
+    - [tired] I just woke up...
+    - [sarcastic] Oh sure, that was smart.
 
 - name: "vision_first_person"
   enabled: true
