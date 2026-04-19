@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timedelta
@@ -1658,7 +1659,7 @@ class GeminiLiveSession:
         if music_gen and music_gen.is_active:
             return
         
-        text = self._transcript_buffer.strip()
+        text = self._strip_audio_tags_for_chatbox(self._transcript_buffer)
         if not text:
             return
         # For real-time updates, just show the last 144 chars (no pagination)
@@ -1680,7 +1681,7 @@ class GeminiLiveSession:
             self.osc.set_typing(False)
             return
         
-        text = self._transcript_buffer.strip()
+        text = self._strip_audio_tags_for_chatbox(self._transcript_buffer)
         if not text:
             self.osc.set_typing(False)
             return
@@ -1688,6 +1689,17 @@ class GeminiLiveSession:
         if len(pages) > 1:
             await self.osc.display_pages(pages, self.config.chatbox_page_delay)
         self.osc.set_typing(False)
+
+    @staticmethod
+    def _strip_audio_tags_for_chatbox(text: str) -> str:
+        """Remove inline expressive audio tags (for example [whispers]) from chatbox text only."""
+        if not text:
+            return ""
+        cleaned = re.sub(r"\[(?:[A-Za-z][A-Za-z\s,'-]{0,40})\]", " ", text)
+        cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+        cleaned = re.sub(r" {2,}", " ", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
 
     @staticmethod
     def _normalize_song_name(name: str) -> str:
