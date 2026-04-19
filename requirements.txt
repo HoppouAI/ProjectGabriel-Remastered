@@ -31,6 +31,7 @@ uvicorn[standard]
 python-multipart
 pynput
 pyotp
+pytz
 nltk
 websockets
 chromadb
