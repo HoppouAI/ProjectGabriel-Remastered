@@ -42,6 +42,8 @@ shared_state = {
 
 console_logs = deque(maxlen=100)
 websocket_clients: list[WebSocket] = []
+_state_broadcast_task = None
+_last_state_payload = None
 
 app = FastAPI(title="Control Panel")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -207,6 +209,21 @@ def get_full_state() -> dict:
         "recent_memories": recent_memories,
         "vrchat": vrchat_info,
     }
+
+
+async def _state_broadcast_loop():
+    """Broadcast full UI state whenever it changes, even if no route explicitly triggers it."""
+    global _last_state_payload
+    while True:
+        await asyncio.sleep(1)
+        try:
+            state = get_full_state()
+            payload = json.dumps(state, sort_keys=True)
+            if payload != _last_state_payload:
+                _last_state_payload = payload
+                await broadcast_state()
+        except Exception:
+            pass
 
 
 # --- Pydantic Models ---
@@ -748,9 +765,16 @@ def start_music_broadcast():
         _music_broadcast_task = asyncio.ensure_future(_music_broadcast_loop())
 
 
+def start_state_broadcast():
+    global _state_broadcast_task
+    if _state_broadcast_task is None or _state_broadcast_task.done():
+        _state_broadcast_task = asyncio.ensure_future(_state_broadcast_loop())
+
+
 @app.on_event("startup")
 async def _on_startup():
     start_music_broadcast()
+    start_state_broadcast()
 
 
 # --- Run ---
