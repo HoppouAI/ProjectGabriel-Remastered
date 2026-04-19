@@ -232,14 +232,65 @@ class VRChatAPITools(BaseTool):
         user_id = self._resolve_player_id(player)
         if not user_id:
             return {"result": "error", "message": f"Could not find player '{player}' in the instance or friends list"}
+        
+        # try to get location from instance monitor first
         location = self.handler.instance_monitor.current_location if self.handler.instance_monitor else ""
-        if not location:
+        logger.info(f"[INVITE] Location from instance_monitor: '{location}'")
+        if self.handler.instance_monitor:
+            logger.info(f"[INVITE] Instance monitor players: {self.handler.instance_monitor.get_players()}")
+        invite_location = ""
+        if location and location not in ("offline", "private"):
+            invite_location = location
+
+        logger.info(f"[INVITE] Derived invite_location from instance_monitor/location: '{invite_location}'")
+
+        # if instance monitor doesn't have enough info, fetch from API
+        if not invite_location:
+            logger.info("[INVITE] Missing invite_location from instance_monitor, fetching from API...")
             user_data = await api.get_current_user()
+            logger.info(f"[INVITE] Full API user_data: {user_data}")
             if isinstance(user_data, dict):
-                location = user_data.get("location", "") or ""
-        if not location or location in ("", "offline", "private"):
+                api_instance_id = user_data.get("instanceId", "") or ""
+                api_location = user_data.get("location", "") or ""
+                api_traveling = user_data.get("travelingToInstance", "") or ""
+                api_world_id = user_data.get("worldId", "") or ""
+                presence = user_data.get("presence", {}) if isinstance(user_data.get("presence"), dict) else {}
+                presence_instance = presence.get("instance", "") or ""
+                presence_world = presence.get("world", "") or ""
+
+                logger.info(f"[INVITE] API instanceId: '{api_instance_id}'")
+                logger.info(f"[INVITE] API location: '{api_location}'")
+                logger.info(f"[INVITE] API travelingToInstance: '{api_traveling}'")
+                logger.info(f"[INVITE] API worldId: '{api_world_id}'")
+                logger.info(f"[INVITE] API presence.instance: '{presence_instance}'")
+                logger.info(f"[INVITE] API presence.world: '{presence_world}'")
+
+                if api_location and api_location not in ("offline", "private"):
+                    invite_location = api_location
+                elif api_instance_id and api_instance_id not in ("offline", "private"):
+                    if api_world_id:
+                        invite_location = f"{api_world_id}:{api_instance_id}"
+                    elif presence_world:
+                        invite_location = f"{presence_world}:{api_instance_id}"
+                    else:
+                        invite_location = api_instance_id
+                elif presence_instance and presence_instance not in ("offline", "private"):
+                    if presence_world:
+                        invite_location = f"{presence_world}:{presence_instance}"
+                    elif api_world_id:
+                        invite_location = f"{api_world_id}:{presence_instance}"
+                    else:
+                        invite_location = presence_instance
+                elif api_traveling and api_traveling not in ("offline", "private"):
+                    invite_location = api_traveling
+
+        # final validation
+        if not invite_location or invite_location in ("offline", "private"):
+            logger.error(f"[INVITE] Invalid invite_location: '{invite_location}'")
             return {"result": "error", "message": "Not currently in a VRChat instance"}
-        result = await api.invite_user(user_id, location)
+        
+        logger.info(f"[INVITE] Sending invite to {user_id} for location {invite_location}")
+        result = await api.invite_user(user_id, invite_location)
         return result
 
     async def _request_invite(self, player):
@@ -259,7 +310,7 @@ class VRChatAPITools(BaseTool):
         if "error" in user_info:
             return {"result": "error", "message": user_info["error"]}
         location = user_info.get("location", "")
-        if not location or location in ("", "offline", "private"):
+        if not location or location in ("offline", "private"):
             return {"result": "error", "message": f"Cannot join {player} -- they are offline or in a private instance"}
         current_user = await api.get_current_user()
         if "error" in current_user:
@@ -267,6 +318,7 @@ class VRChatAPITools(BaseTool):
         my_user_id = current_user.get("id", "")
         if not my_user_id:
             return {"result": "error", "message": "Could not determine own user ID"}
+        
         result = await api.invite_user(my_user_id, location)
         if result.get("result") == "ok":
             return {"result": "ok", "message": f"Self-invite sent to join {player}'s instance"}
