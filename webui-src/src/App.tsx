@@ -4,9 +4,10 @@ import Navbar from './components/Navbar'
 import Dashboard from './pages/Dashboard'
 import Memories from './pages/Memories'
 import Music from './pages/Music'
+import Players from './pages/Players'
 import Toast, { type ToastItem } from './components/Toast'
 
-type Tab = 'dashboard' | 'memories' | 'music'
+type Tab = 'dashboard' | 'memories' | 'music' | 'players'
 
 let toastId = 0
 
@@ -31,12 +32,13 @@ export default function App() {
         activeTab={tab}
         onTabChange={setTab}
       />
-      <main className={tab === 'dashboard' || tab === 'memories' ? '' : 'max-w-[1600px] mx-auto px-4 py-4'}>
+      <main className={tab === 'dashboard' || tab === 'memories' || tab === 'players' ? '' : 'max-w-[1600px] mx-auto px-4 py-4'}>
         {tab === 'dashboard' && (
           <Dashboard state={state} logs={logs} clearLogs={clearLogs} addLog={addLog} onToast={addToast} />
         )}
         {tab === 'memories' && <Memories onToast={addToast} />}
         {tab === 'music' && <Music onToast={addToast} />}
+        {tab === 'players' && <Players state={state} onToast={addToast} />}
       </main>
       <Toast toasts={toasts} />
     </div>

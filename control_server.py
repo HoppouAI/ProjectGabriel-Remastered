@@ -190,10 +190,10 @@ def get_full_state() -> dict:
         location = im.current_location
         players = im.get_players()
         vrchat_info = {
-            "is_in_world": bool(location),
+            "is_in_world": im.is_in_world,
             "location": location or None,
             "player_count": len(players),
-            "players": [p.get("name", "Unknown") for p in players],
+            "players": [{"name": p.get("name", "Unknown"), "id": p.get("id", "")} for p in players],
         }
 
     return {
@@ -701,6 +701,160 @@ async def pin_memory(key: str, body: MemoryPinInput):
     if not res.get("success"):
         raise HTTPException(status_code=500, detail=res.get("message", "Pin failed"))
     return {"result": "ok", "pinned": body.pin}
+
+
+# --- VRChat Proxy Endpoints ---
+
+VRCHAT_BASE = "https://api.vrchat.cloud/api/1"
+_VRCAPI_HEADERS = {"User-Agent": "ProjectGabriel/1.0", "Content-Type": "application/json"}
+
+
+def _get_vrchat_cookie_header() -> str:
+    if COOKIE_FILE.exists():
+        try:
+            data = json.loads(COOKIE_FILE.read_text(encoding="utf-8"))
+            parts = []
+            if data.get("auth"):
+                parts.append(f"auth={data['auth']}")
+            if data.get("twoFactorAuth"):
+                parts.append(f"twoFactorAuth={data['twoFactorAuth']}")
+            return "; ".join(parts)
+        except Exception:
+            pass
+    return ""
+
+
+COOKIE_FILE = Path("data/vrchat_cookies.json")
+
+
+@app.get("/api/vrchat/user/{user_id}")
+async def vrchat_get_user(user_id: str):
+    import aiohttp
+    cookie = _get_vrchat_cookie_header()
+    if not cookie:
+        raise HTTPException(status_code=503, detail="No VRChat auth cookie available")
+    url = f"{VRCHAT_BASE}/users/{user_id}"
+    async with aiohttp.ClientSession() as s:
+        async with s.get(url, headers={**_VRCAPI_HEADERS, "Cookie": cookie}) as resp:
+            data = await resp.json(content_type=None)
+            if resp.status != 200:
+                raise HTTPException(status_code=resp.status, detail=str(data))
+            return {
+                "id": data.get("id"),
+                "displayName": data.get("displayName"),
+                "bio": data.get("bio"),
+                "status": data.get("status"),
+                "statusDescription": data.get("statusDescription"),
+                "currentAvatarThumbnailImageUrl": data.get("currentAvatarThumbnailImageUrl"),
+                "profilePicOverride": data.get("profilePicOverride"),
+                "isFriend": data.get("isFriend"),
+                "last_platform": data.get("last_platform"),
+            }
+
+
+class ModerationInput(BaseModel):
+    moderated: str
+    type: str
+
+
+@app.get("/api/vrchat/moderations/{user_id}")
+async def vrchat_get_moderations(user_id: str):
+    import aiohttp
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    cookie = _get_vrchat_cookie_header()
+    if not cookie:
+        raise HTTPException(status_code=503, detail="No VRChat auth cookie available")
+    # fetch all our moderations then filter in python - querystring targetUserId causes 403
+    url = f"{VRCHAT_BASE}/auth/user/playermoderations"
+    logger.info(f"[GET_MODS] Fetching all moderations to filter by {user_id}")
+    
+    async with aiohttp.ClientSession() as s:
+        async with s.get(url, headers={**_VRCAPI_HEADERS, "Cookie": cookie}) as resp:
+            data = await resp.json(content_type=None)
+            logger.info(f"[GET_MODS] VRChat response status: {resp.status}")
+            logger.info(f"[GET_MODS] Total moderations in response: {len(data) if isinstance(data, list) else 'not a list'}")
+            
+            if resp.status != 200:
+                logger.error(f"[GET_MODS] Failed with status {resp.status}: {data}")
+                raise HTTPException(status_code=resp.status, detail=str(data))
+            
+            active = [
+                entry.get("type") for entry in data
+                if isinstance(entry, dict) and entry.get("targetUserId") == user_id
+            ]
+            logger.info(f"[GET_MODS] Active mod types for {user_id}: {active}")
+            matching = [e for e in data if isinstance(e, dict) and e.get('targetUserId') == user_id]
+            if matching:
+                logger.info(f"[GET_MODS] Moderation entries for {user_id}: {matching}")
+            return {"active": active}
+
+
+@app.post("/api/vrchat/moderate")
+async def vrchat_moderate(body: ModerationInput):
+    import aiohttp
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    valid_types = {"block", "hideAvatar", "interactOff", "interactOn", "mute", "muteChat", "showAvatar", "unmute", "unmuteChat"}
+    if body.type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid moderation type: {body.type}")
+    cookie = _get_vrchat_cookie_header()
+    if not cookie:
+        raise HTTPException(status_code=503, detail="No VRChat auth cookie available")
+    
+    url = f"{VRCHAT_BASE}/auth/user/playermoderations"
+    payload = {"moderated": body.moderated, "type": body.type}
+    
+    logger.info(f"[MODERATE] Applying {body.type} to {body.moderated}")
+    logger.info(f"[MODERATE] Payload: {payload}")
+    
+    async with aiohttp.ClientSession() as s:
+        async with s.post(url, json=payload, headers={**_VRCAPI_HEADERS, "Cookie": cookie}) as resp:
+            data = await resp.json(content_type=None)
+            logger.info(f"[MODERATE] VRChat response status: {resp.status}")
+            logger.info(f"[MODERATE] VRChat response data: {data}")
+            
+            if resp.status != 200:
+                logger.error(f"[MODERATE] Failed with status {resp.status}: {data}")
+                raise HTTPException(status_code=resp.status, detail=str(data))
+            
+            logger.info(f"[MODERATE] Success - applied {body.type}")
+            return {"result": "ok", "type": body.type}
+
+
+@app.put("/api/vrchat/unmoderate")
+async def vrchat_unmoderate(body: ModerationInput):
+    import aiohttp
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    valid_types = {"block", "hideAvatar", "interactOff", "interactOn", "mute", "muteChat", "showAvatar", "unmute", "unmuteChat"}
+    if body.type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid moderation type: {body.type}")
+    cookie = _get_vrchat_cookie_header()
+    if not cookie:
+        raise HTTPException(status_code=503, detail="No VRChat auth cookie available")
+    
+    url = f"{VRCHAT_BASE}/auth/user/unplayermoderate"
+    payload = {"moderated": body.moderated, "type": body.type}
+    
+    logger.info(f"[UNMODERATE] Removing {body.type} from {body.moderated}")
+    logger.info(f"[UNMODERATE] Payload: {payload}")
+    
+    async with aiohttp.ClientSession() as s:
+        async with s.put(url, json=payload, headers={**_VRCAPI_HEADERS, "Cookie": cookie}) as resp:
+            data = await resp.json(content_type=None)
+            logger.info(f"[UNMODERATE] VRChat response status: {resp.status}")
+            logger.info(f"[UNMODERATE] VRChat response data: {data}")
+            
+            if resp.status != 200:
+                logger.error(f"[UNMODERATE] Failed with status {resp.status}: {data}")
+                raise HTTPException(status_code=resp.status, detail=str(data))
+            
+            logger.info(f"[UNMODERATE] Success - removed {body.type}")
+            return {"result": "ok", "type": body.type}
 
 
 # --- WebSocket ---
