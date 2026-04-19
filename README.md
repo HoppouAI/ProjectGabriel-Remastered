@@ -15,6 +15,36 @@ Python-based system for running a live AI in VRChat. Handles real-time audio str
 
 ---
 
+## Release and Stability Policy
+
+- **Stable builds are published as GitHub Releases.**
+- A release is created when both of these tags point to the same commit:
+  - a semantic version tag, for example `1.0.0`
+  - the `stable` tag
+- If there is **no GitHub Release** for the current commit or branch state, treat it as **not stable**. It may include recent changes that are not fully tested for long term use.
+
+### Download Stable Versions
+
+Use the Releases page to download stable snapshots:
+
+- **Releases:** https://github.com/HoppouAI/ProjectGabriel-Remastered/releases
+
+Download either:
+
+- Source code archive from the release page, or
+- Clone and checkout a release tag, for example `1.0.0`
+
+### Setup from a Stable Release
+
+After downloading a release, setup is the same:
+
+1. Extract the release archive or checkout the release tag.
+2. Run `setup.bat` in the project root.
+3. Complete the Configuration Wizard.
+4. Start with `python supervisor.py`.
+
+---
+
 ## What's New in the Remaster
 
 The original was getting messy and hard to maintain. This version is a full rewrite with a cleaner architecture. Compared to the original:
