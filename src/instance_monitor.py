@@ -49,6 +49,11 @@ class InstanceMonitor:
         return ""
 
     @property
+    def is_in_world(self) -> bool:
+        # consider in-world if we have a location or at least some players detected
+        return bool(self._world_id) or len(self._players) > 0
+
+    @property
     def player_count(self) -> int:
         return len(self._players)
 

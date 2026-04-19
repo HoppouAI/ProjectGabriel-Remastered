@@ -1,8 +1,8 @@
 import { HiOutlineWifi, HiOutlineStatusOffline } from 'react-icons/hi'
 import { RiDashboardLine, RiBrainLine, RiMusicLine } from 'react-icons/ri'
-import { TbMicrophoneOff } from 'react-icons/tb'
+import { TbMicrophoneOff, TbUsers } from 'react-icons/tb'
 
-type Tab = 'dashboard' | 'memories' | 'music'
+type Tab = 'dashboard' | 'memories' | 'music' | 'players'
 
 interface NavbarProps {
   appName: string
@@ -16,6 +16,7 @@ const tabs: { id: Tab; label: string; icon: typeof RiDashboardLine }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: RiDashboardLine },
   { id: 'memories', label: 'Memories', icon: RiBrainLine },
   { id: 'music', label: 'Music', icon: RiMusicLine },
+  { id: 'players', label: 'Players', icon: TbUsers },
 ]
 
 export default function Navbar({ appName, isConnected, isMuted, activeTab, onTabChange }: NavbarProps) {
