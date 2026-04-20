@@ -1354,7 +1354,14 @@ class OmniVoiceTTSProvider:
             follow_redirects=True,
         )
         if self._register_voice_on_startup and self._reference_audio:
-            self._register_voice_sync()
+            # If we already have a stable target ID and it exists on the server,
+            # reuse it instead of creating a new one every startup.
+            target_vid = self._startup_target_voice_id()
+            if target_vid and self._voice_exists_sync(target_vid):
+                self._voice_id = target_vid
+                logger.info("OmniVoice startup: reusing existing voice_id=%s", self._voice_id)
+            else:
+                self._register_voice_sync()
         self._splitter_thread = threading.Thread(target=self._splitter_loop, daemon=True)
         self._splitter_thread.start()
         logger.info("OmniVoice TTS started (voice_id=%s, url=%s)", self._voice_id or "none", self._base_url)
@@ -1519,17 +1526,39 @@ class OmniVoiceTTSProvider:
 
     # -- OmniVoice synthesis ----------------------------------------------
 
+    def _startup_target_voice_id(self) -> str:
+        """Pick a stable voice ID for startup registration, if available."""
+        return (self._register_voice_id or self._voice_id or "").strip()
+
+    def _voice_exists_sync(self, voice_id: str) -> bool:
+        """Check whether a voice ID already exists on the OmniVoice server."""
+        if not voice_id:
+            return False
+        try:
+            with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+                resp = client.get(f"{self._base_url}/v1/voices")
+                resp.raise_for_status()
+                payload = resp.json() or {}
+                voices = payload.get("voices") or []
+                for item in voices:
+                    if isinstance(item, dict) and str(item.get("voice_id", "")) == voice_id:
+                        return True
+        except Exception as e:
+            logger.debug("OmniVoice voice existence check failed for '%s': %s", voice_id, e)
+        return False
+
     def _register_voice_sync(self):
         if not self._reference_audio:
             return
         try:
+            target_vid = self._startup_target_voice_id()
             with open(self._reference_audio, "rb") as audio_file:
                 files = {"audio": (self._reference_audio, audio_file)}
                 data = {}
                 if self._reference_text:
                     data["ref_text"] = self._reference_text
-                if self._register_voice_id:
-                    data["voice_id"] = self._register_voice_id
+                if target_vid:
+                    data["voice_id"] = target_vid
                 with httpx.Client(timeout=120.0, follow_redirects=True) as client:
                     resp = client.post(f"{self._base_url}/v1/voices", files=files, data=data)
                     if resp.status_code in (200, 201):
@@ -1538,8 +1567,8 @@ class OmniVoiceTTSProvider:
                         if new_id:
                             self._voice_id = str(new_id)
                             logger.info("OmniVoice voice registered on startup: %s", self._voice_id)
-                    elif resp.status_code == 409 and self._register_voice_id:
-                        self._voice_id = self._register_voice_id
+                    elif resp.status_code == 409 and target_vid:
+                        self._voice_id = target_vid
                         logger.info("OmniVoice startup voice already exists, reusing: %s", self._voice_id)
                     else:
                         logger.warning("OmniVoice startup voice registration failed: %s %s", resp.status_code, resp.text[:200])
