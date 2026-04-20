@@ -1148,6 +1148,24 @@ class GeminiLiveSession:
             self._audio_gated = False
             logger.debug("Audio ungated (outbound resumed)")
 
+    def _interrupt_output_audio(self):
+        """Hard-stop current output audio path immediately.
+
+        Used for barge-in and tool-call transitions so queued external TTS
+        chunks do not keep playing after user speech starts.
+        """
+        if self._tts:
+            try:
+                self._tts.interrupt()
+            except Exception as e:
+                logger.debug(f"TTS interrupt error: {e}")
+        self._playback_interrupted = True
+        while not self._audio_in_queue.empty():
+            try:
+                self._audio_in_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
     def _load_silero_vad(self):
         """Lazy-load Silero VAD model. Uses torch.hub, cached after first download."""
         if self._silero_vad is not None:
@@ -1205,6 +1223,7 @@ class GeminiLiveSession:
                             if self._audio_gated:
                                 # User is speaking while model is talking, interrupt!
                                 self._ungate_audio()
+                                self._interrupt_output_audio()
                                 logger.debug("Silero detected speech while gated, ungating for interruption")
                             if not self._manual_vad_speaking:
                                 await self._send_activity_start(session)
@@ -1522,25 +1541,15 @@ class GeminiLiveSession:
                         if self._transcript_buffer.strip():
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
-                        # Interrupt external TTS provider
-                        if self._tts:
-                            self._tts.interrupt()
-                        self._playback_interrupted = True
-                        while not self._audio_in_queue.empty():
-                            try:
-                                self._audio_in_queue.get_nowait()
-                            except asyncio.QueueEmpty:
-                                break
+                        self._interrupt_output_audio()
 
                     if response.tool_call:
                         self._tool_call_pending = True
                         # Gate audio and flush server buffer before processing tool calls
                         # Per Joe_Hu: sending audio during tool processing causes 1007/1008 disconnects
                         await self._gate_audio(session)
-                        # Interrupt TTS -- model will regenerate after tool response
-                        if self._tts:
-                            self._tts.interrupt()
-                        self._playback_interrupted = True
+                        # Interrupt TTS - model will regenerate after tool response
+                        self._interrupt_output_audio()
                         # Finalize user message immediately - model has processed input
                         self._conv_logger.finalize_user_message()
                         if self._pending_finalize_task:
