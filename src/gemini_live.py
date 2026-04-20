@@ -1723,6 +1723,18 @@ class GeminiLiveSession:
         if not text:
             return ""
 
+        # Preserve boundary whitespace exactly as received.
+        # Output transcription arrives in chunks, and stripping each chunk
+        # can glue words together across chunk boundaries.
+        leading_ws_match = re.match(r"^\s*", text)
+        trailing_ws_match = re.search(r"\s*$", text)
+        leading_ws = leading_ws_match.group(0) if leading_ws_match else ""
+        trailing_ws = trailing_ws_match.group(0) if trailing_ws_match else ""
+        core = text[len(leading_ws):len(text) - len(trailing_ws) if trailing_ws else len(text)]
+
+        if not core:
+            return text
+
         replacements = {
             "laugh": "haha",
             "laughs": "haha",
@@ -1736,12 +1748,12 @@ class GeminiLiveSession:
             "stammers": "uh, I mean",
             "stammering": "uh, I mean",
             "stutters": "u-u-uh-I",
-            "stuttering": "uh, uh",
-            "sighs": "sigh",
-            "gasps": "oh",
+            "stuttering": "u-u-h-u-u-i-i",
+            "sighs": "ughhh",
+            "gasps": "oh!",
             "clears throat": "ahem",
-            "whispers": "softly",
-            "pauses": "",
+            "whispers": "shhhh",
+            "pauses": "_",
         }
 
         def repl(match):
@@ -1752,10 +1764,10 @@ class GeminiLiveSession:
             # Unknown stage directions are better removed than spoken literally.
             return ""
 
-        converted = re.sub(r"\[([^\]]+)\]", repl, text)
+        converted = re.sub(r"\[([^\]]+)\]", repl, core)
         converted = re.sub(r"\s+([,.;:!?])", r"\1", converted)
-        converted = re.sub(r" {2,}", " ", converted).strip()
-        return converted
+        converted = re.sub(r" {2,}", " ", converted)
+        return f"{leading_ws}{converted}{trailing_ws}"
 
     @staticmethod
     def _convert_markdown_italics_to_unicode(text: str) -> str:
