@@ -1715,10 +1715,10 @@ class GeminiLiveSession:
 
     @staticmethod
     def _adapt_text_for_external_tts(text: str) -> str:
-        """Convert expressive bracket tags into speakable phrases for non-Gemini TTS.
+        """Remove bracket emotion/stage tags for non-Gemini TTS providers.
 
-        Some external providers do not understand tags like [laughs] or
-        [jumbles words]. This keeps the intended vibe without literal tags.
+        External providers often do not support Gemini-style expressive tags,
+        so we strip tags like [laughs] or [reminiscing] before synthesis.
         """
         if not text:
             return ""
@@ -1735,36 +1735,8 @@ class GeminiLiveSession:
         if not core:
             return text
 
-        replacements = {
-            "laugh": "haha",
-            "laughs": "haha",
-            "laughing": "haha",
-            "chuckle": "heh",
-            "chuckles": "heh",
-            "giggles": "hehe",
-            "reminiscing": "hmm, I remember",
-            "jumbles words": "uh, I mean, uh",
-            "jumbled words": "uh, I mean, uh",
-            "stammers": "uh, I mean",
-            "stammering": "uh, I mean",
-            "stutters": "u-u-uh-I",
-            "stuttering": "u-u-h-u-u-i-i",
-            "sighs": "ughhh",
-            "gasps": "oh!",
-            "clears throat": "ahem",
-            "whispers": "shhhh",
-            "pauses": "_",
-        }
-
-        def repl(match):
-            raw = match.group(1).strip().lower()
-            normalized = re.sub(r"\s+", " ", raw)
-            if normalized in replacements:
-                return replacements[normalized]
-            # Unknown stage directions are better removed than spoken literally.
-            return ""
-
-        converted = re.sub(r"\[([^\]]+)\]", repl, core)
+        # Strip all bracket tags entirely for external TTS.
+        converted = re.sub(r"\[[^\]]+\]", " ", core)
         converted = re.sub(r"\s+([,.;:!?])", r"\1", converted)
         converted = re.sub(r" {2,}", " ", converted)
         return f"{leading_ws}{converted}{trailing_ws}"
