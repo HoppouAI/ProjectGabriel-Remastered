@@ -384,6 +384,10 @@ class Config:
         return self.tts_provider == "tiktok"
 
     @property
+    def tts_omnivoice_enabled(self):
+        return self.tts_provider == "omnivoice"
+
+    @property
     def vrchat_api_username(self):
         return self.get("vrchat_api", "username", default="")
 

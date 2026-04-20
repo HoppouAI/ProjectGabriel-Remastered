@@ -39,7 +39,7 @@ class VoiceTools(BaseTool):
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "provider": {"type": "STRING", "description": "Provider ID to switch to (e.g. 'gemini', 'chirp3_hd', 'hoppou', 'qwen3', 'tiktok')"},
+                        "provider": {"type": "STRING", "description": "Provider ID to switch to (e.g. 'gemini', 'chirp3_hd', 'hoppou', 'qwen3', 'tiktok', 'omnivoice')"},
                         "voice": {"type": "STRING", "description": "A custom voice name OR a built-in voice name for the provider. Optional -- uses config default if omitted. NOT supported for 'gemini' provider."},
                     },
                     "required": ["provider"],
@@ -145,6 +145,11 @@ class VoiceTools(BaseTool):
             if not voice_override and voice:
                 voice_override = {"voice": voice}
             new_provider = TikTokTTSProvider(self.config, voice_override=voice_override)
+        elif provider_name == "omnivoice":
+            from src.tts import OmniVoiceTTSProvider
+            if not voice_override and voice:
+                voice_override = {"voice_id": voice}
+            new_provider = OmniVoiceTTSProvider(self.config, voice_override=voice_override)
         else:
             return {"result": "error", "message": f"Unknown provider: {provider_name}"}
 
@@ -162,7 +167,7 @@ class VoiceTools(BaseTool):
             current = "gemini"
         else:
             name = type(current_tts).__name__
-            mapping = {"QwenTTSProvider": "qwen3", "HoppouTTSProvider": "hoppou", "Chirp3HDTTSProvider": "chirp3_hd", "TikTokTTSProvider": "tiktok"}
+            mapping = {"QwenTTSProvider": "qwen3", "HoppouTTSProvider": "hoppou", "Chirp3HDTTSProvider": "chirp3_hd", "TikTokTTSProvider": "tiktok", "OmniVoiceTTSProvider": "omnivoice"}
             current = mapping.get(name, name)
         return {"result": "ok", "providers": allowed, "current": current}
 
@@ -173,7 +178,7 @@ class VoiceTools(BaseTool):
                 voices[vname] = {
                     "display_name": vdef.get("display_name", vname),
                     "description": vdef.get("description", ""),
-                    "providers": [p for p in ("qwen3", "hoppou", "chirp3_hd", "tiktok") if p in vdef],
+                    "providers": [p for p in ("qwen3", "hoppou", "chirp3_hd", "tiktok", "omnivoice") if p in vdef],
                 }
         return {"result": "ok", "voices": voices}
 

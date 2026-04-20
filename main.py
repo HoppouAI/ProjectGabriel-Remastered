@@ -118,6 +118,11 @@ async def main(save_audio=False):
         tts_provider = TikTokTTSProvider(config)
         tts_provider.start()
         logger.info("Using TikTok TTS provider (Gemini audio will be discarded)")
+    elif config.tts_omnivoice_enabled:
+        from src.tts import OmniVoiceTTSProvider
+        tts_provider = OmniVoiceTTSProvider(config)
+        tts_provider.start()
+        logger.info("Using OmniVoice TTS provider (Gemini audio will be discarded)")
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
     session._save_audio = save_audio

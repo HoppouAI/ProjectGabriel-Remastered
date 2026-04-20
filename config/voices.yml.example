@@ -7,6 +7,7 @@
 #   hoppou    - Predefined voice name on Hoppou AI
 #   chirp3_hd - Google Cloud Chirp 3 HD voice name + language
 #   tiktok    - TikTok TTS voice code (free, session ID required)
+#   omnivoice - OmniVoice voice_id + optional generation overrides
 #
 # A single voice can define settings for multiple providers.
 # When switching, the tool picks the matching provider section.
@@ -32,6 +33,12 @@ voices:
       language_code: "en-US"
     tiktok:
       voice: "en_us_001"         # TikTok voice code
+    omnivoice:
+      voice_id: "my-voice"       # Voice ID registered on OmniVoice server
+      language: "English"
+      num_steps: 32
+      guidance_scale: 2.0
+      speed: 1.0
 
   # Example: Chirp 3 HD only voice
   # japanese_narrator:
@@ -57,3 +64,11 @@ voices:
   #   description: "The classic TikTok narrator voice"
   #   tiktok:
   #     voice: "en_male_narration"
+
+  # Example: OmniVoice registered voice
+  # omni_clone:
+  #   display_name: "Omni Clone"
+  #   description: "A cloned voice served by OmniVoice"
+  #   omnivoice:
+  #     voice_id: "my-voice"
+  #     language: "English"

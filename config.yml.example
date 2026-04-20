@@ -153,11 +153,12 @@ gemini:
 # "hoppou"    = discard Gemini audio, use Hoppou AI cloud TTS
 # "chirp3_hd" = discard Gemini audio, use Google Cloud Chirp 3: HD streaming TTS
 # "tiktok"    = discard Gemini audio, use TikTok's TTS API (free, no API key needed)
+# "omnivoice" = discard Gemini audio, use OmniVoice local/server TTS with streaming
 tts:
   provider: "gemini"
 
   # Providers the AI can switch to at runtime via the switchTTSProvider tool.
-  # Must be a list of provider names: "gemini", "qwen3", "hoppou", "chirp3_hd", "tiktok"
+  # Must be a list of provider names: "gemini", "qwen3", "hoppou", "chirp3_hd", "tiktok", "omnivoice"
   switchable_providers: ["gemini"]
 
   # Qwen3 TTS server settings (only used when provider is "qwen3")
@@ -267,6 +268,32 @@ tts:
     #   kr_002 / kr_003 / kr_004   Korean
     #   id_001   Indonesian
     voice: "en_us_001"
+
+  # OmniVoice local/server TTS settings (only used when provider is "omnivoice")
+  # API docs: OmniVoice-Custom/docs/api.md
+  omnivoice:
+    # URL where omnivoice-serve is running
+    base_url: "http://localhost:8000"
+
+    # Reusable cloned voice ID created via /v1/voices
+    # If empty, OmniVoice uses auto/design voice mode.
+    voice_id: ""
+
+    # Optional startup voice registration from local reference audio.
+    # When enabled, the app uploads reference_audio once on startup.
+    register_voice_on_startup: false
+    reference_audio: ""
+    reference_text: ""
+    register_voice_id: ""
+
+    # Synthesis options (used for /v1/tts/stream)
+    language: "English"
+    num_steps: 32
+    guidance_scale: 2.0
+    speed: null
+    duration: null
+    denoise: true
+    max_concurrent: 2
 
 audio:
   # Audio device indices - null uses system default

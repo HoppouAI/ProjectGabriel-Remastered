@@ -1291,3 +1291,355 @@ class TikTokTTSProvider:
         except Exception as e:
             logger.error("TikTok TTS audio decode error: %s", e)
             return None
+
+
+class OmniVoiceTTSProvider:
+    """Streams output transcription text to an OmniVoice server.
+
+    Uses OmniVoice streaming endpoint (/v1/tts/stream) with voice cloning.
+    Response is WAV stream: a single header followed by PCM 16-bit mono chunks.
+    """
+
+    _SAMPLE_RATE = 24000
+
+    def __init__(self, config, voice_override=None):
+        vo = voice_override or {}
+        self._base_url = config.get("tts", "omnivoice", "base_url", default="http://localhost:8000").rstrip("/")
+        self._voice_id = vo.get("voice_id", config.get("tts", "omnivoice", "voice_id", default="")).strip()
+        self._language = vo.get("language", config.get("tts", "omnivoice", "language", default=None))
+        self._num_steps = int(vo.get("num_steps", config.get("tts", "omnivoice", "num_steps", default=32)))
+        self._guidance_scale = float(vo.get("guidance_scale", config.get("tts", "omnivoice", "guidance_scale", default=2.0)))
+        self._speed = vo.get("speed", config.get("tts", "omnivoice", "speed", default=None))
+        self._duration = vo.get("duration", config.get("tts", "omnivoice", "duration", default=None))
+        self._denoise = bool(vo.get("denoise", config.get("tts", "omnivoice", "denoise", default=True)))
+        self._max_concurrent = int(config.get("tts", "omnivoice", "max_concurrent", default=2))
+        self._target_sr = config.get("audio", "receive_sample_rate", default=24000)
+
+        # Optional startup voice registration for cloning
+        self._register_voice_on_startup = bool(
+            vo.get(
+                "register_voice_on_startup",
+                config.get("tts", "omnivoice", "register_voice_on_startup", default=False),
+            )
+        )
+        self._reference_audio = vo.get("reference_audio", config.get("tts", "omnivoice", "reference_audio", default="")).strip()
+        self._reference_text = vo.get("reference_text", config.get("tts", "omnivoice", "reference_text", default=""))
+        self._register_voice_id = vo.get("register_voice_id", config.get("tts", "omnivoice", "register_voice_id", default="")).strip()
+
+        self._text_queue = queue.Queue()
+        self._sentence_queue = queue.Queue()
+        self._ready_queue: asyncio.Queue[asyncio.Queue[bytes | None]] = asyncio.Queue()
+        self._audio_queue: asyncio.Queue[bytes] = asyncio.Queue()
+
+        self._running = False
+        self._interrupted = False
+        self._splitter_thread: threading.Thread | None = None
+        self._client: httpx.AsyncClient | None = None
+        self._async_tasks: list[asyncio.Task] = []
+        self._synth_tasks: set[asyncio.Task] = set()
+        self._synth_semaphore: asyncio.Semaphore | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    # -- Public API -------------------------------------------------------
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._interrupted = False
+        import nltk
+        nltk.download('punkt_tab', quiet=True)
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
+            follow_redirects=True,
+        )
+        if self._register_voice_on_startup and self._reference_audio:
+            self._register_voice_sync()
+        self._splitter_thread = threading.Thread(target=self._splitter_loop, daemon=True)
+        self._splitter_thread.start()
+        logger.info("OmniVoice TTS started (voice_id=%s, url=%s)", self._voice_id or "none", self._base_url)
+
+    def stop(self):
+        self._running = False
+        self._interrupted = True
+        self._text_queue.put(None)
+        if self._splitter_thread:
+            self._splitter_thread.join(timeout=3)
+            self._splitter_thread = None
+        for task in self._async_tasks:
+            task.cancel()
+        self._async_tasks.clear()
+        for task in self._synth_tasks:
+            task.cancel()
+        self._synth_tasks.clear()
+        if self._client:
+            client = self._client
+            self._client = None
+            if self._loop and self._loop.is_running():
+                self._loop.call_soon_threadsafe(
+                    lambda c=client: asyncio.ensure_future(c.aclose())
+                )
+
+    def feed_text(self, text: str):
+        if not text:
+            return
+        self._interrupted = False
+        self._text_queue.put(text)
+
+    def turn_complete(self):
+        self._text_queue.put(None)
+
+    def interrupt(self):
+        self._interrupted = True
+        while not self._text_queue.empty():
+            try:
+                self._text_queue.get_nowait()
+            except queue.Empty:
+                break
+        self._text_queue.put(None)
+        while not self._sentence_queue.empty():
+            try:
+                self._sentence_queue.get_nowait()
+            except queue.Empty:
+                break
+        for task in self._synth_tasks:
+            task.cancel()
+        self._synth_tasks.clear()
+        while not self._ready_queue.empty():
+            try:
+                self._ready_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+    async def get_audio(self) -> bytes | None:
+        self._ensure_async_tasks()
+        try:
+            return await asyncio.wait_for(self._audio_queue.get(), timeout=0.1)
+        except (asyncio.TimeoutError, asyncio.QueueEmpty):
+            return None
+
+    # -- Async task management --------------------------------------------
+
+    def _ensure_async_tasks(self):
+        if self._async_tasks:
+            return
+        self._loop = asyncio.get_running_loop()
+        self._synth_semaphore = asyncio.Semaphore(self._max_concurrent)
+        self._async_tasks = [
+            asyncio.create_task(self._dispatch_task()),
+            asyncio.create_task(self._feeder_task()),
+        ]
+
+    # -- Splitter (same pattern as other providers) -----------------------
+
+    def _text_generator(self):
+        last_text_time = time.monotonic()
+        while True:
+            try:
+                chunk = self._text_queue.get(timeout=0.1)
+            except queue.Empty:
+                if time.monotonic() - last_text_time > 1.5:
+                    return
+                if self._interrupted or not self._running:
+                    return
+                continue
+            if chunk is None:
+                return
+            last_text_time = time.monotonic()
+            yield chunk
+
+    def _splitter_loop(self):
+        while self._running:
+            text_gen = self._text_generator()
+            try:
+                for sentence in generate_sentences(
+                    text_gen,
+                    minimum_sentence_length=10,
+                    minimum_first_fragment_length=10,
+                    quick_yield_single_sentence_fragment=True,
+                    context_size=3,
+                    context_size_look_overhead=3,
+                    force_first_fragment_after_words=15,
+                ):
+                    if self._interrupted or not self._running:
+                        break
+                    s = _strip_emojis(sentence)
+                    if s:
+                        logger.info("TTS sentence ready: %r", s[:80])
+                        self._sentence_queue.put(s)
+            except Exception as e:
+                if not self._interrupted:
+                    logger.error("Sentence splitter error: %s", e)
+
+    # -- Async dispatch + feeder ------------------------------------------
+
+    async def _dispatch_task(self):
+        while self._running:
+            try:
+                sentence = await asyncio.to_thread(
+                    self._sentence_queue.get, True, 0.1
+                )
+            except queue.Empty:
+                continue
+            except Exception:
+                if not self._running:
+                    return
+                continue
+            if self._interrupted:
+                continue
+            logger.info("TTS dispatch: %r", sentence[:80])
+            sub_q: asyncio.Queue[bytes | None] = asyncio.Queue()
+            await self._ready_queue.put(sub_q)
+            task = asyncio.create_task(self._synthesize_async(sentence, sub_q))
+            self._synth_tasks.add(task)
+            task.add_done_callback(self._synth_tasks.discard)
+
+    async def _feeder_task(self):
+        while self._running:
+            try:
+                sub_q = await asyncio.wait_for(self._ready_queue.get(), timeout=0.1)
+            except (asyncio.TimeoutError, asyncio.QueueEmpty):
+                continue
+            while True:
+                try:
+                    pcm = await asyncio.wait_for(sub_q.get(), timeout=0.5)
+                except (asyncio.TimeoutError, asyncio.QueueEmpty):
+                    if self._interrupted or not self._running:
+                        break
+                    continue
+                if pcm is None:
+                    break
+                if not self._interrupted:
+                    await self._audio_queue.put(pcm)
+
+    # -- OmniVoice synthesis ----------------------------------------------
+
+    def _register_voice_sync(self):
+        if not self._reference_audio:
+            return
+        try:
+            with open(self._reference_audio, "rb") as audio_file:
+                files = {"audio": (self._reference_audio, audio_file)}
+                data = {}
+                if self._reference_text:
+                    data["ref_text"] = self._reference_text
+                if self._register_voice_id:
+                    data["voice_id"] = self._register_voice_id
+                with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+                    resp = client.post(f"{self._base_url}/v1/voices", files=files, data=data)
+                    if resp.status_code in (200, 201):
+                        payload = resp.json()
+                        new_id = payload.get("voice_id")
+                        if new_id:
+                            self._voice_id = str(new_id)
+                            logger.info("OmniVoice voice registered on startup: %s", self._voice_id)
+                    elif resp.status_code == 409 and self._register_voice_id:
+                        self._voice_id = self._register_voice_id
+                        logger.info("OmniVoice startup voice already exists, reusing: %s", self._voice_id)
+                    else:
+                        logger.warning("OmniVoice startup voice registration failed: %s %s", resp.status_code, resp.text[:200])
+        except FileNotFoundError:
+            logger.warning("OmniVoice reference audio not found: %s", self._reference_audio)
+        except Exception as e:
+            logger.warning("OmniVoice startup voice registration error: %s", e)
+
+    def _request_payload(self, text: str) -> dict:
+        payload = {
+            "text": text,
+            "num_steps": self._num_steps,
+            "guidance_scale": self._guidance_scale,
+            "denoise": self._denoise,
+        }
+        if self._voice_id:
+            payload["voice_id"] = self._voice_id
+        if self._language:
+            payload["language"] = self._language
+        if self._speed is not None:
+            payload["speed"] = self._speed
+        if self._duration is not None:
+            payload["duration"] = self._duration
+        return payload
+
+    async def _synthesize_async(self, text: str, sub_q: asyncio.Queue):
+        if not self._client:
+            sub_q.put_nowait(None)
+            return
+
+        async with self._synth_semaphore:
+            wav_header_remaining = 44
+            carry = b""
+            try:
+                async with self._client.stream(
+                    "POST",
+                    f"{self._base_url}/v1/tts/stream",
+                    headers={"Content-Type": "application/json"},
+                    json=self._request_payload(text),
+                ) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_bytes(chunk_size=4096):
+                        if self._interrupted or not self._running:
+                            return
+                        if not chunk:
+                            continue
+
+                        data = chunk
+                        if wav_header_remaining > 0:
+                            skip = min(wav_header_remaining, len(data))
+                            data = data[skip:]
+                            wav_header_remaining -= skip
+                        if not data:
+                            continue
+
+                        carry += data
+                        usable_len = len(carry) - (len(carry) % 2)
+                        if usable_len <= 0:
+                            continue
+
+                        pcm_block = carry[:usable_len]
+                        carry = carry[usable_len:]
+
+                        pcm = self._process_stream_pcm(pcm_block)
+                        if pcm and not self._interrupted:
+                            sub_q.put_nowait(pcm)
+
+                if carry:
+                    pcm = self._process_stream_pcm(carry[: len(carry) - (len(carry) % 2)])
+                    if pcm and not self._interrupted:
+                        sub_q.put_nowait(pcm)
+
+            except httpx.HTTPStatusError as e:
+                body = ""
+                try:
+                    body = e.response.text
+                except Exception:
+                    pass
+                logger.error("OmniVoice returned %s: %s", e.response.status_code, body[:240])
+            except httpx.ConnectError:
+                logger.error("Cannot connect to OmniVoice TTS at %s", self._base_url)
+            except httpx.TimeoutException:
+                logger.error("OmniVoice TTS request timed out")
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                if not self._interrupted:
+                    logger.error("OmniVoice TTS stream error: %s", e)
+            finally:
+                sub_q.put_nowait(None)
+
+    def _process_stream_pcm(self, data: bytes) -> bytes | None:
+        """Convert streamed int16 PCM to playback sample rate if needed."""
+        try:
+            samples = np.frombuffer(data, dtype=np.int16)
+            if self._SAMPLE_RATE != self._target_sr:
+                float_samples = samples.astype(np.float32) / 32767.0
+                float_samples = QwenTTSProvider._resample(float_samples, self._SAMPLE_RATE, self._target_sr)
+                samples = (float_samples * 32767).clip(-32767, 32767).astype(np.int16)
+            return samples.tobytes()
+        except Exception as e:
+            logger.error("OmniVoice audio conversion error: %s", e)
+            return None
