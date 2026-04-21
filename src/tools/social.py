@@ -156,6 +156,9 @@ class SocialTools(BaseTool):
         ]
 
     async def handle(self, name, args):
+        if not name.startswith("social"):
+            return None
+
         client = self._get_client()
         if not client:
             return {"result": "error", "message": "Social server not connected"}
