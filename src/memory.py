@@ -219,6 +219,7 @@ class MemorySystem:
             self.collection.create_index([("category", ASCENDING)], name="idx_category")
             self.collection.create_index([("memory_type", ASCENDING)], name="idx_memory_type")
             self.collection.create_index([("created_at", DESCENDING)], name="idx_created_at")
+            self.collection.create_index([("updated_at", DESCENDING)], name="idx_updated_at")
             self.collection.create_index([("memory_type", ASCENDING), ("created_at", DESCENDING)], name="idx_memory_type_created")
             self.collection.create_index([("content_hash", ASCENDING)], name="idx_content_hash")
         except Exception as e:
