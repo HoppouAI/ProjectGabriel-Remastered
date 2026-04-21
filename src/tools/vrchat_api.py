@@ -235,20 +235,17 @@ class VRChatAPITools(BaseTool):
         
         # try to get location from instance monitor first
         location = self.handler.instance_monitor.current_location if self.handler.instance_monitor else ""
-        logger.info(f"[INVITE] Location from instance_monitor: '{location}'")
-        if self.handler.instance_monitor:
-            logger.info(f"[INVITE] Instance monitor players: {self.handler.instance_monitor.get_players()}")
+        logger.info(f"[INVITE] instance_monitor location: '{location}'")
         invite_location = ""
         if location and location not in ("offline", "private"):
             invite_location = location
 
-        logger.info(f"[INVITE] Derived invite_location from instance_monitor/location: '{invite_location}'")
+        logger.info(f"[INVITE] resolved location from instance_monitor: '{invite_location}'")
 
         # if instance monitor doesn't have enough info, fetch from API
         if not invite_location:
-            logger.info("[INVITE] Missing invite_location from instance_monitor, fetching from API...")
+            logger.info("[INVITE] location missing from instance_monitor, trying current user API")
             user_data = await api.get_current_user()
-            logger.info(f"[INVITE] Full API user_data: {user_data}")
             if isinstance(user_data, dict):
                 api_instance_id = user_data.get("instanceId", "") or ""
                 api_location = user_data.get("location", "") or ""
@@ -258,12 +255,13 @@ class VRChatAPITools(BaseTool):
                 presence_instance = presence.get("instance", "") or ""
                 presence_world = presence.get("world", "") or ""
 
-                logger.info(f"[INVITE] API instanceId: '{api_instance_id}'")
-                logger.info(f"[INVITE] API location: '{api_location}'")
-                logger.info(f"[INVITE] API travelingToInstance: '{api_traveling}'")
-                logger.info(f"[INVITE] API worldId: '{api_world_id}'")
-                logger.info(f"[INVITE] API presence.instance: '{presence_instance}'")
-                logger.info(f"[INVITE] API presence.world: '{presence_world}'")
+                logger.info(
+                    "[INVITE] API fields, location='%s', instanceId='%s', presenceWorld='%s', presenceInstance='%s'",
+                    api_location,
+                    api_instance_id,
+                    presence_world,
+                    presence_instance,
+                )
 
                 if api_location and api_location not in ("offline", "private"):
                     invite_location = api_location
@@ -289,7 +287,7 @@ class VRChatAPITools(BaseTool):
             logger.error(f"[INVITE] Invalid invite_location: '{invite_location}'")
             return {"result": "error", "message": "Not currently in a VRChat instance"}
         
-        logger.info(f"[INVITE] Sending invite to {user_id} for location {invite_location}")
+        logger.info(f"[INVITE] sending invite to {user_id} for location '{invite_location}'")
         result = await api.invite_user(user_id, invite_location)
         return result
 
