@@ -44,6 +44,9 @@ console_logs = deque(maxlen=100)
 websocket_clients: list[WebSocket] = []
 _state_broadcast_task = None
 _last_state_payload = None
+_recent_memories_cache: dict | None = None
+_recent_memories_cache_ts: float = 0
+_RECENT_MEMORIES_TTL = 10  # seconds
 
 app = FastAPI(title="Control Panel")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -101,8 +104,9 @@ def get_session_handle_info() -> dict:
         return {"exists": True, "error": "Could not parse handle file"}
 
 
-async def broadcast_state():
-    state = get_full_state()
+async def broadcast_state(state: dict | None = None):
+    if state is None:
+        state = await asyncio.to_thread(get_full_state)
     msg = json.dumps({"type": "state", "data": state})
     disconnected = []
     for ws in websocket_clients:
@@ -177,7 +181,14 @@ def get_full_state() -> dict:
     memory_mgr = shared_state.get("memory_mgr")
     if memory_mgr and hasattr(memory_mgr, "list_memories"):
         try:
-            recent_memories = memory_mgr.list_memories(limit=10)
+            global _recent_memories_cache, _recent_memories_cache_ts
+            now_ts = datetime.now().timestamp()
+            if _recent_memories_cache is not None and (now_ts - _recent_memories_cache_ts) < _RECENT_MEMORIES_TTL:
+                recent_memories = _recent_memories_cache
+            else:
+                recent_memories = memory_mgr.list_memories(limit=10)
+                _recent_memories_cache = recent_memories
+                _recent_memories_cache_ts = now_ts
         except Exception:
             pass
 
@@ -217,12 +228,12 @@ async def _state_broadcast_loop():
     while True:
         await asyncio.sleep(1)
         try:
-            # run in thread so blocking db calls (memory, etc) dont stall the event loop
+            # run in thread so blocking db/sync calls dont stall the event loop
             state = await asyncio.to_thread(get_full_state)
             payload = json.dumps(state, sort_keys=True)
             if payload != _last_state_payload:
                 _last_state_payload = payload
-                await broadcast_state()
+                await broadcast_state(state)  # pass pre-computed state, avoid double get_full_state
         except Exception:
             pass
 
