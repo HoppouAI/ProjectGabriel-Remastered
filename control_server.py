@@ -217,7 +217,8 @@ async def _state_broadcast_loop():
     while True:
         await asyncio.sleep(1)
         try:
-            state = get_full_state()
+            # run in thread so blocking db calls (memory, etc) dont stall the event loop
+            state = await asyncio.to_thread(get_full_state)
             payload = json.dumps(state, sort_keys=True)
             if payload != _last_state_payload:
                 _last_state_payload = payload
@@ -619,9 +620,9 @@ async def list_memories(
 ):
     mgr = _get_memory_mgr()
     if search:
-        res = mgr.search(term=search, memory_type=memory_type, limit=limit)
+        res = await asyncio.to_thread(mgr.search, search, memory_type, limit)
     else:
-        res = mgr.list_memories(category=category, memory_type=memory_type, limit=limit)
+        res = await asyncio.to_thread(mgr.list_memories, category, memory_type, limit)
     if not res.get("success"):
         raise HTTPException(status_code=500, detail=res.get("message", "Unknown error"))
     return {"memories": res.get("memories", []), "count": res.get("count", 0)}
@@ -631,12 +632,9 @@ async def list_memories(
 async def create_memory(body: MemoryCreateInput):
     mgr = _get_memory_mgr()
     key = body.key or f"webui_{int(datetime.utcnow().timestamp() * 1000)}"
-    res = mgr.save(
-        key=key,
-        content=body.content,
-        category=body.category,
-        memory_type=body.memory_type,
-        tags=body.tags,
+    res = await asyncio.to_thread(
+        mgr.save,
+        key, body.content, body.category, body.memory_type, body.tags
     )
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("message", "Create failed"))
@@ -646,7 +644,7 @@ async def create_memory(body: MemoryCreateInput):
 @app.get("/api/memories/stats")
 async def memory_stats():
     mgr = _get_memory_mgr()
-    res = mgr.stats()
+    res = await asyncio.to_thread(mgr.stats)
     if not res.get("success"):
         raise HTTPException(status_code=500, detail=res.get("message", "Unknown error"))
     return res["stats"]
@@ -655,7 +653,7 @@ async def memory_stats():
 @app.get("/api/memories/{key}")
 async def read_memory(key: str):
     mgr = _get_memory_mgr()
-    res = mgr.read(key)
+    res = await asyncio.to_thread(mgr.read, key)
     if not res.get("success"):
         raise HTTPException(status_code=404, detail=res.get("message", "Not found"))
     return res["memory"]
@@ -664,12 +662,9 @@ async def read_memory(key: str):
 @app.put("/api/memories/{key}")
 async def update_memory(key: str, body: MemoryUpdateInput):
     mgr = _get_memory_mgr()
-    res = mgr.update(
-        key=key,
-        content=body.content,
-        category=body.category,
-        memory_type=body.memory_type,
-        tags=body.tags,
+    res = await asyncio.to_thread(
+        mgr.update,
+        key, body.content, body.category, body.memory_type, body.tags
     )
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("message", "Update failed"))
@@ -679,7 +674,7 @@ async def update_memory(key: str, body: MemoryUpdateInput):
 @app.delete("/api/memories/{key}")
 async def delete_memory(key: str):
     mgr = _get_memory_mgr()
-    res = mgr.delete(key)
+    res = await asyncio.to_thread(mgr.delete, key)
     if not res.get("success"):
         raise HTTPException(status_code=404, detail=res.get("message", "Not found"))
     return {"result": "ok"}
@@ -688,7 +683,7 @@ async def delete_memory(key: str):
 @app.post("/api/memories/{key}/pin")
 async def pin_memory(key: str, body: MemoryPinInput):
     mgr = _get_memory_mgr()
-    read_res = mgr.read(key)
+    read_res = await asyncio.to_thread(mgr.read, key)
     if not read_res.get("success"):
         raise HTTPException(status_code=404, detail=read_res.get("message", "Not found"))
     mem = read_res["memory"]
@@ -697,7 +692,7 @@ async def pin_memory(key: str, body: MemoryPinInput):
         tags.append("pinned")
     elif not body.pin and "pinned" in tags:
         tags = [t for t in tags if t != "pinned"]
-    res = mgr.update(key=key, tags=tags)
+    res = await asyncio.to_thread(mgr.update, key, None, None, None, tags)
     if not res.get("success"):
         raise HTTPException(status_code=500, detail=res.get("message", "Pin failed"))
     return {"result": "ok", "pinned": body.pin}
