@@ -723,6 +723,7 @@ class MemorySystem:
             self.sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_category ON memories(category)")
             self.sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_type ON memories(memory_type)")
             self.sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_created ON memories(created_at)")
+            self.sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_updated ON memories(updated_at)")
             self.sqlite_conn.execute("CREATE INDEX IF NOT EXISTS idx_hash ON memories(content_hash)")
             self.sqlite_conn.commit()
 
@@ -919,6 +920,7 @@ class MemorySystem:
                 doc = self.collection.find_one_and_update(
                     {"key": key},
                     {"$inc": {"access_count": 1}},
+                    projection={"embedding": 0},
                     return_document=ReturnDocument.AFTER,
                 )
                 if not doc:
@@ -1066,7 +1068,7 @@ class MemorySystem:
 
                 with self._sqlite_lock:
                     rows = self.sqlite_conn.execute(
-                        f"SELECT * FROM memories{where_sql} ORDER BY COALESCE(updated_at, created_at) DESC LIMIT ?",
+                        f"SELECT * FROM memories{where_sql} ORDER BY updated_at DESC, created_at DESC LIMIT ?",
                         params
                     ).fetchall()
 
@@ -1090,7 +1092,7 @@ class MemorySystem:
                 if memory_type:
                     filters["memory_type"] = memory_type
 
-                cursor = self.collection.find(filters).sort("updated_at", DESCENDING).limit(limit)
+                cursor = self.collection.find(filters, {"embedding": 0}).sort("updated_at", DESCENDING).limit(limit)
                 for doc in cursor:
                     content = doc.get("content", "")
                     if len(content) > 200:
@@ -1154,7 +1156,7 @@ class MemorySystem:
                 if memory_type:
                     query["memory_type"] = memory_type
 
-                cursor = self.collection.find(query).sort("access_count", DESCENDING).limit(limit)
+                cursor = self.collection.find(query, {"embedding": 0}).sort("access_count", DESCENDING).limit(limit)
                 for doc in cursor:
                     content = doc.get("content", "")
                     if len(content) > 200:
