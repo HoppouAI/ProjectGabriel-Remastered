@@ -44,9 +44,6 @@ console_logs = deque(maxlen=100)
 websocket_clients: list[WebSocket] = []
 _state_broadcast_task = None
 _last_state_payload = None
-_recent_memories_cache: dict | None = None
-_recent_memories_cache_ts: float = 0
-_RECENT_MEMORIES_TTL = 10  # seconds
 
 app = FastAPI(title="Control Panel")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -181,14 +178,7 @@ def get_full_state() -> dict:
     memory_mgr = shared_state.get("memory_mgr")
     if memory_mgr and hasattr(memory_mgr, "list_memories"):
         try:
-            global _recent_memories_cache, _recent_memories_cache_ts
-            now_ts = datetime.now().timestamp()
-            if _recent_memories_cache is not None and (now_ts - _recent_memories_cache_ts) < _RECENT_MEMORIES_TTL:
-                recent_memories = _recent_memories_cache
-            else:
-                recent_memories = memory_mgr.list_memories(limit=10)
-                _recent_memories_cache = recent_memories
-                _recent_memories_cache_ts = now_ts
+            recent_memories = memory_mgr.list_memories(limit=10)
         except Exception:
             pass
 
