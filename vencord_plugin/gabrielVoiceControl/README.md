@@ -74,14 +74,19 @@ Send JSON over WebSocket:
 
 | Command | Fields | Description |
 |---------|--------|-------------|
-| `join_voice` | `channel_id` | Join a voice channel |
+| `join_voice` | `channel_id` | Join a voice channel (server or DM) |
 | `leave_voice` | - | Leave current voice channel |
-| `call_user` | `channel_id` | Start a DM/group call |
-| `answer_call` | `channel_id` | Answer an incoming call |
-| `hang_up` | - | Hang up current call |
-| `get_voice_state` | - | Get current voice status |
+| `call_user` | `channel_id` | Join a DM/group DM channel and ring recipients |
+| `call_user_by_id` | `user_id` | Create or open DM, join voice, and ring a specific user |
+| `answer_call` | `channel_id` | Accept an incoming call |
+| `hang_up` | - | Disconnect from voice and stop ringing |
+| `get_voice_state` | - | Get current voice state (channel, users, mute/deaf) |
 | `set_mute` | `mute` (bool) | Toggle self mute |
-| `set_deaf` | `deaf` (bool) | Toggle self deaf |
+| `set_deaf` | `deaf` (bool) | Toggle self deafen |
+| `find_user` | `query` | Search for a user by username or display name |
+| `ping` | - | Health check |
+
+All commands accept an optional `nonce` string for response matching.
 
 ### Example
 
@@ -94,12 +99,17 @@ Response:
 {"op": "command_result", "nonce": "abc-123", "success": true, "data": {"channel_id": "123456789", "guild_id": "987654321"}}
 ```
 
+`find_user` response:
+```json
+{"op": "command_result", "success": true, "data": {"users": [{"id": "...", "username": "...", "display_name": "...", "dm_channel_id": "...", "is_friend": true, "mutual_guild_ids": ["..."]}], "count": 1}}
+```
+
 ## Events (pushed to AI clients)
 
 | Event | Data | Description |
 |-------|------|-------------|
-| `voice_state_update` | `user_id`, `channel_id`, `guild_id` | Someone joined/left/moved |
-| `call_incoming` | `channel_id`, `ringing` | Incoming call |
+| `voice_state_update` | `user_id`, `channel_id`, `guild_id` | User joined, left, or moved voice channel |
+| `call_incoming` | `channel_id`, `ringing` | Incoming call received |
 
 ## Security
 
@@ -109,14 +119,23 @@ Response:
 
 ## AI Tools
 
+These are the Gemini function-calling tools exposed to the AI sessions. They map to the WebSocket commands above internally.
+
 ### Discord Bot Session
-- `joinVoiceChannel(channel_id)` - Join a voice channel
-- `callUser(channel_id?)` - Start a DM call (defaults to current channel)
-- `leaveVoiceChannel()` - Leave voice / hang up
-- `getVoiceState()` - Check current voice status
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `joinVoiceChannel` | `channel_id` | Join a Discord voice channel by ID |
+| `callUser` | `channel_id?`, `user_id?`, `name?` | Call someone. Resolves by channel ID, user ID, or name search (auto-creates DM if needed) |
+| `leaveVoiceChannel` | - | Leave voice or hang up a call |
+| `findUser` | `query` | Search for a Discord user by username or display name |
+| `getVoiceState` | - | Get current voice state (channel, who's in it, mute/deaf status) |
 
 ### Main VRChat Session
-- `discord_joinVoice(channel_id)` - Join a Discord voice channel
-- `discord_callUser(channel_id)` - Start a Discord call
-- `discord_leaveVoice()` - Leave Discord voice
-- `discord_getVoiceState()` - Get Discord voice status
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `sendDiscordMessage` | `username`, `message` | Send a DM to a Discord user via the selfbot |
+| `relayToDiscord` | `content` | Relay a message to the Discord bot session (AI-to-AI coordination) |
+| `getDiscordStatus` | - | Check if the Discord bot is connected and get its status |
+| `discord_hangUp` | - | Hang up / leave the current Discord voice call |
