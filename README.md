@@ -4,6 +4,8 @@ The 2026 remaster of Project Gabriel by [Hoppou.AI](https://hoppou.ai/). Gabriel
 
 ![Gabriel Remaster](https://hoppou.ai/images/projects/ProjectCardHoppouAI-GabrielRemaster.webp)
 
+**Join our Discord for support, updates, and to hang out:** [discord.gg/ZNWTYTk4Vq](https://discord.gg/ZNWTYTk4Vq)
+
 ---
 
 ## Summary
