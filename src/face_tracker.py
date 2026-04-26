@@ -26,6 +26,7 @@ DEFAULT_CFG = {
     "lock_timeout": 3.0,
     "idle_switch_min": 5.0,
     "idle_switch_max": 10.0,
+    "cache_cleanup_interval": 300.0,
 }
 
 
@@ -46,6 +47,7 @@ class FaceTracker:
         self._camera = None
         self._use_half = False
         self._preload_ready = threading.Event()
+        self._next_cache_cleanup = 0.0
 
         # External state reference - set by main.py / gemini_live
         self._speaking_ref = None  # callable that returns True when AI is speaking
@@ -71,6 +73,7 @@ class FaceTracker:
         self._fps = 0.0
         self._frame_count = 0
         self._fps_timer = time.perf_counter()
+        self._next_cache_cleanup = time.perf_counter() + float(self._cfg.get("cache_cleanup_interval", 300.0))
 
     @property
     def active(self):
@@ -233,6 +236,7 @@ class FaceTracker:
             if monitor_cfg >= len(sct.monitors):
                 monitor_cfg = 1
             monitor = sct.monitors[monitor_cfg]
+            self._camera = sct
             logger.info(
                 f"Face tracker: mss initialized (monitor {monitor_cfg}: "
                 f"{monitor['width']}x{monitor['height']})"
@@ -244,6 +248,42 @@ class FaceTracker:
         except Exception as e:
             logger.error(f"Face tracker screen capture init failed: {e}")
             return None
+
+    def _close_screen_capture(self):
+        camera = self._camera
+        if camera is None:
+            return
+        for method_name in ("stop", "release", "close"):
+            method = getattr(camera, method_name, None)
+            if not method:
+                continue
+            try:
+                method()
+            except Exception:
+                pass
+        self._camera = None
+
+    def _cleanup_inference_cache(self, torch_module=None):
+        try:
+            predictor = getattr(self.model, "predictor", None) if self.model else None
+            if predictor is not None and hasattr(predictor, "results"):
+                predictor.results = None
+            if torch_module is not None and torch_module.cuda.is_available():
+                torch_module.cuda.empty_cache()
+        except Exception as e:
+            logger.debug(f"Face tracker cache cleanup skipped: {e}")
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+
+    def _maybe_cleanup_inference_cache(self, torch_module):
+        now = time.perf_counter()
+        interval = float(self._cfg.get("cache_cleanup_interval", 300.0))
+        if interval > 0 and now >= self._next_cache_cleanup:
+            self._cleanup_inference_cache(torch_module)
+            self._next_cache_cleanup = now + interval
 
     def _run_loop(self):
         import cv2
@@ -301,6 +341,7 @@ class FaceTracker:
                 detections = self._parse_faces(results)
                 self._update_tracking(detections)
                 self._send_osc()
+                self._maybe_cleanup_inference_cache(torch)
 
                 # FPS
                 self._frame_count += 1
@@ -324,12 +365,8 @@ class FaceTracker:
             logger.error(f"Face tracker loop error: {e}", exc_info=True)
         finally:
             self._zero_osc()
-            if self._camera is not None:
-                try:
-                    del self._camera
-                except Exception:
-                    pass
-                self._camera = None
+            self._cleanup_inference_cache(torch if "torch" in locals() else None)
+            self._close_screen_capture()
             self._active = False
             logger.info(f"Face tracker stopped (last avg {self._fps:.1f} FPS)")
 
