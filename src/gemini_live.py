@@ -185,6 +185,9 @@ class GeminiLiveSession:
         self._wanderer = None  # Set externally from main.py
         self._save_audio = False  # Set externally via --save-audio flag
         self._audio_recording = bytearray()  # Accumulated audio for WAV export
+        self._audio_recording_writer = None
+        self._audio_recording_path = None
+        self._audio_recording_seconds = 0.0
         self._usage_metadata = {
             "prompt_tokens": 0,
             "response_tokens": 0,
@@ -294,6 +297,18 @@ class GeminiLiveSession:
 
     def save_audio_to_wav(self):
         """Save accumulated audio recording to a WAV file."""
+        if self._audio_recording_writer is not None:
+            try:
+                self._audio_recording_writer.close()
+            except Exception:
+                pass
+            path = self._audio_recording_path
+            duration = self._audio_recording_seconds
+            self._audio_recording_writer = None
+            self._audio_recording_path = None
+            self._audio_recording_seconds = 0.0
+            logger.info(f"Saved {duration:.1f}s of audio to {path}")
+            return
         if not self._audio_recording:
             logger.info("No audio recorded, skipping WAV save")
             return
@@ -311,6 +326,24 @@ class GeminiLiveSession:
             wf.writeframes(bytes(self._audio_recording))
         duration = len(self._audio_recording) / (sample_rate * 2)
         logger.info(f"Saved {duration:.1f}s of audio to {wav_path}")
+
+    def _record_output_audio(self, audio_data: bytes):
+        """Stream optional debug audio recording to disk without growing RAM forever."""
+        if not audio_data:
+            return
+        if self._audio_recording_writer is None:
+            import wave
+            data_dir = Path("data")
+            data_dir.mkdir(exist_ok=True)
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            self._audio_recording_path = data_dir / f"gemini_output_{timestamp}.wav"
+            self._audio_recording_writer = wave.open(str(self._audio_recording_path), "wb")
+            self._audio_recording_writer.setnchannels(1)
+            self._audio_recording_writer.setsampwidth(2)
+            self._audio_recording_writer.setframerate(self.config.receive_sample_rate)
+            logger.info(f"Recording Gemini output audio to {self._audio_recording_path}")
+        self._audio_recording_writer.writeframes(audio_data)
+        self._audio_recording_seconds += len(audio_data) / (self.config.receive_sample_rate * 2)
 
     def set_mic_muted(self, muted: bool):
         """Set mic mute state."""
@@ -1278,7 +1311,7 @@ class GeminiLiveSession:
                 audio_data = self.audio.process_output_audio(audio_data)
                 if audio_data:
                     if self._save_audio:
-                        self._audio_recording.extend(audio_data)
+                        self._record_output_audio(audio_data)
                     # Chunked write so we can stop quickly on interrupt
                     for i in range(0, len(audio_data), CHUNK_BYTES):
                         if self._playback_interrupted:
