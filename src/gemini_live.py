@@ -734,26 +734,45 @@ class GeminiLiveSession:
                         self._silero_vad.reset_states()
                     input_stream = self.audio.open_input_stream()
                     output_stream = self.audio.open_output_stream()
+                    tasks = []
                     try:
-                        tasks = [
-                            self._listen_audio_loop(input_stream),
-                            self._send_realtime_loop(session),
-                            self._receive_loop(session),
-                            self._play_audio_loop(output_stream),
-                            self._reconnect_monitor_loop(),
-                            self._now_playing_loop(),
-                            self._idle_check_loop(),
+                        task_specs = [
+                            ("audio-listen", self._listen_audio_loop(input_stream)),
+                            ("send-realtime", self._send_realtime_loop(session)),
+                            ("receive", self._receive_loop(session)),
+                            ("audio-playback", self._play_audio_loop(output_stream)),
+                            ("reconnect-monitor", self._reconnect_monitor_loop()),
+                            ("now-playing", self._now_playing_loop()),
+                            ("idle-check", self._idle_check_loop()),
                         ]
                         # Always start TTS audio loop (supports hot-swap)
-                        tasks.append(self._tts_audio_loop())
+                        task_specs.append(("tts-audio", self._tts_audio_loop()))
                         if self.config.vision_enabled:
-                            tasks.append(self._capture_screen_loop())
+                            task_specs.append(("screen-capture", self._capture_screen_loop()))
                             logger.info(f"Screen capture enabled (monitor {self.config.vision_monitor})")
-                        await asyncio.gather(*tasks)
+                        tasks = [
+                            asyncio.create_task(coro, name=f"gemini-{name}")
+                            for name, coro in task_specs
+                        ]
+                        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                        for task in done:
+                            if task.cancelled():
+                                continue
+                            exc = task.exception()
+                            if exc:
+                                raise exc
+                            raise ConnectionError(f"{task.get_name()} stopped unexpectedly")
                     finally:
                         self._session = None
                         self._stream_closing = True
                         self._idle_chatbox.stop()
+                        for task in tasks:
+                            task.cancel()
+                        if tasks:
+                            await asyncio.gather(*tasks, return_exceptions=True)
+                        if self._pending_finalize_task:
+                            self._pending_finalize_task.cancel()
+                            self._pending_finalize_task = None
                         # Drain audio queue and wait for in-flight writes
                         while not self._audio_in_queue.empty():
                             try:
