@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Card from '../components/Card'
-import { api } from '../lib/api'
+import { api, getErrorMessage } from '../lib/api'
 import type { MusicFile } from '../lib/types'
 import {
   RiPlayFill, RiDeleteBinLine, RiUploadCloud2Line,
@@ -74,8 +74,9 @@ export default function Music({ onToast }: Props) {
     try {
       const resp = await fetch('/api/music-upload', { method: 'POST', body: form })
       const data = await resp.json()
-      if (!resp.ok) throw new Error(data.detail || 'Upload failed')
-      onToast(`Uploaded ${data.uploaded?.length || fileList.length} file(s)`, 'success')
+      if (!resp.ok) throw new Error(getErrorMessage(data, 'Upload failed'))
+      const uploadedCount = (data.uploaded?.length || 0) + (data.extracted?.length || 0)
+      onToast(`Uploaded ${uploadedCount || fileList.length} file(s)`, 'success')
       load()
     } catch (e: unknown) {
       onToast((e as Error).message, 'error')
