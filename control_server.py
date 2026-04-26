@@ -544,11 +544,10 @@ async def list_music_folders():
 
 
 @app.post("/api/music-upload")
-async def upload_music(file: UploadFile = File(...), folder: str = ""):
-    if file.size and file.size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File too large (max 2GB)")
+async def upload_music(files: list[UploadFile] = File(...), folder: str = ""):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
 
-    ext = Path(file.filename).suffix.lower()
     safe_folder = Path(folder).as_posix().strip("/")
     target_dir = MUSIC_DIR / safe_folder if safe_folder else MUSIC_DIR
 
@@ -557,16 +556,38 @@ async def upload_music(file: UploadFile = File(...), folder: str = ""):
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    if ext in ARCHIVE_EXTENSIONS:
-        return await _extract_archive(file, target_dir)
-    elif ext in ALLOWED_EXTENSIONS:
+    uploaded: list[str] = []
+    extracted: list[str] = []
+    errors: list[str] = []
+
+    for file in files:
+        if file.size and file.size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"{file.filename}: file too large (max 2GB)")
+
+        ext = Path(file.filename).suffix.lower()
+        if ext in ARCHIVE_EXTENSIONS:
+            result = await _extract_archive(file, target_dir)
+            extracted.extend(result.get("files", []))
+            errors.extend(result.get("errors", []))
+            continue
+
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {ext}")
+
         dest = target_dir / file.filename
         with open(dest, "wb") as f:
             while chunk := await file.read(1024 * 1024):
                 f.write(chunk)
-        return {"message": f"Uploaded {file.filename}", "filename": file.filename}
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported format: {ext}")
+
+        uploaded.append(str(dest.relative_to(MUSIC_DIR)))
+
+    total_saved = len(uploaded) + len(extracted)
+    return {
+        "message": f"Uploaded {total_saved} file(s)",
+        "uploaded": uploaded,
+        "extracted": extracted,
+        "errors": errors,
+    }
 
 
 async def _extract_archive(file: UploadFile, target_dir: Path):
