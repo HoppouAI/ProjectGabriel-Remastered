@@ -45,6 +45,8 @@ DEFAULT_CFG = {
     "strafe_scale": 0.6,
     "too_close_area": 0.072,
     "backup_scale": 0.5,
+    "cache_cleanup_interval": 300.0,
+    "tracker_reset_interval": 1800.0,
 }
 
 
@@ -96,6 +98,8 @@ class PlayerTracker:
         self._first_frame = True
         self._preload_ready = threading.Event()
         self._vision_debug = False  # set True when vision debug server is running
+        self._next_cache_cleanup = 0.0
+        self._next_tracker_reset = 0.0
 
         # Tracking state
         self._locked_id = None
@@ -114,6 +118,9 @@ class PlayerTracker:
         self._fps = 0.0
         self._frame_count = 0
         self._fps_timer = time.perf_counter()
+        now = time.perf_counter()
+        self._next_cache_cleanup = now + float(self._cfg.get("cache_cleanup_interval", 300.0))
+        self._next_tracker_reset = now + float(self._cfg.get("tracker_reset_interval", 1800.0))
 
     # ── Properties ────────────────────────────────────────────────────────
 
@@ -322,6 +329,7 @@ class PlayerTracker:
             if monitor_cfg >= len(sct.monitors):
                 monitor_cfg = 1
             monitor = sct.monitors[monitor_cfg]
+            self._camera = sct
             logger.info(
                 f"mss initialized (monitor {monitor_cfg}: "
                 f"{monitor['width']}x{monitor['height']})"
@@ -334,6 +342,50 @@ class PlayerTracker:
         except Exception as e:
             logger.error(f"Screen capture init failed entirely: {e}")
             return None
+
+    def _close_screen_capture(self):
+        camera = self._camera
+        if camera is None:
+            return
+        for method_name in ("stop", "release", "close"):
+            method = getattr(camera, method_name, None)
+            if not method:
+                continue
+            try:
+                method()
+            except Exception:
+                pass
+        self._camera = None
+
+    def _cleanup_inference_cache(self, torch_module=None):
+        try:
+            predictor = getattr(self.model, "predictor", None) if self.model else None
+            if predictor is not None and hasattr(predictor, "results"):
+                predictor.results = None
+            if torch_module is not None and torch_module.cuda.is_available():
+                torch_module.cuda.empty_cache()
+        except Exception as e:
+            logger.debug(f"Tracker cache cleanup skipped: {e}")
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+
+    def _maybe_refresh_tracker_state(self, torch_module):
+        now = time.perf_counter()
+        cleanup_interval = float(self._cfg.get("cache_cleanup_interval", 300.0))
+        if cleanup_interval > 0 and now >= self._next_cache_cleanup:
+            self._cleanup_inference_cache(torch_module)
+            self._next_cache_cleanup = now + cleanup_interval
+
+        reset_interval = float(self._cfg.get("tracker_reset_interval", 1800.0))
+        if reset_interval > 0 and now >= self._next_tracker_reset:
+            self._first_frame = True
+            self._locked_id = None
+            self._lock_lost_time = None
+            self._next_tracker_reset = now + reset_interval
+            logger.info("Tracker state refreshed to keep long sessions stable")
 
     # ── Main Tracking Loop (runs in thread) ───────────────────────────────
 
@@ -398,6 +450,8 @@ class PlayerTracker:
                 if self._vision_debug:
                     self._push_debug_frame(resized, results, detections)
 
+                self._maybe_refresh_tracker_state(torch)
+
                 # ── FPS ──
                 self._frame_count += 1
                 elapsed = time.perf_counter() - self._fps_timer
@@ -420,12 +474,8 @@ class PlayerTracker:
             logger.error(f"Tracker loop error: {e}", exc_info=True)
         finally:
             self._zero_osc()
-            if self._camera is not None:
-                try:
-                    del self._camera
-                except Exception:
-                    pass
-                self._camera = None
+            self._cleanup_inference_cache(torch if "torch" in locals() else None)
+            self._close_screen_capture()
             self._active = False
             logger.info(f"Player tracker stopped (last avg {self._fps:.1f} FPS)")
 
