@@ -644,6 +644,8 @@ tools:
     enabled: true      # listPersonalities, switchPersonality, getCurrentPersonality
   movement:
     enabled: true      # vrchatCrouch, vrchatCrawl, vrchatMove, vrchatStop, vrchatJump, vrchatGrab, vrchatDrop, vrchatUse, vrchatLook, vrchatLookVertical
+  avatar_scaling:
+    enabled: true      # vrchatSetAvatarScale, vrchatAdjustAvatarScale, vrchatGetAvatarScale
   tracker:
     enabled: true      # startFollow, stopFollow, setFollowDistance
   wanderer:
