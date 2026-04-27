@@ -17,6 +17,8 @@ from src.personalities import PersonalityManager
 
 logger = logging.getLogger(__name__)
 
+_CTRL_TOKEN_PATTERN = re.compile(r"<\s*ctrl\s*\d+\s*>?", re.IGNORECASE)
+
 
 class DiscordBot:
     """Discord selfbot powered by a Gemini Live text session.
@@ -118,12 +120,25 @@ class DiscordBot:
             return {"result": "error", "message": f"User not found: {username_or_id}"}
 
         try:
+            message = self._sanitize_generated_text(message)
+            if not message:
+                return {"result": "error", "message": "Message is empty after sanitization"}
             dm = await user.create_dm()
             await dm.send(message)
             self._conversations.add_message(str(dm.id), "assistant", message)
             return {"result": "ok", "sent_to": str(user)}
         except Exception as e:
             return {"result": "error", "message": str(e)}
+
+    @staticmethod
+    def _sanitize_generated_text(text):
+        """Remove Gemini Live control artifacts from generated text."""
+        if not text:
+            return ""
+        cleaned = _CTRL_TOKEN_PATTERN.sub(" ", text)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s*\n\s*", "\n", cleaned)
+        return cleaned.strip()
 
     async def receive_relay(self, text):
         """Receive a relay message from the VRChat session into the Gemini session."""
@@ -657,6 +672,10 @@ class DiscordBot:
 
                 # Strip channel tag the model may echo back
                 response = re.sub(r'^\[CHANNEL:[^\]]*\]\s*', '', response)
+                response = self._sanitize_generated_text(response)
+                if not response:
+                    logger.warning("Gemini response was empty after sanitization")
+                    return
                 # Strip mass pings
                 response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
 
@@ -768,6 +787,9 @@ class DiscordBot:
 
             if response and not response.startswith("[Error:"):
                 response = re.sub(r'^\[CHANNEL:[^\]]*\]\s*', '', response)
+                response = self._sanitize_generated_text(response)
+                if not response:
+                    return
                 response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
                 await bot_message.reply(response, mention_author=False)
                 self._conversations.add_message(channel_id, "assistant", response)

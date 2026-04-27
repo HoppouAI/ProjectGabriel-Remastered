@@ -1,10 +1,13 @@
 import json
 import logging
+import re
 import time as _time
 from pathlib import Path
 from google.genai import types
 
 logger = logging.getLogger(__name__)
+
+_CTRL_TOKEN_PATTERN = re.compile(r"<\s*ctrl\s*\d+\s*>?", re.IGNORECASE)
 
 MUTES_FILE = Path(__file__).parent.parent / "data" / "mutes.json"
 USER_CACHE_FILE = Path(__file__).parent.parent / "data" / "user_cache.json"
@@ -272,7 +275,7 @@ class DiscordActionsTool:
             types.FunctionDeclaration(
                 name="renameGroupChat",
                 description=(
-                    "Rename a group DM. You must be the group owner.\n"
+                    "Rename a group DM.\n"
                     "**Invocation Condition:** Call when asked to rename or change the name of a group chat."
                 ),
                 parameters={
@@ -335,6 +338,10 @@ class DiscordActionsTool:
         if not target or not message:
             return {"result": "error", "message": "target and message required"}
 
+        message = self._sanitize_generated_text(message)
+        if not message:
+            return {"result": "error", "message": "message is empty after sanitization"}
+
         # Strip mass pings
         message = message.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
 
@@ -381,6 +388,16 @@ class DiscordActionsTool:
         except Exception as e:
             logger.error(f"Send message failed: {e}")
             return {"result": "error", "message": str(e)}
+
+    @staticmethod
+    def _sanitize_generated_text(text):
+        """Remove Gemini Live control artifacts from generated text."""
+        if not text:
+            return ""
+        cleaned = _CTRL_TOKEN_PATTERN.sub(" ", text)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s*\n\s*", "\n", cleaned)
+        return cleaned.strip()
 
     def _log_sent_message(self, channel_id, message):
         conversations = getattr(self.handler, "_conversations", None)
