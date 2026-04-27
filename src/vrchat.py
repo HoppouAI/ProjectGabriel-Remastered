@@ -1,17 +1,21 @@
 import asyncio
-import time
 import logging
-import threading
+import math
 import queue
+import threading
+import time
+
+from pynput.keyboard import Controller as KeyboardController
 from pythonosc import udp_client
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import ThreadingOSCUDPServer
-from pynput.keyboard import Key, Controller as KeyboardController
 
 logger = logging.getLogger(__name__)
 
 CHATBOX_CHAR_LIMIT = 144
 CHATBOX_RATE_LIMIT = 1.27  # VRChat chatbox rate limit in seconds
+AVATAR_EYE_HEIGHT_MIN_M = 0.1
+AVATAR_EYE_HEIGHT_MAX_M = 100.0
 
 # Keyboard controller for VRChat actions
 _keyboard = KeyboardController()
@@ -35,6 +39,13 @@ class VRChatOSC:
         self.seated = False
         self.velocity_received = False  # True once any velocity update arrives
 
+        # Avatar scaling state from VRChat OSC output
+        self.avatar_eye_height_meters = None
+        self.avatar_eye_height_min_meters = None
+        self.avatar_eye_height_max_meters = None
+        self.avatar_eye_height_scaling_allowed = None
+        self.last_requested_avatar_eye_height_meters = None
+
         # Start OSC listener for avatar parameters
         self._start_osc_listener(config)
 
@@ -47,6 +58,10 @@ class VRChatOSC:
         dispatcher.map("/avatar/parameters/VelocityY", self._on_velocity_y)
         dispatcher.map("/avatar/parameters/Grounded", self._on_grounded)
         dispatcher.map("/avatar/parameters/Seated", self._on_seated)
+        dispatcher.map("/avatar/eyeheight", self._on_avatar_eye_height)
+        dispatcher.map("/avatar/eyeheightmin", self._on_avatar_eye_height_min)
+        dispatcher.map("/avatar/eyeheightmax", self._on_avatar_eye_height_max)
+        dispatcher.map("/avatar/eyeheightscalingallowed", self._on_avatar_eye_height_scaling_allowed)
 
         try:
             server = ThreadingOSCUDPServer(("127.0.0.1", receive_port), dispatcher)
@@ -73,22 +88,34 @@ class VRChatOSC:
     def _on_seated(self, address, value):
         self.seated = bool(value)
 
+    def _on_avatar_eye_height(self, address, value):
+        self.avatar_eye_height_meters = float(value)
+
+    def _on_avatar_eye_height_min(self, address, value):
+        self.avatar_eye_height_min_meters = float(value)
+
+    def _on_avatar_eye_height_max(self, address, value):
+        self.avatar_eye_height_max_meters = float(value)
+
+    def _on_avatar_eye_height_scaling_allowed(self, address, value):
+        self.avatar_eye_height_scaling_allowed = bool(value)
+
     def _chatbox_worker(self):
         """Background thread that sends chatbox messages respecting rate limit."""
         while True:
             try:
                 text = self._chatbox_queue.get()
-                
+
                 # Rate limit enforcement
                 now = time.time()
                 elapsed = now - self._last_chatbox_time
                 if elapsed < CHATBOX_RATE_LIMIT:
                     time.sleep(CHATBOX_RATE_LIMIT - elapsed)
-                
+
                 # Send the message
                 self.client.send_message("/chatbox/input", [text, True, False])
                 self._last_chatbox_time = time.time()
-                
+
             except Exception as e:
                 logger.error(f"Chatbox worker error: {e}")
 
@@ -160,6 +187,40 @@ class VRChatOSC:
         time.sleep(0.05)
         self.client.send_message("/input/Voice", 0)
 
+    @staticmethod
+    def clamp_avatar_eye_height(height_meters: float) -> float:
+        requested = float(height_meters)
+        if not math.isfinite(requested):
+            raise ValueError("Avatar eye height must be a finite number")
+        return max(AVATAR_EYE_HEIGHT_MIN_M, min(AVATAR_EYE_HEIGHT_MAX_M, requested))
+
+    def set_avatar_eye_height(self, height_meters: float) -> dict:
+        """Set avatar eye height in meters using VRChat OSC avatar scaling."""
+        requested = float(height_meters)
+        clamped = self.clamp_avatar_eye_height(requested)
+        self.last_requested_avatar_eye_height_meters = clamped
+        self.client.send_message("/avatar/eyeheight", clamped)
+        logger.info(f"Set avatar eye height to {clamped:.3f}m")
+        return {
+            "requested_height_meters": requested,
+            "sent_height_meters": clamped,
+            "clamped": clamped != requested,
+            "supported_min_meters": AVATAR_EYE_HEIGHT_MIN_M,
+            "supported_max_meters": AVATAR_EYE_HEIGHT_MAX_M,
+        }
+
+    def get_avatar_scaling_status(self) -> dict:
+        """Return the latest avatar scaling values observed from VRChat OSC."""
+        return {
+            "eye_height_meters": self.avatar_eye_height_meters,
+            "eye_height_min_meters": self.avatar_eye_height_min_meters,
+            "eye_height_max_meters": self.avatar_eye_height_max_meters,
+            "scaling_allowed": self.avatar_eye_height_scaling_allowed,
+            "last_requested_height_meters": self.last_requested_avatar_eye_height_meters,
+            "supported_min_meters": AVATAR_EYE_HEIGHT_MIN_M,
+            "supported_max_meters": AVATAR_EYE_HEIGHT_MAX_M,
+        }
+
     def set_movement(self, forward: float = 0.0, horizontal: float = 0.0):
         """Set movement axes (float -1 to 1). Reset to 0 when done."""
         self.client.send_message("/input/Vertical", max(-1.0, min(1.0, forward)))
@@ -187,7 +248,7 @@ class VRChatOSC:
     # Manual movement methods for AI control
     def start_move(self, direction: str, speed: str = "normal"):
         """Start moving in a direction with speed control.
-        
+
         direction: forward, backward, left (strafe), right (strafe)
         speed: 'slow' (0.5), 'normal' (0.8), 'fast' (1.0), 'sprint' (1.0 + Run)
         """
@@ -224,7 +285,7 @@ class VRChatOSC:
 
     def look(self, direction: str, duration: float, speed: str = "normal"):
         """Smooth turn left or right, ramping up/down like the tracker system.
-        
+
         speed: 'slow' (0.3), 'normal' (0.6), 'fast' (1.0) - max axis value
         """
         speed_map = {"slow": 0.6, "normal": 0.8, "fast": 1.0}

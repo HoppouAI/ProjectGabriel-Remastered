@@ -1,5 +1,7 @@
 import logging
+
 from google.genai import types
+
 from src.emotions import handle_emotion_function_call
 
 logger = logging.getLogger(__name__)
@@ -22,14 +24,25 @@ class ToolHandler:
         self.social_client = None
 
         # Import all tool modules to trigger @register_tool
-        from src.tools import soundboard, music, voice, personalities  # noqa: F401
-        from src.tools import movement, tracker as tracker_mod, wanderer  # noqa: F401
-        from src.tools import vrchat_api, system, memory_tools, emotions_tools  # noqa: F401
+        from src.tools import (  # noqa: F401
+            avatar_scaling,
+            emotions_tools,
+            memory_tools,
+            movement,
+            music,
+            personalities,
+            soundboard,
+            system,
+            tracker,
+            voice,
+            vrchat_api,
+            wanderer,
+        )
         from src.tools import discord as discord_tools  # noqa: F401
         from src.tools import music_gen as music_gen_tools  # noqa: F401
-        from src.tools import web_search as web_search_tools  # noqa: F401
         from src.tools import social as social_tools  # noqa: F401
         from src.tools import time as time_tools  # noqa: F401
+        from src.tools import web_search as web_search_tools  # noqa: F401
         from src.tools._base import get_registered_tools
 
         self._tools = [cls(self) for cls in get_registered_tools()]
