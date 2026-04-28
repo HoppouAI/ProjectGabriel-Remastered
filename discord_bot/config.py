@@ -214,6 +214,45 @@ class BotConfig:
         return self.get("conversations", "save_dir", default="discord_bot/data/conversations")
 
     @property
+    def klipy_enabled(self):
+        return self.get("klipy", "enabled", default=True)
+
+    @property
+    def klipy_app_key(self):
+        value = str(self.get("klipy", "app_key", default="") or "").strip()
+        if value.upper().startswith("YOUR_"):
+            return ""
+        return value
+
+    @property
+    def klipy_customer_id(self):
+        return str(self.get("klipy", "customer_id", default="") or "").strip()
+
+    @property
+    def klipy_locale(self):
+        return str(self.get("klipy", "locale", default="us") or "us").strip()
+
+    @property
+    def klipy_content_filter(self):
+        return str(self.get("klipy", "content_filter", default="high") or "high").strip()
+
+    @property
+    def klipy_preferred_size(self):
+        return str(self.get("klipy", "preferred_size", default="md") or "md").strip()
+
+    @property
+    def klipy_preferred_format(self):
+        return str(self.get("klipy", "preferred_format", default="gif") or "gif").strip()
+
+    @property
+    def klipy_format_filter(self):
+        return str(self.get("klipy", "format_filter", default="gif,webp,mp4") or "").strip()
+
+    @property
+    def klipy_attribution(self):
+        return self.get("klipy", "attribution", default=True)
+
+    @property
     def log_level(self):
         return self.get("log_level", default="INFO")
 

@@ -22,6 +22,7 @@ class DiscordToolHandler:
         from discord_bot.tools.memory import DiscordMemoryTool
         from discord_bot.tools.relay import RelayTool
         from discord_bot.tools.discord_actions import DiscordActionsTool
+        from discord_bot.tools.gifs import DiscordGifTool
         from discord_bot.tools.system import DiscordSystemTool
         from discord_bot.tools.personalities import PersonalityTool
         from discord_bot.tools.voice_control import VoiceControlTool
@@ -29,6 +30,7 @@ class DiscordToolHandler:
             DiscordMemoryTool(self),
             RelayTool(self),
             DiscordActionsTool(self),
+            DiscordGifTool(self),
             DiscordSystemTool(self),
             PersonalityTool(self),
             VoiceControlTool(self),

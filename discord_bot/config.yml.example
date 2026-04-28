@@ -136,6 +136,28 @@ conversations:
   save_dir: "discord_bot/data/conversations"
 
 # ══════════════════════════════════════════════════════════
+# KLIPY GIF API
+# ══════════════════════════════════════════════════════════
+# Used by Discord GIF tools for search, trending picks, sending, and starred favorites.
+# Create a key at https://partner.klipy.com/api-keys
+klipy:
+  enabled: true
+  app_key: "YOUR_KLIPY_APP_KEY_HERE"
+  # Optional stable anonymous ID for KLIPY personalization.
+  # Leave empty to use this Discord account ID automatically.
+  customer_id: ""
+  # KLIPY accepts country and locale hints depending on endpoint.
+  locale: "us"
+  # Safety filter for search: off, low, medium, high
+  content_filter: "high"
+  # Preferred send media. Discord embeds direct GIF URLs cleanly.
+  preferred_size: "md"
+  preferred_format: "gif"
+  format_filter: "gif,webp,mp4"
+  # Adds a small Powered by KLIPY line below sent GIFs.
+  attribution: true
+
+# ══════════════════════════════════════════════════════════
 # Embed Webhook
 # ══════════════════════════════════════════════════════════
 # Webhook URL used to render rich embeds for admin commands.
