@@ -202,6 +202,7 @@ benchmarks/
 discord_bot/config.yml
 discord_bot/data/conversations/
 discord_bot/data/session_handle.txt
+discord_bot/data/message_chroma_db/
 discord_bot/prompts/prompts.yml
 discord_bot/prompts/appends.yml
 discord_bot/prompts/personalities.yml

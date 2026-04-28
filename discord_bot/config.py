@@ -1,7 +1,8 @@
-import yaml
 import logging
 from datetime import datetime
 from pathlib import Path
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class BotConfig:
     def __init__(self, path=None):
         if path is None:
             path = BOT_DIR / "config.yml"
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             self._data = yaml.safe_load(f) or {}
         self._keys = [self._data["gemini"]["api_key"]]
         backup = self._data["gemini"].get("backup_keys") or []
@@ -26,14 +27,14 @@ class BotConfig:
     def _load_prompts(self) -> dict:
         prompts_file = PROMPTS_DIR / "prompts.yml"
         if prompts_file.exists():
-            with open(prompts_file, "r", encoding="utf-8") as f:
+            with open(prompts_file, encoding="utf-8") as f:
                 return yaml.safe_load(f) or {}
         return {}
 
     def _load_appends(self) -> list:
         appends_file = PROMPTS_DIR / "appends.yml"
         if appends_file.exists():
-            with open(appends_file, "r", encoding="utf-8") as f:
+            with open(appends_file, encoding="utf-8") as f:
                 return yaml.safe_load(f) or []
         return []
 
@@ -192,6 +193,22 @@ class BotConfig:
     @property
     def context_message_count(self):
         return self.get("behavior", "context_message_count", default=15)
+
+    @property
+    def discord_rag_enabled(self):
+        return self.get("discord_rag", "enabled", default=False)
+
+    @property
+    def discord_rag_auto_inject(self):
+        return self.get("discord_rag", "auto_inject", default=True)
+
+    @property
+    def discord_rag_auto_timeout_seconds(self):
+        return float(self.get("discord_rag", "auto_timeout_seconds", default=4.0))
+
+    @property
+    def discord_rag_backfill_on_startup(self):
+        return self.get("discord_rag", "backfill_on_startup", default=True)
 
     @property
     def memory_enabled(self):
