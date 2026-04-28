@@ -136,6 +136,62 @@ conversations:
   save_dir: "discord_bot/data/conversations"
 
 # ══════════════════════════════════════════════════════════
+# Discord Message RAG
+# ══════════════════════════════════════════════════════════
+# Hybrid long-term recall for Discord messages.
+# The bot keeps recent chat context normally, and this adds:
+#   1. tiny high-confidence auto-injected history snippets
+#   2. tools for explicit semantic search and backfilling
+discord_rag:
+  enabled: false
+
+  # Provider choices:
+  #   local  or chroma:  ChromaDB plus LM Studio embeddings
+  #   gemini or mongo:   MongoDB Atlas Vector Search plus Gemini embeddings
+  provider: "local"
+
+  # Index new Discord messages while the bot runs.
+  index_on_message: true
+
+  # Backfill saved JSON logs from conversations.save_dir on startup.
+  backfill_on_startup: true
+  max_backfill_messages: 25000
+  backfill_batch_size: 32
+
+  # Rolling conversation chunks from saved logs help recall whole exchanges,
+  # not just single lines.
+  window_size: 6
+  window_stride: 3
+
+  # Automatic injection adds only a few strong matches before a response.
+  auto_inject: true
+  auto_inject_limit: 3
+  auto_inject_max_chars: 1600
+  auto_timeout_seconds: 4.0
+  channel_scope_default: true
+  exclude_recent_seconds: 30
+
+  # Default explicit tool search size.
+  search_limit: 8
+
+  # Gemini plus MongoDB Atlas settings.
+  # mongo_uri can also come from DISCORD_RAG_MONGO_URI or GABRIEL_MONGO_URI.
+  mongo_uri: ""
+  mongo_db: "gabriel"
+  mongo_collection: "discord_messages"
+  vector_index: "discord_message_vector_index"
+  embedding_model: "gemini-embedding-001"
+  embedding_dims: 768
+  vector_min_score_gemini: 0.82
+
+  # Local ChromaDB plus LM Studio settings.
+  lm_studio_url: "http://localhost:1234"
+  local_embedding_model: "text-embedding-embeddinggemma-300m-qat"
+  chroma_dir: "discord_bot/data/message_chroma_db"
+  chroma_collection: "discord_messages"
+  vector_min_score_local: 0.55
+
+# ══════════════════════════════════════════════════════════
 # KLIPY GIF API
 # ══════════════════════════════════════════════════════════
 # Used by Discord GIF tools for search, trending picks, sending, and starred favorites.

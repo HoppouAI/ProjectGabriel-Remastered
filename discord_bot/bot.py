@@ -10,9 +10,10 @@ import aiohttp
 import discord
 
 from discord_bot.config import BotConfig
-from discord_bot.gemini_session import GeminiTextSession
-from discord_bot.tools.handler import DiscordToolHandler
 from discord_bot.conversation_store import ConversationStore
+from discord_bot.gemini_session import GeminiTextSession
+from discord_bot.message_rag import DiscordMessageRag
+from discord_bot.tools.handler import DiscordToolHandler
 from src.personalities import PersonalityManager
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,8 @@ class DiscordBot:
         self._client = None
         self._gemini = None
         self._tool_handler = None
+        self._message_rag = None
+        self._rag_backfill_started = False
         self._personality = PersonalityManager(
             personalities_file="discord_bot/prompts/personalities.yml"
         )
@@ -59,6 +62,9 @@ class DiscordBot:
             relay_callback=self._relay_callback,
             personality_mgr=self._personality,
         )
+        self._message_rag = DiscordMessageRag(self.config)
+        self._tool_handler._message_rag = self._message_rag
+        self._tool_handler._conversation_store = self._conversations
 
         # Set up Gemini session (AUDIO modality with transcription)
         self._gemini = GeminiTextSession(self.config, self._tool_handler, self._personality)
@@ -67,6 +73,7 @@ class DiscordBot:
         self._client = discord.Client()
         self._tool_handler.set_discord_client(self._client)
         self._tool_handler._conversations = self._conversations
+        self._tool_handler._conversation_store = self._conversations
 
         # Register event handlers
         self._register_events()
@@ -83,12 +90,16 @@ class DiscordBot:
             self._running = False
             gemini_task.cancel()
             await self._gemini.disconnect()
+            if self._message_rag:
+                self._message_rag.close()
 
     async def stop(self):
         """Stop the bot gracefully."""
         self._running = False
         if self._gemini:
             await self._gemini.disconnect()
+        if self._message_rag:
+            self._message_rag.close()
         if self._client and not self._client.is_closed():
             await self._client.close()
 
@@ -126,6 +137,11 @@ class DiscordBot:
             dm = await user.create_dm()
             await dm.send(message)
             self._conversations.add_message(str(dm.id), "assistant", message)
+            self._run_background(
+                self._message_rag.index_assistant_message(str(dm.id), message, "DM", None)
+                if self._message_rag else None,
+                "index relayed Discord DM",
+            )
             return {"result": "ok", "sent_to": str(user)}
         except Exception as e:
             return {"result": "error", "message": str(e)}
@@ -144,6 +160,61 @@ class DiscordBot:
         """Receive a relay message from the VRChat session into the Gemini session."""
         if self._gemini and self._gemini._connected.is_set():
             await self._gemini.inject_context(text)
+
+    def _run_background(self, coro, label: str):
+        if coro is None:
+            return
+        task = asyncio.create_task(coro)
+
+        def _done(done_task):
+            try:
+                result = done_task.result()
+                if isinstance(result, dict) and not result.get("success", True):
+                    logger.debug(f"Background task {label} returned: {result}")
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.debug(f"Background task {label} failed: {e}")
+
+        task.add_done_callback(_done)
+
+    def _maybe_start_rag_backfill(self):
+        if self._rag_backfill_started:
+            return
+        if not self._message_rag or not self._message_rag.ready:
+            return
+        if not self.config.discord_rag_backfill_on_startup:
+            return
+        self._rag_backfill_started = True
+
+        async def _backfill():
+            result = await self._message_rag.backfill_from_conversations(self._conversations)
+            if result.get("success"):
+                logger.info(f"Discord RAG startup backfill: {result}")
+            else:
+                logger.warning(f"Discord RAG startup backfill skipped: {result}")
+
+        self._run_background(_backfill(), "Discord RAG startup backfill")
+
+    async def _inject_rag_context(self, new_message: str, channel_id: str, current_message_ids: set[str]) -> str:
+        if not self._message_rag or not self._message_rag.ready:
+            return new_message
+        if not self.config.discord_rag_auto_inject:
+            return new_message
+        try:
+            context = await asyncio.wait_for(
+                self._message_rag.auto_context(new_message, channel_id, current_message_ids),
+                timeout=self.config.discord_rag_auto_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.debug("Discord RAG auto context timed out")
+            return new_message
+        except Exception as e:
+            logger.debug(f"Discord RAG auto context failed: {e}")
+            return new_message
+        if not context:
+            return new_message
+        return f"{context}\n\nCurrent Discord message batch:\n{new_message}"
 
     def _restore_mutes(self):
         from discord_bot.tools.discord_actions import DiscordActionsTool
@@ -261,6 +332,7 @@ class DiscordBot:
             if self._gemini:
                 self._gemini.discord_username = self._client.user.name
             self._restore_mutes()
+            self._maybe_start_rag_backfill()
 
         @self._client.event
         async def on_message(message):
@@ -624,8 +696,15 @@ class DiscordBot:
                 username=user_display,
                 attachments=entry["attachment_info"] or None,
             )
+            self._run_background(
+                self._message_rag.index_discord_message(msg, channel_info, entry["attachment_info"] or [])
+                if self._message_rag else None,
+                "index Discord user message",
+            )
 
         new_message = f"[CHANNEL: {channel_info}]\n" + "\n".join(message_lines)
+        current_message_ids = {str(entry["message"].id) for entry in batch}
+        new_message = await self._inject_rag_context(new_message, channel_id, current_message_ids)
 
         # Serialize Gemini interactions -- only one channel at a time
         try:
@@ -656,7 +735,7 @@ class DiscordBot:
                         # After first successful context send, mark session as having context
                         if context_turns:
                             self._gemini._session_resumed = True
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.warning("Gemini response timed out")
 
                 if not response or response.startswith("[Error:"):
@@ -705,6 +784,15 @@ class DiscordBot:
                             await asyncio.sleep(min(typing_delay, 8.0))
 
                 self._conversations.add_message(channel_id, "assistant", response)
+                self._run_background(
+                    self._message_rag.index_assistant_message(
+                        channel_id,
+                        response,
+                        channel_info,
+                        str(last_sent.id) if last_sent else None,
+                    ) if self._message_rag else None,
+                    "index Discord assistant response",
+                )
                 self._cooldowns[channel_id] = time.time()
 
                 # Schedule left-on-read follow-up (20% chance, skip if conversation ended naturally)
@@ -793,6 +881,11 @@ class DiscordBot:
                 response = response.replace("@everyone", "@\u200beveryone").replace("@here", "@\u200bhere")
                 await bot_message.reply(response, mention_author=False)
                 self._conversations.add_message(channel_id, "assistant", response)
+                self._run_background(
+                    self._message_rag.index_assistant_message(channel_id, response, "left-on-read followup", None)
+                    if self._message_rag else None,
+                    "index Discord follow-up",
+                )
         except asyncio.CancelledError:
             pass
         except Exception as e:

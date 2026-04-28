@@ -1,4 +1,5 @@
 import logging
+
 from google.genai import types
 
 logger = logging.getLogger(__name__)
@@ -14,23 +15,27 @@ class DiscordToolHandler:
         self._personality_prompt = None  # Set by PersonalityTool on switch
         self._discord_client = None  # Set by bot after login
         self._conversations = None  # Set by bot after init
+        self._conversation_store = None  # Set by bot after init
+        self._message_rag = None  # Set by bot when Discord RAG is enabled
         self._tool_sent_message = False  # Set by sendDiscordMessage, checked by bot to avoid double sends
         self._tools = []
         self._load_tools()
 
     def _load_tools(self):
-        from discord_bot.tools.memory import DiscordMemoryTool
-        from discord_bot.tools.relay import RelayTool
         from discord_bot.tools.discord_actions import DiscordActionsTool
         from discord_bot.tools.gifs import DiscordGifTool
-        from discord_bot.tools.system import DiscordSystemTool
+        from discord_bot.tools.memory import DiscordMemoryTool
+        from discord_bot.tools.message_rag import DiscordMessageRagTool
         from discord_bot.tools.personalities import PersonalityTool
+        from discord_bot.tools.relay import RelayTool
+        from discord_bot.tools.system import DiscordSystemTool
         from discord_bot.tools.voice_control import VoiceControlTool
         self._tools = [
             DiscordMemoryTool(self),
             RelayTool(self),
             DiscordActionsTool(self),
             DiscordGifTool(self),
+            DiscordMessageRagTool(self),
             DiscordSystemTool(self),
             PersonalityTool(self),
             VoiceControlTool(self),
