@@ -215,6 +215,22 @@ class DiscordActionsTool:
                 },
             ),
             types.FunctionDeclaration(
+                name="listOwnRecentMessages",
+                description=(
+                    "List your own recent Discord messages in the current channel, including message IDs, channel IDs, timestamps, and content previews. "
+                    "Use the returned message_id and channel_id with deleteMessage when you need to delete one of your messages but were not given the ID.\n"
+                    "**Invocation Condition:** Call when asked to delete, edit, inspect, or identify one of your recent Discord messages and you need the message ID first."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "limit": {"type": "INTEGER", "description": "How many of your messages to return, 1 to 25. Default 5"},
+                        "channel_id": {"type": "STRING", "description": "Optional channel ID. Defaults to the current Discord channel"},
+                    },
+                    "required": [],
+                },
+            ),
+            types.FunctionDeclaration(
                 name="blockUser",
                 description=(
                     "Block a Discord user. They will no longer be able to message you or see your online status.\n"
@@ -316,6 +332,8 @@ class DiscordActionsTool:
             return await self._transfer_ownership(args)
         elif name == "deleteMessage":
             return await self._delete_message(args)
+        elif name == "listOwnRecentMessages":
+            return await self._list_own_recent_messages(args)
         elif name == "blockUser":
             return await self._block_user(args)
         elif name == "unblockUser":
@@ -778,6 +796,66 @@ class DiscordActionsTool:
             return {"result": "ok", "deleted": args["message_id"]}
         except Exception as e:
             return {"result": "error", "message": str(e)}
+
+    async def _list_own_recent_messages(self, args):
+        client = self.handler._discord_client
+        if not client:
+            return {"result": "error", "message": "Discord client not connected"}
+
+        limit = self._clamp_int(args.get("limit"), default=5, minimum=1, maximum=25)
+        channel_id = str(args.get("channel_id", "")).strip()
+
+        try:
+            channel = None
+            if channel_id:
+                cid = int(channel_id)
+                channel = client.get_channel(cid)
+                if not channel:
+                    try:
+                        channel = await client.fetch_channel(cid)
+                    except Exception:
+                        channel = None
+            if not channel:
+                channel = getattr(self.handler, "_current_channel", None)
+            if not channel:
+                return {"result": "error", "message": "No active channel context. Provide channel_id."}
+
+            messages = []
+            scan_limit = min(max(limit * 12, 50), 200)
+            async for message in channel.history(limit=scan_limit):
+                if not client.user or message.author.id != client.user.id:
+                    continue
+                content = message.content or ""
+                messages.append({
+                    "message_id": str(message.id),
+                    "channel_id": str(channel.id),
+                    "created_at": message.created_at.isoformat() if message.created_at else None,
+                    "content": content[:1000],
+                    "content_truncated": len(content) > 1000,
+                    "attachments": [att.filename for att in message.attachments[:5]],
+                    "embed_count": len(message.embeds),
+                    "delete_hint": f"deleteMessage channel_id={channel.id} message_id={message.id}",
+                })
+                if len(messages) >= limit:
+                    break
+
+            return {
+                "result": "ok",
+                "channel_id": str(channel.id),
+                "count": len(messages),
+                "messages": messages,
+                "selection_guidance": "Pick the message that matches the requested content, then call deleteMessage with its channel_id and message_id.",
+            }
+        except Exception as e:
+            return {"result": "error", "message": str(e)}
+
+    @staticmethod
+    def _clamp_int(value, default, minimum, maximum):
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = default
+        return max(minimum, min(maximum, parsed))
 
     async def _block_user(self, args):
         ident = args.get("user_id", "").strip()
