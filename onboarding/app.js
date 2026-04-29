@@ -54,6 +54,11 @@ async function init() {
   $('#gemini_model').addEventListener('change', updateThinkingFields);
   updateThinkingFields();
 
+  $('#chatbox_rate_limiter_enabled').addEventListener('change', () => {
+    updateChatboxLimiterFields();
+  });
+  updateChatboxLimiterFields();
+
   $('#idle_chatbox_enabled').addEventListener('change', () => {
     $('#idleChatboxOptions').classList.toggle('visible', $('#idle_chatbox_enabled').checked);
   });
@@ -125,6 +130,16 @@ function applyDefaults() {
     if (defaults.vrchat.osc_ip) $('#osc_ip').value = defaults.vrchat.osc_ip;
     if (defaults.vrchat.osc_send_port) $('#osc_send_port').value = defaults.vrchat.osc_send_port;
     if (defaults.vrchat.osc_receive_port) $('#osc_recv_port').value = defaults.vrchat.osc_receive_port;
+    if (defaults.vrchat.chatbox_rate_limiter) {
+      const rl = defaults.vrchat.chatbox_rate_limiter;
+      const enabled = rl.enabled !== false;
+      $('#chatbox_rate_limiter_enabled').checked = enabled;
+      if (rl.capacity != null) $('#chatbox_limit_capacity').value = rl.capacity;
+      if (rl.window_seconds != null) $('#chatbox_limit_window').value = rl.window_seconds;
+      if (rl.safety_margin_seconds != null) $('#chatbox_limit_safety').value = rl.safety_margin_seconds;
+      if (rl.legacy_min_interval_seconds != null) $('#chatbox_legacy_interval').value = rl.legacy_min_interval_seconds;
+      updateChatboxLimiterFields();
+    }
   }
   if (defaults.vision) {
     $('#feat_vision').checked = defaults.vision.enabled !== false;
@@ -227,6 +242,16 @@ function prefillFromExisting(cfg) {
     if (cfg.vrchat.osc_ip) $('#osc_ip').value = cfg.vrchat.osc_ip;
     if (cfg.vrchat.osc_send_port) $('#osc_send_port').value = cfg.vrchat.osc_send_port;
     if (cfg.vrchat.osc_receive_port) $('#osc_recv_port').value = cfg.vrchat.osc_receive_port;
+    if (cfg.vrchat.chatbox_rate_limiter) {
+      const rl = cfg.vrchat.chatbox_rate_limiter;
+      const enabled = rl.enabled !== false;
+      $('#chatbox_rate_limiter_enabled').checked = enabled;
+      if (rl.capacity != null) $('#chatbox_limit_capacity').value = rl.capacity;
+      if (rl.window_seconds != null) $('#chatbox_limit_window').value = rl.window_seconds;
+      if (rl.safety_margin_seconds != null) $('#chatbox_limit_safety').value = rl.safety_margin_seconds;
+      if (rl.legacy_min_interval_seconds != null) $('#chatbox_legacy_interval').value = rl.legacy_min_interval_seconds;
+      updateChatboxLimiterFields();
+    }
     if (cfg.vrchat.idle_chatbox) {
       const ic = cfg.vrchat.idle_chatbox;
       $('#idle_chatbox_enabled').checked = ic.enabled === true;
@@ -350,6 +375,12 @@ function updateRAGFields() {
   $('#localRagFields').style.display = provider === 'local' ? '' : 'none';
 }
 
+function updateChatboxLimiterFields() {
+  const enabled = $('#chatbox_rate_limiter_enabled').checked;
+  $('#chatboxLimiterOptions').classList.toggle('visible', enabled);
+  $('#chatboxLegacyOptions').classList.toggle('visible', !enabled);
+}
+
 // ── Template ──
 function selectTemplate(tpl) {
   selectedTemplate = tpl;
@@ -411,6 +442,20 @@ function buildTtsConfig() {
   return ttsConfig;
 }
 
+function readFloat(id, fallback) {
+  const el = document.getElementById(id);
+  if (!el) return fallback;
+  const parsed = parseFloat(el.value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function readInt(id, fallback) {
+  const el = document.getElementById(id);
+  if (!el) return fallback;
+  const parsed = parseInt(el.value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function collectValues() {
   const inputDevice = $('#audio_input').value;
   const outputDevice = $('#audio_output').value;
@@ -452,6 +497,13 @@ function collectValues() {
       osc_ip: $('#osc_ip').value.trim() || '127.0.0.1',
       osc_send_port: parseInt($('#osc_send_port').value) || 9000,
       osc_receive_port: parseInt($('#osc_recv_port').value) || 9001,
+      chatbox_rate_limiter: {
+        enabled: $('#chatbox_rate_limiter_enabled').checked,
+        capacity: readInt('chatbox_limit_capacity', 5),
+        window_seconds: readFloat('chatbox_limit_window', 5.0),
+        safety_margin_seconds: readFloat('chatbox_limit_safety', 0.1),
+        legacy_min_interval_seconds: readFloat('chatbox_legacy_interval', 1.27),
+      },
       idle_chatbox: {
         enabled: $('#idle_chatbox_enabled').checked,
         banner: $('#idle_banner').value.trim() || 'Gabriel AI',
