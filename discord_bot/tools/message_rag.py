@@ -32,11 +32,11 @@ class DiscordMessageRagTool:
                         },
                         "channel_id": {
                             "type": "STRING",
-                            "description": "Optional channel ID to search. If omitted, searches the current channel unless include_all_channels is true.",
+                            "description": "Optional channel ID to search. If omitted, searches the current channel unless include_all_channels is true or the query clearly asks about a person/older cross-channel memory.",
                         },
                         "include_all_channels": {
                             "type": "BOOLEAN",
-                            "description": "Set true when the user asks to search broadly across Discord history instead of only the current channel.",
+                            "description": "Set true when the user asks to search broadly across Discord history, asks about another DM/channel, or asks whether a named person/topic ever came up.",
                         },
                         "author": {
                             "type": "STRING",
@@ -129,7 +129,7 @@ class DiscordMessageRagTool:
         if not query:
             return {"success": False, "message": "query is required"}
         limit = self._clamp_int(args.get("limit"), default=8, minimum=1, maximum=15)
-        include_all = bool(args.get("include_all_channels", False))
+        include_all = bool(args.get("include_all_channels", False)) or rag.should_search_all_channels(query)
         current_channel = getattr(self.handler, "_current_channel", None)
         channel_id = args.get("channel_id")
         if not channel_id and current_channel is not None and not include_all:
