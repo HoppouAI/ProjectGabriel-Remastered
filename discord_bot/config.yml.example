@@ -169,6 +169,11 @@ discord_rag:
   auto_inject_max_chars: 1600
   auto_timeout_seconds: 4.0
   channel_scope_default: true
+  # When a prompt looks like recall or mentions a name/user, auto-injection can also search all Discord history.
+  # This lets the bot remember relevant DMs while answering in another DM or server channel.
+  auto_cross_channel_search: true
+  # Adds exact name/username fallback on top of semantic search, useful for people like "Adiatu".
+  keyword_fallback: true
   exclude_recent_seconds: 30
 
   # Default explicit tool search size.

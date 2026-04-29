@@ -104,6 +104,71 @@ def _clean_text(text: str, limit: int = 4000) -> str:
     return text[:limit]
 
 
+_ENTITY_STOPWORDS = {
+    "channel",
+    "discord",
+    "dm",
+    "group",
+    "message",
+    "someone",
+    "about",
+    "recently",
+    "remember",
+    "named",
+    "called",
+    "username",
+    "user",
+}
+
+_RECALL_HINT_PATTERN = re.compile(
+    r"\b(remember|recall|know|knew|known|ever|recently|before|earlier|previous|past|old|"
+    r"history|dm|dming|message|messaged|messaging|said|asked|named|called|username|"
+    r"come\s+to\s+mind|who|what)\b",
+    re.IGNORECASE,
+)
+
+
+def _semantic_query_text(query: str) -> str:
+    text = str(query or "")
+    text = re.sub(r"\[CHANNEL:[^\]]*\]", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<@!?\d+>", " ", text)
+    text = re.sub(r"\(ID:\d+\)\s*:", ":", text, flags=re.IGNORECASE)
+
+    lines = []
+    for line in text.splitlines():
+        line = re.sub(r"^\s*[^:\n]{1,80}:\s*", "", line).strip()
+        if line:
+            lines.append(line)
+    return _clean_text(" ".join(lines), 2000)
+
+
+def _extract_keyword_terms(query: str, limit: int = 6) -> list[str]:
+    text = _semantic_query_text(query)
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    def add(term: str):
+        term = re.sub(r"[^A-Za-z0-9_.-]", "", str(term or "")).strip("._-")
+        if len(term) < 3:
+            return
+        lowered = term.lower()
+        if lowered in _ENTITY_STOPWORDS or lowered in seen:
+            return
+        seen.add(lowered)
+        terms.append(term)
+
+    for match in re.finditer(r"[`\"']([A-Za-z0-9_.-]{3,40})[`\"']", text):
+        add(match.group(1))
+    for match in re.finditer(r"\b(?:named|called|username|user)\s+([A-Za-z0-9_.-]{3,40})\b", text, re.IGNORECASE):
+        add(match.group(1))
+    for token in re.findall(r"\b[A-Z][A-Za-z0-9_.-]{2,40}\b", text):
+        add(token)
+    for token in re.findall(r"\b[A-Za-z0-9]+_[A-Za-z0-9_.-]*\b", text):
+        add(token)
+
+    return terms[:limit]
+
+
 class DiscordMessageRag:
     """Hybrid RAG index for Discord messages."""
 
@@ -119,6 +184,8 @@ class DiscordMessageRag:
         self.auto_inject_max_chars = int(self.cfg.get("auto_inject_max_chars", 1600))
         self.search_limit = int(self.cfg.get("search_limit", 8))
         self.channel_scope_default = bool(self.cfg.get("channel_scope_default", True))
+        self.auto_cross_channel_search = bool(self.cfg.get("auto_cross_channel_search", True))
+        self.keyword_fallback_enabled = bool(self.cfg.get("keyword_fallback", True))
         self.exclude_recent_seconds = float(self.cfg.get("exclude_recent_seconds", 30))
         self.window_size = int(self.cfg.get("window_size", 6))
         self.window_stride = int(self.cfg.get("window_stride", 3))
@@ -670,20 +737,57 @@ class DiscordMessageRag:
     async def auto_context(self, query: str, channel_id: str, current_message_ids: set[str] | None = None) -> str:
         if not self.ready or not self.auto_inject_enabled:
             return ""
-        results = await asyncio.to_thread(
-            self.search,
-            query,
-            self.auto_inject_limit * 4,
-            str(channel_id) if self.channel_scope_default else None,
-            None,
-            self.vector_min_score,
-            current_message_ids or set(),
-            self.exclude_recent_seconds,
-        )
-        if not results.get("success") or not results.get("results"):
+        scopes: list[str | None] = []
+        if self.channel_scope_default and channel_id:
+            scopes.append(str(channel_id))
+        if self.should_search_all_channels(query) or not scopes:
+            scopes.append(None)
+
+        combined: list[dict[str, Any]] = []
+        seen_scopes = set()
+        for scope in scopes:
+            scope_key = scope or "all"
+            if scope_key in seen_scopes:
+                continue
+            seen_scopes.add(scope_key)
+            results = await asyncio.to_thread(
+                self.search,
+                query,
+                self.auto_inject_limit * 4,
+                scope,
+                None,
+                self.vector_min_score,
+                current_message_ids or set(),
+                self.exclude_recent_seconds,
+            )
+            if results.get("success") and results.get("results"):
+                combined.extend(results["results"])
+
+        merged = self._merge_results(combined)
+        if not merged:
             return ""
-        selected = results["results"][:self.auto_inject_limit]
+        selected = merged[:self.auto_inject_limit]
         return self.format_context(selected, self.auto_inject_max_chars)
+
+    def should_search_all_channels(self, query: str) -> bool:
+        if not self.auto_cross_channel_search:
+            return False
+        semantic_query = _semantic_query_text(query)
+        if _extract_keyword_terms(semantic_query):
+            return True
+        return bool(_RECALL_HINT_PATTERN.search(semantic_query))
+
+    @staticmethod
+    def _merge_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged: dict[str, dict[str, Any]] = {}
+        for item in results:
+            doc_id = str(item.get("doc_id") or "")
+            if not doc_id:
+                continue
+            existing = merged.get(doc_id)
+            if existing is None or item.get("score", 0) > existing.get("score", 0):
+                merged[doc_id] = item
+        return sorted(merged.values(), key=lambda item: item.get("score", 0), reverse=True)
 
     def search(
         self,
@@ -697,13 +801,18 @@ class DiscordMessageRag:
     ) -> dict[str, Any]:
         if not self.ready:
             return {"success": False, "message": "Discord RAG is not ready"}
-        query = _clean_text(query, 2000)
-        if not query:
+        original_query = _clean_text(query, 2000)
+        semantic_query = _semantic_query_text(original_query)
+        if not semantic_query:
             return {"success": False, "message": "query required"}
-        embedding = self.generate_embedding(query)
-        if embedding is None:
+        embedding = self.generate_embedding(semantic_query)
+        raw = []
+        if embedding is not None:
+            raw = self._search_mongo(embedding, limit * 4, channel_id) if self.provider == "gemini" else self._search_chroma(embedding, limit * 4, channel_id)
+        keyword_hits = self._keyword_search(original_query, limit * 4, channel_id)
+        raw = self._merge_results(raw + keyword_hits)
+        if embedding is None and not raw:
             return {"success": False, "message": "Could not generate query embedding"}
-        raw = self._search_mongo(embedding, limit * 4, channel_id) if self.provider == "gemini" else self._search_chroma(embedding, limit * 4, channel_id)
         threshold = self.vector_min_score if min_score is None else float(min_score)
         exclude_ids = exclude_message_ids or set()
         recent_cutoff = time.time() - exclude_recent_seconds if exclude_recent_seconds else 0
@@ -724,6 +833,101 @@ class DiscordMessageRag:
             if len(filtered) >= limit:
                 break
         return {"success": True, "provider": self.provider, "count": len(filtered), "results": filtered}
+
+    def _keyword_search(self, query: str, limit: int, channel_id: str | None) -> list[dict[str, Any]]:
+        if not self.keyword_fallback_enabled:
+            return []
+        terms = _extract_keyword_terms(query)
+        if not terms:
+            return []
+        if self.provider == "gemini":
+            return self._keyword_search_mongo(terms, limit, channel_id)
+        return self._keyword_search_chroma(terms, limit, channel_id)
+
+    def _keyword_search_mongo(self, terms: list[str], limit: int, channel_id: str | None) -> list[dict[str, Any]]:
+        if self._collection is None:
+            return []
+        output = []
+        seen = set()
+        for term in terms:
+            safe = re.escape(term)
+            filters: list[dict[str, Any]] = [
+                {"content": {"$regex": safe, "$options": "i"}},
+                {"channel_name": {"$regex": safe, "$options": "i"}},
+                {"author_names": {"$regex": safe, "$options": "i"}},
+                {"author_ids": {"$regex": safe, "$options": "i"}},
+            ]
+            query: dict[str, Any] = {"$or": filters}
+            if channel_id:
+                query = {"$and": [{"channel_id": str(channel_id)}, query]}
+            try:
+                for doc in self._collection.find(query).sort("created_at", DESCENDING).limit(limit):
+                    doc_id = str(doc.get("doc_id") or "")
+                    if not doc_id or doc_id in seen:
+                        continue
+                    seen.add(doc_id)
+                    item = self._public_result(doc)
+                    item["score"] = self._keyword_score(item, terms)
+                    item["match_type"] = "keyword"
+                    output.append(item)
+                    if len(output) >= limit:
+                        return output
+            except Exception as e:
+                logger.debug(f"Discord RAG Mongo keyword search failed: {e}")
+        return output
+
+    def _keyword_search_chroma(self, terms: list[str], limit: int, channel_id: str | None) -> list[dict[str, Any]]:
+        if self._chroma_collection is None:
+            return []
+        output = []
+        seen = set()
+        for term in terms:
+            try:
+                results = self._chroma_collection.get(
+                    where={"channel_id": str(channel_id)} if channel_id else None,
+                    where_document={"$contains": term},
+                    limit=limit,
+                    include=["documents", "metadatas"],
+                )
+            except Exception as e:
+                logger.debug(f"Discord RAG Chroma keyword search failed: {e}")
+                continue
+            ids = results.get("ids", [])
+            docs = results.get("documents", [])
+            metas = results.get("metadatas", [])
+            for doc_id, document, metadata in zip(ids, docs, metas):
+                doc_id = str(doc_id or "")
+                if not doc_id or doc_id in seen:
+                    continue
+                seen.add(doc_id)
+                item = self._chroma_item(doc_id, document, metadata)
+                item["score"] = self._keyword_score(item, terms)
+                item["match_type"] = "keyword"
+                output.append(item)
+                if len(output) >= limit:
+                    return output
+        return output
+
+    @staticmethod
+    def _keyword_score(item: dict[str, Any], terms: list[str]) -> float:
+        haystack = " ".join(
+            [
+                item.get("content", ""),
+                item.get("channel_name", ""),
+                " ".join(item.get("author_names", [])),
+                " ".join(item.get("author_ids", [])),
+            ]
+        ).lower()
+        score = 0.86
+        for term in terms:
+            lowered = term.lower()
+            if lowered in haystack:
+                score += 0.04
+            if lowered in " ".join(item.get("author_names", [])).lower():
+                score += 0.06
+        if item.get("chunk_type") == "window":
+            score += 0.02
+        return round(min(score, 0.99), 4)
 
     def _search_mongo(self, embedding: list[float], limit: int, channel_id: str | None) -> list[dict[str, Any]]:
         if self._collection is None:
@@ -778,26 +982,32 @@ class DiscordMessageRag:
             metas = results.get("metadatas", [[]])[0]
             distances = results.get("distances", [[]])[0]
             for doc_id, document, metadata, distance in zip(ids, docs, metas, distances):
-                item = {
-                    "doc_id": doc_id,
-                    "chunk_type": metadata.get("chunk_type", "message"),
-                    "role": metadata.get("role", "user"),
-                    "content": metadata.get("content") or document,
-                    "channel_id": metadata.get("channel_id", ""),
-                    "channel_name": metadata.get("channel_name", ""),
-                    "author_ids": _load_json_list(metadata.get("author_ids_json")),
-                    "author_names": _load_json_list(metadata.get("author_names_json")),
-                    "message_ids": _load_json_list(metadata.get("message_ids_json")),
-                    "created_at": metadata.get("created_at", ""),
-                    "created_ts": float(metadata.get("created_ts", 0)),
-                    "attachments": _load_json_list(metadata.get("attachments_json")),
-                    "score": round(1.0 - float(distance), 4),
-                }
+                item = self._chroma_item(doc_id, document, metadata)
+                item["score"] = round(1.0 - float(distance), 4)
+                item["match_type"] = "semantic"
                 output.append(item)
             return output
         except Exception as e:
             logger.debug(f"Discord RAG Chroma search failed: {e}")
             return []
+
+    @staticmethod
+    def _chroma_item(doc_id: str, document: str, metadata: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "doc_id": doc_id,
+            "chunk_type": metadata.get("chunk_type", "message"),
+            "role": metadata.get("role", "user"),
+            "content": metadata.get("content") or document,
+            "channel_id": metadata.get("channel_id", ""),
+            "channel_name": metadata.get("channel_name", ""),
+            "author_ids": _load_json_list(metadata.get("author_ids_json")),
+            "author_names": _load_json_list(metadata.get("author_names_json")),
+            "message_ids": _load_json_list(metadata.get("message_ids_json")),
+            "created_at": metadata.get("created_at", ""),
+            "created_ts": float(metadata.get("created_ts", 0)),
+            "attachments": _load_json_list(metadata.get("attachments_json")),
+            "score": 0.0,
+        }
 
     def _public_result(self, doc: dict[str, Any]) -> dict[str, Any]:
         created = doc.get("created_at")
@@ -827,8 +1037,9 @@ class DiscordMessageRag:
         used = len(lines[0])
         for idx, item in enumerate(results, 1):
             authors = ", ".join(item.get("author_names") or item.get("author_ids") or ["unknown"])
+            channel = item.get("channel_name") or f"Discord channel {item.get('channel_id', 'unknown')}"
             content = _clean_text(item.get("content", ""), 420)
-            line = f"{idx}. score {item.get('score')}: {item.get('created_at')} | {authors} | {content}"
+            line = f"{idx}. score {item.get('score')}: {item.get('created_at')} | {channel} | {authors} | {content}"
             if used + len(line) + 1 > max_chars:
                 break
             lines.append(line)
@@ -853,6 +1064,8 @@ class DiscordMessageRag:
             "ready": self.ready,
             "count": count,
             "auto_inject": self.auto_inject_enabled,
+            "auto_cross_channel_search": self.auto_cross_channel_search,
+            "keyword_fallback": self.keyword_fallback_enabled,
             "vector_min_score": self.vector_min_score,
         }
 
