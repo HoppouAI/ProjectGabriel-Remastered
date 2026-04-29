@@ -4,6 +4,7 @@ import math
 import queue
 import threading
 import time
+from collections import deque
 
 from pynput.keyboard import Controller as KeyboardController
 from pythonosc import udp_client
@@ -13,7 +14,10 @@ from pythonosc.osc_server import ThreadingOSCUDPServer
 logger = logging.getLogger(__name__)
 
 CHATBOX_CHAR_LIMIT = 144
-CHATBOX_RATE_LIMIT = 1.27  # VRChat chatbox rate limit in seconds
+CHATBOX_RATE_LIMIT = 1.27  # Legacy flat chatbox rate limit in seconds
+CHATBOX_BUCKET_CAPACITY = 5
+CHATBOX_BUCKET_WINDOW_SECONDS = 5.0
+CHATBOX_BUCKET_SAFETY_MARGIN_SECONDS = 0.1
 AVATAR_EYE_HEIGHT_MIN_M = 0.1
 AVATAR_EYE_HEIGHT_MAX_M = 100.0
 
@@ -26,7 +30,9 @@ class VRChatOSC:
         self.config = config
         self.client = udp_client.SimpleUDPClient(config.osc_ip, config.osc_port)
         self._typing = False
-        self._last_chatbox_time = 0
+        self._load_chatbox_rate_limit_config()
+        self._last_chatbox_time = 0.0
+        self._chatbox_sent_times = deque()
         self._chatbox_queue = queue.Queue()
         self._chatbox_thread = threading.Thread(target=self._chatbox_worker, daemon=True)
         self._chatbox_thread.start()
@@ -48,6 +54,74 @@ class VRChatOSC:
 
         # Start OSC listener for avatar parameters
         self._start_osc_listener(config)
+
+    def _load_chatbox_rate_limit_config(self):
+        self._chatbox_rate_limiter_enabled = self._coerce_bool(
+            getattr(self.config, "chatbox_rate_limiter_enabled", True), True
+        )
+        self._chatbox_bucket_capacity = self._coerce_int(
+            getattr(self.config, "chatbox_rate_limit_capacity", CHATBOX_BUCKET_CAPACITY),
+            CHATBOX_BUCKET_CAPACITY,
+            minimum=1,
+        )
+        self._chatbox_bucket_window_seconds = self._coerce_float(
+            getattr(self.config, "chatbox_rate_limit_window_seconds", CHATBOX_BUCKET_WINDOW_SECONDS),
+            CHATBOX_BUCKET_WINDOW_SECONDS,
+            minimum=0.1,
+        )
+        self._chatbox_bucket_safety_margin_seconds = self._coerce_float(
+            getattr(self.config, "chatbox_rate_limit_safety_margin_seconds", CHATBOX_BUCKET_SAFETY_MARGIN_SECONDS),
+            CHATBOX_BUCKET_SAFETY_MARGIN_SECONDS,
+            minimum=0.0,
+        )
+        self._chatbox_legacy_rate_limit_seconds = self._coerce_float(
+            getattr(self.config, "chatbox_legacy_rate_limit_seconds", CHATBOX_RATE_LIMIT),
+            CHATBOX_RATE_LIMIT,
+            minimum=0.0,
+        )
+        if self._chatbox_rate_limiter_enabled:
+            logger.info(
+                "Chatbox leaky bucket limiter enabled: %s messages per %.2fs",
+                self._chatbox_bucket_capacity,
+                self._chatbox_bucket_window_seconds,
+            )
+        else:
+            logger.info(
+                "Chatbox leaky bucket limiter disabled, legacy %.2fs spacing is active",
+                self._chatbox_legacy_rate_limit_seconds,
+            )
+
+    @staticmethod
+    def _coerce_bool(value, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @staticmethod
+    def _coerce_int(value, default: int, minimum: int | None = None) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = default
+        if minimum is not None:
+            parsed = max(minimum, parsed)
+        return parsed
+
+    @staticmethod
+    def _coerce_float(value, default: float, minimum: float | None = None) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = default
+        if not math.isfinite(parsed):
+            parsed = default
+        if minimum is not None:
+            parsed = max(minimum, parsed)
+        return parsed
 
     def _start_osc_listener(self, config):
         """Start background OSC server to receive avatar parameters from VRChat."""
@@ -101,23 +175,57 @@ class VRChatOSC:
         self.avatar_eye_height_scaling_allowed = bool(value)
 
     def _chatbox_worker(self):
-        """Background thread that sends chatbox messages respecting rate limit."""
+        """Background thread that sends chatbox messages respecting VRChat's rate limit."""
         while True:
             try:
                 text = self._chatbox_queue.get()
-
-                # Rate limit enforcement
-                now = time.time()
-                elapsed = now - self._last_chatbox_time
-                if elapsed < CHATBOX_RATE_LIMIT:
-                    time.sleep(CHATBOX_RATE_LIMIT - elapsed)
-
-                # Send the message
+                self._wait_for_chatbox_slot()
                 self.client.send_message("/chatbox/input", [text, True, False])
-                self._last_chatbox_time = time.time()
+                self._record_chatbox_send()
 
             except Exception as e:
                 logger.error(f"Chatbox worker error: {e}")
+
+    def _wait_for_chatbox_slot(self):
+        if not self._chatbox_rate_limiter_enabled:
+            self._wait_for_legacy_chatbox_slot()
+            return
+
+        while True:
+            now = time.monotonic()
+            self._prune_chatbox_bucket(now)
+            if len(self._chatbox_sent_times) < self._chatbox_bucket_capacity:
+                return
+
+            oldest_send = self._chatbox_sent_times[0]
+            wait_seconds = (
+                oldest_send
+                + self._chatbox_bucket_window_seconds
+                + self._chatbox_bucket_safety_margin_seconds
+                - now
+            )
+            if wait_seconds <= 0:
+                continue
+            time.sleep(wait_seconds)
+
+    def _wait_for_legacy_chatbox_slot(self):
+        if self._chatbox_legacy_rate_limit_seconds <= 0:
+            return
+        now = time.monotonic()
+        elapsed = now - self._last_chatbox_time
+        if elapsed < self._chatbox_legacy_rate_limit_seconds:
+            time.sleep(self._chatbox_legacy_rate_limit_seconds - elapsed)
+
+    def _prune_chatbox_bucket(self, now: float):
+        cutoff = now - self._chatbox_bucket_window_seconds
+        while self._chatbox_sent_times and self._chatbox_sent_times[0] <= cutoff:
+            self._chatbox_sent_times.popleft()
+
+    def _record_chatbox_send(self):
+        now = time.monotonic()
+        self._last_chatbox_time = now
+        if self._chatbox_rate_limiter_enabled:
+            self._chatbox_sent_times.append(now)
 
     def set_typing(self, typing: bool):
         if self._typing != typing:
@@ -175,8 +283,10 @@ class VRChatOSC:
         self._chatbox_queue.put(text)
 
     async def display_pages(self, pages: list[str], delay: float = 3.0):
-        # Ensure delay is at least the rate limit
-        actual_delay = max(delay, CHATBOX_RATE_LIMIT)
+        try:
+            actual_delay = max(0.0, float(delay))
+        except (TypeError, ValueError):
+            actual_delay = 3.0
         for page in pages:
             self.send_chatbox_direct(page)
             self.set_typing(True)

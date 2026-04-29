@@ -306,6 +306,16 @@ vrchat:
   # Seconds to display each chatbox page before advancing
   chatbox_page_delay: 3.0
 
+  # Shared limiter for every VRChat chatbox sender, including model text, music UI, idle banners, and tools.
+  # VRChat now allows short bursts instead of a flat timeout. Keep enabled unless you know your setup is exempt.
+  chatbox_rate_limiter:
+    enabled: true
+    capacity: 5
+    window_seconds: 5.0
+    safety_margin_seconds: 0.1
+    # Used only when the leaky bucket limiter is disabled.
+    legacy_min_interval_seconds: 1.27
+
   # Idle chatbox banner -- shown in VRChat chatbox when the AI is idle.
   # Displays a customizable banner with up to 3 lines of text, dividers,
   # active session time, and current clock. Respects the 144-char chatbox limit.

@@ -336,6 +336,47 @@
       <div class="hint">Default values work for most setups.</div>
     </div>
     <div class="card">
+      <div class="toggle-row" onclick="toggleCheck('chatbox_rate_limiter_enabled')" style="margin-bottom:0;">
+        <div class="toggle-info">
+          <div class="card-title" style="margin-bottom:2px;">Chatbox Rate Limiter</div>
+          <p style="font-size:12px;color:var(--text-muted);">Use VRChat's new 5 messages per 5 seconds leaky bucket behavior for every chatbox sender.</p>
+        </div>
+        <label class="toggle"><input type="checkbox" id="chatbox_rate_limiter_enabled" checked><span class="slider"></span></label>
+      </div>
+      <div class="cond visible" id="chatboxLimiterOptions">
+        <div class="info-box accent" style="margin-top:12px;">
+          <i class="fas fa-shield-alt" style="margin-right:6px;color:var(--accent)"></i>
+          Covers model captions, music displays, idle banners, and tool status messages through one shared queue.
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Messages</label>
+            <input type="number" id="chatbox_limit_capacity" value="5" min="1" max="20" step="1">
+            <div class="hint">VRChat currently allows 5 messages per window.</div>
+          </div>
+          <div class="field">
+            <label>Window Seconds</label>
+            <input type="number" id="chatbox_limit_window" value="5.0" min="0.1" max="60" step="0.1">
+            <div class="hint">VRChat currently uses a 5 second window.</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Safety Margin Seconds</label>
+            <input type="number" id="chatbox_limit_safety" value="0.1" min="0" max="2" step="0.01">
+            <div class="hint">Small buffer to avoid edge timing misses.</div>
+          </div>
+        </div>
+      </div>
+      <div class="cond" id="chatboxLegacyOptions">
+        <div class="field" style="margin-top:12px;">
+          <label>Legacy Fallback Seconds</label>
+          <input type="number" id="chatbox_legacy_interval" value="1.27" min="0" max="10" step="0.01">
+          <div class="hint">Used when the new limiter is off. Set 0 only if you want no chatbox spacing at all.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
       <div class="card-title">VRChat API (Optional)</div>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Enables avatar switching, friend info, world search, and more.</p>
       <div class="field">

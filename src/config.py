@@ -283,6 +283,26 @@ class Config:
         return self.get("vrchat", "chatbox_page_delay", default=3.0)
 
     @property
+    def chatbox_rate_limiter_enabled(self):
+        return self.get("vrchat", "chatbox_rate_limiter", "enabled", default=True)
+
+    @property
+    def chatbox_rate_limit_capacity(self):
+        return self.get("vrchat", "chatbox_rate_limiter", "capacity", default=5)
+
+    @property
+    def chatbox_rate_limit_window_seconds(self):
+        return self.get("vrchat", "chatbox_rate_limiter", "window_seconds", default=5.0)
+
+    @property
+    def chatbox_rate_limit_safety_margin_seconds(self):
+        return self.get("vrchat", "chatbox_rate_limiter", "safety_margin_seconds", default=0.1)
+
+    @property
+    def chatbox_legacy_rate_limit_seconds(self):
+        return self.get("vrchat", "chatbox_rate_limiter", "legacy_min_interval_seconds", default=1.27)
+
+    @property
     def music_dir(self):
         return self.get("music", "music_dir", default="sfx/music")
 
