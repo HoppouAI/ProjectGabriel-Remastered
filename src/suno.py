@@ -122,6 +122,32 @@ class SunoBridgeClient:
             image_url=d.get("image_url", "") or "",
         )
 
+    async def recent(self, since_ms: int | None = None) -> list[SunoClip]:
+        """Fetch clips the bridge has sniffed recently.
+
+        Used to recover when the original create call timed out at the
+        bridge driver layer but the songs actually generated. Bridge
+        endpoint: GET /api/v1/recent?since_ms=...
+        """
+        url = f"{self.base_url}/api/v1/recent"
+        params = {}
+        if since_ms is not None:
+            params["since_ms"] = since_ms
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.get(url, params=params)
+            if r.status_code == 404:
+                return []  # bridge doesn't support /recent yet
+            r.raise_for_status()
+            data = r.json()
+        return [SunoClip(
+            id=s.get("id", ""),
+            title=s.get("title", ""),
+            status=s.get("status", "submitted"),
+            stream_url=s.get("stream_url", ""),
+            audio_url=s.get("audio_url", "") or "",
+            image_url=s.get("image_url", "") or "",
+        ) for s in data.get("songs", [])]
+
 
 class SunoError(Exception):
     def __init__(self, status: int, code: str, message: str = ""):
@@ -373,19 +399,34 @@ class SunoManager:
 
     async def _generate_and_play(self, lyrics: str):
         """Background: call the bridge, then start playback."""
+        request_started_ms = int(self._generating_started_at * 1000) - 2000
         async with self._lock:
             try:
+                clips: list[SunoClip] = []
                 try:
                     clips = await self._client.create_song(lyrics)
                 except SunoError as e:
-                    msg = e.message
-                    if "timeout" in (e.code + " " + e.message).lower():
-                        msg = ("Bridge timed out waiting for the song response, even "
-                               "though Suno may have generated it. The operator needs "
-                               "to refresh the suno tab and try again.")
-                    self._generating_error = f"{e.code}: {msg}"
-                    logger.error(f"Suno generate failed: {self._generating_error}")
-                    return
+                    err_blob = (e.code + " " + e.message).lower()
+                    is_timeout = "timeout" in err_blob
+                    if is_timeout:
+                        # Bridge driver gave up but suno may have generated the
+                        # songs anyway. Poll /recent to recover the IDs.
+                        logger.warning("Suno create timed out, polling /recent for sniffed clips...")
+                        clips = await self._wait_for_recent(request_started_ms,
+                                                            poll_seconds=60.0)
+                        if not clips:
+                            self._generating_error = (
+                                "bridge_timeout: bridge gave up and no clips appeared "
+                                "in /recent within 60s. The operator should refresh "
+                                "the suno tab."
+                            )
+                            logger.error(self._generating_error)
+                            return
+                        logger.info(f"Recovered {len(clips)} clip(s) from /recent")
+                    else:
+                        self._generating_error = f"{e.code}: {e.message}"
+                        logger.error(f"Suno generate failed: {self._generating_error}")
+                        return
                 except httpx.HTTPError as e:
                     self._generating_error = f"bridge_unreachable: {e}"
                     logger.error(f"Suno generate failed: {self._generating_error}")
@@ -412,6 +453,21 @@ class SunoManager:
                 if self._generating_error and self._player is None:
                     # Failure path -- release the audio fade so the AI can talk again
                     self._audio.set_external_music_active(False)
+
+    async def _wait_for_recent(self, since_ms: int, poll_seconds: float = 60.0,
+                               interval: float = 3.0) -> list[SunoClip]:
+        """Poll /recent until we get clips with stream_urls or run out of time."""
+        deadline = time.monotonic() + poll_seconds
+        while time.monotonic() < deadline:
+            try:
+                clips = await self._client.recent(since_ms=since_ms)
+                ready = [c for c in clips if c.stream_url]
+                if ready:
+                    return ready
+            except Exception as e:
+                logger.debug(f"Suno /recent poll error: {e}")
+            await asyncio.sleep(interval)
+        return []
 
     async def stop(self) -> dict:
         # Cancel an in-flight generation first so it doesn't start playing
