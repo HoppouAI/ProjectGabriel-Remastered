@@ -28,10 +28,10 @@ gemini:
   #  - "BACKUP_KEY_2"
 
   # Gemini Live model
-  # Supports both 2.5 and 3.1 Live models:
-  #   2.5: gemini-2.5-flash-native-audio-preview-12-2025 (native audio, affective)
-  #   3.1: gemini-3.1-flash-live-001 (thinking_level, realtime text input)
-  model: "gemini-2.5-flash-native-audio-preview-09-2025"
+  # Options: "gemini-3.1-flash-live-preview" (latest, lower latency)
+  #          "gemini-2.5-flash-native-audio-preview-09-2025" (legacy)
+  #          "gemini-2.5-flash-native-audio-preview-12-2025" (legacy)
+  model: "gemini-2.5-flash-native-audio-preview-12-2025"
 
   # System prompt -- select a named prompt from config/prompts/prompts.yml
   # The prompt system, appends, and personalities are shared with the main AI.
@@ -45,7 +45,7 @@ gemini:
     appropriate, and match the energy of whoever you're talking to.
 
   # ── Voice Configuration ──
-  # Prebuilt voice for the Live session's audio (transcription is captured for text).
+  # Prebuilt voice for the Live session's audio (transcription is captured for text), so this doesn't matter much which one you pick.
   # Available voices: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr
   voice: "Puck"
 
@@ -53,7 +53,6 @@ gemini:
   temperature: 1.0     # 0.0-2.0, controls randomness (default: 1.0, higher = more creative)
   top_p: null          # Nucleus sampling threshold (null = model default)
   top_k: null          # Top-k sampling (null = model default)
-  max_output_tokens: 1024  # Max tokens per response
 
   # ── Thinking Configuration ──
   # Enables the model to "think" before responding (inner monologue).
