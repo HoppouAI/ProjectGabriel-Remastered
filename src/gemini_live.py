@@ -1090,7 +1090,7 @@ class GeminiLiveSession:
             music_gen_active = music_gen.is_active if music_gen else False
             # Check if Suno song is streaming
             suno = getattr(self.tool_handler, 'suno', None)
-            suno_active = suno.is_playing if suno else False
+            suno_active = suno.is_active if suno else False
             # Anything keeping the AI busy suppresses idle
             busy = music_playing or tracker_active or music_gen_active or suno_active
             # Don't trigger idle during active tasks
@@ -1853,7 +1853,27 @@ class GeminiLiveSession:
         Position is real playback time, duration is total decoded so far,
         which grows while the song is still being generated upstream.
         """
+        status = progress_info.get("status", "streaming")
         name = progress_info.get("song_name") or "Suno Song"
+
+        if status == "generating":
+            elapsed = int(progress_info.get("position", 0.0))
+            divider_char = self.config.get("vrchat", "idle_chatbox", "divider", default="\u2500")
+            divider_length = self.config.get("vrchat", "idle_chatbox", "divider_length", default=14)
+            divider = str(divider_char) * int(divider_length)
+            # Animated dots so people can see it isn't frozen
+            dots = "." * ((elapsed % 3) + 1)
+            lines = [
+                "\u266b GENERATING SONG",
+                divider,
+                f"Cooking up a track{dots}",
+                f"{elapsed}s elapsed",
+            ]
+            text = "\n".join(lines)
+            if len(text) > 144:
+                text = text[:144]
+            return text
+
         position = progress_info.get("position", 0.0)
         duration = progress_info.get("duration", 0.0)
         progress = progress_info.get("progress", 0.0)

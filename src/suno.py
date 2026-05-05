@@ -291,16 +291,38 @@ class SunoManager:
         self._last_request_at: float = 0.0
         self._player: Optional[SunoPlayer] = None
         self._poll_task: Optional[asyncio.Task] = None
+        self._gen_task: Optional[asyncio.Task] = None
+        self._generating: bool = False
+        self._generating_started_at: float = 0.0
+        self._generating_error: Optional[str] = None
         self._lock = asyncio.Lock()
 
     @property
     def is_playing(self) -> bool:
         return self._player is not None and self._player.is_playing
 
+    @property
+    def is_generating(self) -> bool:
+        return self._generating
+
+    @property
+    def is_active(self) -> bool:
+        return self.is_playing or self.is_generating
+
     def get_progress(self) -> Optional[dict]:
-        if not self.is_playing:
-            return None
-        return self._player.get_progress()
+        if self.is_playing:
+            return self._player.get_progress()
+        if self._generating:
+            elapsed = max(0.0, time.time() - self._generating_started_at)
+            return {
+                "song_name": "Generating song...",
+                "position": elapsed,
+                "duration": 0.0,
+                "progress": 0.0,
+                "streaming": True,
+                "status": "generating",
+            }
+        return None
 
     def cooldown_remaining(self) -> float:
         if self._last_request_at == 0:
@@ -309,59 +331,97 @@ class SunoManager:
         return max(0.0, self._min_interval - elapsed)
 
     async def generate(self, lyrics: str) -> dict:
+        # Fast-path validation -- the actual bridge call happens in a
+        # background task so the function response goes back to gemini
+        # immediately. Otherwise the model sits silent for 5-15 seconds
+        # while suno warms up, which trips its session watchdogs.
+        if self._generating:
+            return {"result": "error", "code": "already_generating",
+                    "message": "A song is already being generated, wait for it."}
+        cd = self.cooldown_remaining()
+        if cd > 0:
+            return {"result": "error", "code": "rate_limited",
+                    "message": f"Please wait {cd:.0f}s before generating another song."}
+        if not lyrics or not lyrics.strip():
+            return {"result": "error", "code": "lyrics_required",
+                    "message": "Lyrics are required."}
+        if len(lyrics) > self._max_lyrics:
+            return {"result": "error", "code": "lyrics_too_long",
+                    "message": f"Lyrics exceed max length ({self._max_lyrics} chars)."}
+
+        # Stop any existing playback before starting a new one
+        if self._player is not None:
+            await asyncio.to_thread(self._player.stop)
+            self._player = None
+            if self._poll_task and not self._poll_task.done():
+                self._poll_task.cancel()
+                self._poll_task = None
+            self._audio.set_external_music_active(False)
+
+        self._last_request_at = time.time()
+        self._generating = True
+        self._generating_started_at = self._last_request_at
+        self._generating_error = None
+        # Mark external music active right away so the chatbox UI takes over
+        # and the AI's voice ducks while the song spins up.
+        self._audio.set_external_music_active(True)
+        self._gen_task = asyncio.create_task(self._generate_and_play(lyrics))
+
+        return {"result": "ok", "code": "submitted",
+                "message": "Song generation started. Audio will begin streaming in a few seconds. "
+                           "Stay quiet until the music kicks in."}
+
+    async def _generate_and_play(self, lyrics: str):
+        """Background: call the bridge, then start playback."""
         async with self._lock:
-            cd = self.cooldown_remaining()
-            if cd > 0:
-                return {"result": "error", "code": "rate_limited",
-                        "message": f"Please wait {cd:.0f}s before generating another song."}
-            if not lyrics or not lyrics.strip():
-                return {"result": "error", "code": "lyrics_required",
-                        "message": "Lyrics are required."}
-            if len(lyrics) > self._max_lyrics:
-                return {"result": "error", "code": "lyrics_too_long",
-                        "message": f"Lyrics exceed max length ({self._max_lyrics} chars)."}
-
-            # Stop any existing playback before starting a new one
-            if self._player is not None:
-                await asyncio.to_thread(self._player.stop)
-                self._player = None
-                if self._poll_task and not self._poll_task.done():
-                    self._poll_task.cancel()
-                    self._poll_task = None
-                self._audio.set_external_music_active(False)
-
-            self._last_request_at = time.time()
             try:
-                clips = await self._client.create_song(lyrics)
-            except SunoError as e:
-                return {"result": "error", "code": e.code, "message": e.message}
-            except httpx.HTTPError as e:
-                return {"result": "error", "code": "bridge_unreachable",
-                        "message": f"Suno bridge unreachable: {e}"}
+                try:
+                    clips = await self._client.create_song(lyrics)
+                except SunoError as e:
+                    self._generating_error = f"{e.code}: {e.message}"
+                    logger.error(f"Suno generate failed: {self._generating_error}")
+                    return
+                except httpx.HTTPError as e:
+                    self._generating_error = f"bridge_unreachable: {e}"
+                    logger.error(f"Suno generate failed: {self._generating_error}")
+                    return
 
-            valid = [c for c in clips if c.stream_url]
-            if not valid:
-                return {"result": "error", "code": "no_stream",
-                        "message": "Suno returned no playable stream URL."}
-            # Suno gives 2 candidates -- just take the first (random order from server)
-            chosen = valid[0]
+                valid = [c for c in clips if c.stream_url]
+                if not valid:
+                    self._generating_error = "no_stream"
+                    logger.error("Suno returned no playable stream URL")
+                    return
+                chosen = valid[0]
 
-            self._player = SunoPlayer(chosen, self._audio, volume=self._volume)
-            ok = await asyncio.to_thread(self._player.start)
-            if not ok:
-                err = self._player.state.error or "unknown"
-                self._player = None
-                return {"result": "error", "code": "playback_failed", "message": err}
+                player = SunoPlayer(chosen, self._audio, volume=self._volume)
+                ok = await asyncio.to_thread(player.start)
+                if not ok:
+                    self._generating_error = player.state.error or "playback_failed"
+                    logger.error(f"Suno playback failed: {self._generating_error}")
+                    return
 
-            self._audio.set_external_music_active(True)
-            self._poll_task = asyncio.create_task(self._poll_loop(chosen.id))
-
-            return {"result": "ok", "message": "Song is generating and will start playing shortly.",
-                    "clip_id": chosen.id, "title": chosen.title or "(generating)"}
+                self._player = player
+                self._poll_task = asyncio.create_task(self._poll_loop(chosen.id))
+            finally:
+                self._generating = False
+                if self._generating_error and self._player is None:
+                    # Failure path -- release the audio fade so the AI can talk again
+                    self._audio.set_external_music_active(False)
 
     async def stop(self) -> dict:
+        # Cancel an in-flight generation first so it doesn't start playing
+        # right after we say "stop".
+        if self._gen_task and not self._gen_task.done():
+            self._gen_task.cancel()
+            try:
+                await self._gen_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._gen_task = None
         async with self._lock:
+            self._generating = False
             if self._player is None:
+                self._audio.set_external_music_active(False)
                 return {"result": "ok", "message": "Nothing playing"}
             await asyncio.to_thread(self._player.stop)
             self._player = None
