@@ -18,6 +18,7 @@ from src.tools import (  # noqa: F401
 from src.tools import discord as discord_tools  # noqa: F401
 from src.tools import music_gen as music_gen_tools  # noqa: F401
 from src.tools import social as social_tools  # noqa: F401
+from src.tools import suno as suno_tools  # noqa: F401
 from src.tools import web_search as web_search_tools  # noqa: F401
 
 # Import all tool modules to trigger @register_tool decorators
