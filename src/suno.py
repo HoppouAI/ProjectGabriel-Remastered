@@ -77,7 +77,7 @@ class _PlayerState:
 class SunoBridgeClient:
     """Thin HTTP wrapper around the local bridge server."""
 
-    def __init__(self, base_url: str, request_timeout: float = 100.0):
+    def __init__(self, base_url: str, request_timeout: float = 140.0):
         self.base_url = base_url.rstrip("/")
         self._timeout = request_timeout
 
@@ -87,7 +87,7 @@ class SunoBridgeClient:
             r.raise_for_status()
             return r.json()
 
-    async def create_song(self, lyrics: str, timeout_ms: int = 90000) -> list[SunoClip]:
+    async def create_song(self, lyrics: str, timeout_ms: int = 120000) -> list[SunoClip]:
         url = f"{self.base_url}/api/v1/songs?timeout_ms={timeout_ms}"
         async with httpx.AsyncClient(timeout=self._timeout) as c:
             r = await c.post(url, json={"lyrics": lyrics})
@@ -378,7 +378,12 @@ class SunoManager:
                 try:
                     clips = await self._client.create_song(lyrics)
                 except SunoError as e:
-                    self._generating_error = f"{e.code}: {e.message}"
+                    msg = e.message
+                    if "timeout" in (e.code + " " + e.message).lower():
+                        msg = ("Bridge timed out waiting for the song response, even "
+                               "though Suno may have generated it. The operator needs "
+                               "to refresh the suno tab and try again.")
+                    self._generating_error = f"{e.code}: {msg}"
                     logger.error(f"Suno generate failed: {self._generating_error}")
                     return
                 except httpx.HTTPError as e:
