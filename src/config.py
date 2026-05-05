@@ -474,3 +474,7 @@ class Config:
     @property
     def social_enabled(self):
         return self.get("social", "enabled", default=False)
+
+    @property
+    def suno_enabled(self):
+        return self.get("suno", "enabled", default=False)

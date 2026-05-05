@@ -207,6 +207,13 @@ async def main(save_audio=False):
         session.tool_handler.music_gen = music_gen
         logger.info("Lyria RealTime music generation enabled")
 
+    # Suno song generation (optional, requires local bridge server)
+    if config.suno_enabled:
+        from src.suno import SunoManager
+        suno_mgr = SunoManager(config, audio)
+        session.tool_handler.suno = suno_mgr
+        logger.info("Suno song generation enabled")
+
     # Social server (AI-to-AI messaging, optional)
     social_client = None
     if config.social_enabled:
@@ -234,6 +241,8 @@ async def main(save_audio=False):
         session.save_audio_to_wav()
     if config.music_gen_enabled and session.tool_handler.music_gen:
         await session.tool_handler.music_gen.stop()
+    if config.suno_enabled and session.tool_handler.suno:
+        await session.tool_handler.suno.stop()
     if social_client:
         await social_client.stop()
     if discord_bot:
