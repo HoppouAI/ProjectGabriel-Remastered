@@ -37,3 +37,4 @@ websockets
 chromadb
 pymongo
 protobuf==3.20.3
+imageio-ffmpeg

@@ -636,6 +636,30 @@ social:
   idle_reply_delay: 300
 
 # ══════════════════════════════════════════════════════════
+# Suno Song Generation
+# ══════════════════════════════════════════════════════════
+# Generates full songs with custom lyrics by talking to a local bridge
+# server on 127.0.0.1. The bridge is private and not distributed with
+# this project -- if you don't have one, leave this disabled and the
+# tools won't show up.
+#
+# When enabled the AI gets two tools: generateSong(lyrics) and stopSong.
+# While a song is streaming the AI's spoken voice is muted (the music
+# takes the audio output) but the mic stays hot so it can still hear the
+# room. Playback decodes a progressive MP3 stream via ffmpeg -- install
+# imageio-ffmpeg or have ffmpeg on PATH.
+suno:
+  enabled: false
+  # URL of the local bridge server
+  bridge_url: "http://127.0.0.1:8787"
+  # Playback volume (0-200, 100 = unity)
+  volume: 90
+  # Minimum seconds between successive generateSong calls.
+  min_request_interval_seconds: 30
+  # Hard cap on lyrics length sent to the bridge (chars).
+  max_lyrics_chars: 3000
+
+# ══════════════════════════════════════════════════════════
 # Tool Enable/Disable
 # ══════════════════════════════════════════════════════════
 # Toggle individual tool groups on or off. When disabled, the tool's
@@ -676,3 +700,5 @@ tools:
     enabled: true      # webSearch, readWebpage (also requires web_search.enabled)
   social:
     enabled: true      # socialSendMessage, socialFetchMessages, socialFetchMessagesByUser, socialGetOnline, socialSendFriendRequest, socialAcceptFriend, socialDenyFriend, socialRemoveFriend, socialListFriends, socialGetPendingRequests, socialBlockUser, socialUnblockUser, socialGetProfile (also requires social.enabled)
+  suno:
+    enabled: true      # generateSong, stopSong (also requires suno.enabled)

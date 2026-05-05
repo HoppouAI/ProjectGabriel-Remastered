@@ -386,6 +386,30 @@ See [social_server/README.md](social_server/README.md) for full API docs and con
 
 ---
 
+## Suno Song Generation (optional)
+
+Gabriel can generate full songs with custom lyrics through Suno and stream
+them back live as they're being made. The AI announces the song, drops the
+lyrics, and the song fills in vocals and instrumentals while the chatbox
+shows a "Now Playing" bar that updates as more audio buffers in. While the
+song is streaming the AI's voice ducks out (mic stays open so it can still
+hear the room) and unmutes when the song stops.
+
+This integration is **disabled by default** and the tools are hidden from
+Gemini until you flip `suno.enabled: true` in `config.yml`. Defaults to one
+generate request per 30 seconds.
+
+**Backend not included.** Gabriel talks to a small private bridge running on
+`127.0.0.1`. That bridge is not part of this repository and is not being
+released publicly. No further details on how it works will be shared. If you
+don't have a compatible bridge already, leave the integration off and the
+tools simply won't appear.
+
+Requires `ffmpeg` for streaming MP3 decode. The included `imageio-ffmpeg`
+pip dependency bundles a static binary so you don't need a system install.
+
+---
+
 ## Project Structure
 
 ```
