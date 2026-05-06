@@ -326,7 +326,7 @@ class SunoManager:
         )
         self._min_interval = float(config.get("suno", "min_request_interval_seconds", default=30.0))
         self._volume = int(config.get("suno", "volume", default=90))
-        self._max_lyrics = int(config.get("suno", "max_lyrics_chars", default=3000))
+        self._max_lyrics = int(config.get("suno", "max_lyrics_chars", default=6000))
         self._max_style = int(config.get("suno", "max_style_chars", default=1000))
         self._save_dir = config.get("suno", "save_dir", default="sfx/music/suno")
         self._save_enabled = bool(config.get("suno", "save_finished_songs", default=True))

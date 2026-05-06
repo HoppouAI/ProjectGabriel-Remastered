@@ -656,8 +656,9 @@ suno:
   volume: 90
   # Minimum seconds between successive generateSong calls.
   min_request_interval_seconds: 30
-  # Hard cap on lyrics length sent to the bridge (chars).
-  max_lyrics_chars: 3000
+  # Hard cap on lyrics length sent to the bridge (chars). Bumped to fit
+  # full-length 3-5 minute songs which is what the AI is told to aim for.
+  max_lyrics_chars: 6000
   # Hard cap on style description length (chars). Bridge enforces 1000.
   max_style_chars: 1000
   # Auto-save finished songs to a folder so they show up in playMusic later.
