@@ -276,13 +276,15 @@ class SunoTools(BaseTool):
                     "calling coverSong. The library is the operator's own catalog of Music "
                     "This is the ONLY pool of songs that can be covered -- "
                     "\n\n"
-                    "Pass an optional `query` to filter the catalog. Searches across the "
-                    "song title, the style description, AND the lyrics text (case-insensitive, "
-                    "multi-word AND -- every space-separated term must appear somewhere in those "
-                    "three fields). So 'seuss' will find a song titled 'Green Eggs' if 'seuss' "
-                    "appears in its lyrics or style. Omit `query` to list everything (capped at "
-                    "25 entries). The full lyrics are NOT included in this response to keep it "
-                    "small -- use `getSongLyrics` on the specific id once you've picked one.\n"
+                    "Pass an optional `query` to filter the catalog. Searches for the exact "
+                    "phrase as a substring across the song title, the style description, AND "
+                    "the lyrics text (case-insensitive). So 'seuss' finds anything mentioning "
+                    "seuss anywhere; 'we like to party' finds the song titled that. Whitespace "
+                    "and word order matter -- it's not a fuzzy/AND search, just plain substring. "
+                    "If a long query returns nothing, try a shorter, more distinctive snippet. "
+                    "Omit `query` to list everything (capped at 25 entries). The full lyrics are "
+                    "NOT included in this response to keep it small -- use `getSongLyrics` on "
+                    "the specific id once you've picked one.\n"
                     "**Invocation Condition:** Call before `coverSong` to find a source "
                     "song. Also call when someone asks 'what songs can you parody', "
                     "'what's in your library', 'do you have a cover of X', etc."
@@ -292,7 +294,7 @@ class SunoTools(BaseTool):
                     "properties": {
                         "query": {
                             "type": "STRING",
-                            "description": "Optional case-insensitive multi-word filter. Matches across title, styles, and lyrics.",
+                            "description": "Optional case-insensitive exact-phrase substring. Searches title, styles, and lyrics. Try a short distinctive snippet if a long phrase misses.",
                         },
                     },
                 },
