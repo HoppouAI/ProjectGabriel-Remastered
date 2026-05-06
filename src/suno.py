@@ -561,6 +561,17 @@ class SunoManager:
                     return
 
                 valid = [c for c in clips if c.stream_url]
+                if not valid and clips:
+                    # Bridge gave us clip IDs but no stream URLs yet (happens
+                    # on cover sometimes). Poll get_clip() per id until they
+                    # populate.
+                    logger.info(f"Suno returned {len(clips)} clip(s) without stream URLs, polling...")
+                    valid = await self._wait_for_streams([c.id for c in clips], poll_seconds=60.0)
+                if not valid:
+                    # Last resort: maybe /recent has them
+                    logger.warning("No stream URLs after polling clip IDs, trying /recent...")
+                    request_started_ms = int(self._generating_started_at * 1000) - 2000
+                    valid = await self._wait_for_recent(request_started_ms, poll_seconds=30.0)
                 if not valid:
                     self._generating_error = "no_stream"
                     logger.error("Suno returned no playable stream URL")
@@ -597,6 +608,28 @@ class SunoManager:
                     return ready
             except Exception as e:
                 logger.debug(f"Suno /recent poll error: {e}")
+            await asyncio.sleep(interval)
+        return []
+
+    async def _wait_for_streams(self, clip_ids: list[str], poll_seconds: float = 60.0,
+                                interval: float = 2.0) -> list[SunoClip]:
+        """Poll get_clip() per id until any of them have a stream URL.
+
+        Used when the bridge returns clip ids but no stream_url (cover sometimes
+        comes back early before the sniff lands).
+        """
+        deadline = time.monotonic() + poll_seconds
+        while time.monotonic() < deadline:
+            ready: list[SunoClip] = []
+            for cid in clip_ids:
+                try:
+                    c = await self._client.get_clip(cid)
+                    if c.stream_url:
+                        ready.append(c)
+                except Exception as e:
+                    logger.debug(f"Suno get_clip poll error for {cid}: {e}")
+            if ready:
+                return ready
             await asyncio.sleep(interval)
         return []
 
