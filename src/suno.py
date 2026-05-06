@@ -302,6 +302,11 @@ class SunoPlayer:
 
         cmd = [
             ffmpeg, "-loglevel", "error", "-nostdin",
+            # Start decoding ASAP -- default probesize is 5MB which can add
+            # several seconds of dead air before audio begins.
+            "-probesize", "32", "-analyzeduration", "0",
+            "-fflags", "+nobuffer+discardcorrupt",
+            "-flags", "low_delay",
             "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
             "-i", self.state.clip.stream_url,
             "-f", "s16le", "-ar", str(SUNO_SR), "-ac", str(SUNO_CH),
