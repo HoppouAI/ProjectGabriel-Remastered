@@ -213,6 +213,7 @@ sfx/music/*.ogg
 sfx/music/*.flac
 sfx/music/*.m4a
 !sfx/music/.gitkeep
+/sfx/music/suno
 /old_stuff
 Screenshot 2026-02-08 083943.png
 *.pt
