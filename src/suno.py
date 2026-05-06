@@ -70,6 +70,16 @@ class SunoClip:
 
 
 @dataclass
+class LibraryEntry:
+    """A song in the operator's Suno library/playlist."""
+    id: str
+    title: str
+    image_url: str = ""
+    styles: str = ""
+    lyrics: str = ""
+
+
+@dataclass
 class _PlayerState:
     clip: SunoClip
     play_start: Optional[float] = None
@@ -151,6 +161,85 @@ class SunoBridgeClient:
             if r.status_code == 404:
                 return []  # bridge doesn't support /recent yet
             r.raise_for_status()
+            data = r.json()
+        return [SunoClip(
+            id=s.get("id", ""),
+            title=s.get("title", ""),
+            status=s.get("status", "submitted"),
+            stream_url=s.get("stream_url", ""),
+            audio_url=s.get("audio_url", "") or "",
+            image_url=s.get("image_url", "") or "",
+        ) for s in data.get("songs", [])]
+
+    async def library(self, q: str | None = None,
+                      playlist_id: str | None = None,
+                      refresh: bool = False,
+                      timeout_ms: int = 90000) -> list[LibraryEntry]:
+        """List songs in the operator's Suno playlist.
+
+        The bridge handles caching and scrolling the virtualized list.
+        """
+        params: dict = {"timeout_ms": timeout_ms}
+        if q:
+            params["q"] = q
+        if playlist_id:
+            params["id"] = playlist_id
+        if refresh:
+            params["refresh"] = "1"
+        async with httpx.AsyncClient(timeout=self._timeout) as c:
+            r = await c.get(f"{self.base_url}/api/v1/library", params=params)
+            if r.status_code >= 400:
+                try:
+                    data = r.json()
+                except Exception:
+                    data = {"error": "unknown", "message": r.text}
+                raise SunoError(r.status_code, data.get("error", "error"),
+                                data.get("message", ""))
+            data = r.json()
+        return [LibraryEntry(
+            id=s.get("id", ""),
+            title=s.get("title", ""),
+            image_url=s.get("image_url", "") or "",
+            styles=s.get("styles", "") or "",
+            lyrics=s.get("lyrics", "") or "",
+        ) for s in data.get("songs", [])]
+
+    async def get_lyrics(self, clip_id: str) -> str:
+        """Fetch lyrics for a single clip from the bridge cache."""
+        async with httpx.AsyncClient(timeout=20.0) as c:
+            r = await c.get(f"{self.base_url}/api/v1/songs/{clip_id}/lyrics")
+            if r.status_code == 404:
+                raise SunoError(404, "lyrics_not_found", "Clip has no lyrics (instrumental?) or hasn't been seen.")
+            if r.status_code >= 400:
+                try:
+                    data = r.json()
+                except Exception:
+                    data = {"error": "unknown", "message": r.text}
+                raise SunoError(r.status_code, data.get("error", "error"),
+                                data.get("message", ""))
+            data = r.json()
+        return data.get("lyrics", "") or ""
+
+    async def cover_song(self, source_id: str,
+                         lyrics: str | None = None,
+                         style: str | None = None,
+                         timeout_ms: int = 120000) -> list[SunoClip]:
+        """Cover an existing Suno song, optionally with new lyrics/style."""
+        url = f"{self.base_url}/api/v1/cover?timeout_ms={timeout_ms}"
+        body: dict = {"id": source_id}
+        if lyrics and lyrics.strip():
+            body["lyrics"] = lyrics
+        if style and style.strip():
+            body["style"] = style.strip()
+        async with httpx.AsyncClient(timeout=self._timeout) as c:
+            r = await c.post(url, json=body)
+            if r.status_code >= 400:
+                try:
+                    data = r.json()
+                except Exception:
+                    data = {"error": "unknown", "message": r.text}
+                raise SunoError(r.status_code, data.get("error", "error"),
+                                data.get("message", ""))
             data = r.json()
         return [SunoClip(
             id=s.get("id", ""),
@@ -419,20 +508,33 @@ class SunoManager:
                            "Stay quiet until the music kicks in."}
 
     async def _generate_and_play(self, lyrics: str, style: str | None = None):
-        """Background: call the bridge, then start playback."""
+        """Background: call the bridge to create a new song, then play it."""
+        async def create():
+            return await self._client.create_song(lyrics, style=style)
+        await self._run_and_play(create, label="generate")
+
+    async def _cover_and_play(self, source_id: str,
+                              lyrics: str | None = None,
+                              style: str | None = None):
+        """Background: call the bridge to cover a song, then play it."""
+        async def cover():
+            return await self._client.cover_song(source_id, lyrics=lyrics, style=style)
+        await self._run_and_play(cover, label="cover")
+
+    async def _run_and_play(self, create_fn, label: str = "generate"):
         request_started_ms = int(self._generating_started_at * 1000) - 2000
         async with self._lock:
             try:
                 clips: list[SunoClip] = []
                 try:
-                    clips = await self._client.create_song(lyrics, style=style)
+                    clips = await create_fn()
                 except SunoError as e:
                     err_blob = (e.code + " " + e.message).lower()
                     is_timeout = "timeout" in err_blob
                     if is_timeout:
                         # Bridge driver gave up but suno may have generated the
                         # songs anyway. Poll /recent to recover the IDs.
-                        logger.warning("Suno create timed out, polling /recent for sniffed clips...")
+                        logger.warning(f"Suno {label} timed out, polling /recent for sniffed clips...")
                         clips = await self._wait_for_recent(request_started_ms,
                                                             poll_seconds=60.0)
                         if not clips:
@@ -446,11 +548,11 @@ class SunoManager:
                         logger.info(f"Recovered {len(clips)} clip(s) from /recent")
                     else:
                         self._generating_error = f"{e.code}: {e.message}"
-                        logger.error(f"Suno generate failed: {self._generating_error}")
+                        logger.error(f"Suno {label} failed: {self._generating_error}")
                         return
                 except httpx.HTTPError as e:
                     self._generating_error = f"bridge_unreachable: {e}"
-                    logger.error(f"Suno generate failed: {self._generating_error}")
+                    logger.error(f"Suno {label} failed: {self._generating_error}")
                     return
 
                 valid = [c for c in clips if c.stream_url]
@@ -547,6 +649,82 @@ class SunoManager:
             self._poll_task = asyncio.create_task(self._poll_loop(clip.id))
         return {"result": "ok", "code": "replaying",
                 "message": f"Replaying {'alternate' if which == 'other' else 'last'} song: {clip.title or clip.id}"}
+
+    async def search_library(self, query: str | None = None,
+                             limit: int = 25) -> dict:
+        """Search the operator's Suno playlist for songs to cover."""
+        try:
+            entries = await self._client.library(q=query)
+        except SunoError as e:
+            return {"result": "error", "code": e.code, "message": e.message or str(e)}
+        except httpx.HTTPError as e:
+            return {"result": "error", "code": "bridge_unreachable", "message": str(e)}
+        # Don't dump huge lyrics blobs into every search result -- the model
+        # can ask for them via getSongLyrics on the specific id it picks.
+        trimmed = []
+        for e in entries[:limit]:
+            trimmed.append({
+                "id": e.id,
+                "title": e.title,
+                "styles": e.styles[:200],
+                "has_lyrics": bool(e.lyrics),
+            })
+        return {"result": "ok", "count": len(trimmed),
+                "total": len(entries), "songs": trimmed}
+
+    async def get_lyrics(self, clip_id: str) -> dict:
+        """Fetch the lyrics for a specific clip from the bridge."""
+        if not clip_id or not clip_id.strip():
+            return {"result": "error", "code": "bad_id", "message": "Clip id required."}
+        try:
+            lyrics = await self._client.get_lyrics(clip_id.strip())
+        except SunoError as e:
+            return {"result": "error", "code": e.code, "message": e.message or str(e)}
+        except httpx.HTTPError as e:
+            return {"result": "error", "code": "bridge_unreachable", "message": str(e)}
+        return {"result": "ok", "id": clip_id, "lyrics": lyrics}
+
+    async def cover(self, source_id: str,
+                    lyrics: str | None = None,
+                    style: str | None = None) -> dict:
+        """Cover an existing Suno song. lyrics/style are optional overrides."""
+        if self._generating:
+            return {"result": "error", "code": "already_generating",
+                    "message": "A song is already being generated, wait for it."}
+        cd = self.cooldown_remaining()
+        if cd > 0:
+            return {"result": "error", "code": "rate_limited",
+                    "message": f"Please wait {cd:.0f}s before covering another song."}
+        if not source_id or not source_id.strip():
+            return {"result": "error", "code": "bad_id", "message": "Source song id required."}
+        if lyrics and len(lyrics) > self._max_lyrics:
+            return {"result": "error", "code": "lyrics_too_long",
+                    "message": f"Lyrics exceed max length ({self._max_lyrics} chars)."}
+        if style and len(style) > self._max_style:
+            return {"result": "error", "code": "style_too_long",
+                    "message": f"Style exceeds max length ({self._max_style} chars)."}
+
+        # Stop any existing playback before kicking off the cover
+        if self._player is not None:
+            await asyncio.to_thread(self._player.stop)
+            self._player = None
+            if self._poll_task and not self._poll_task.done():
+                self._poll_task.cancel()
+                self._poll_task = None
+            self._audio.set_external_music_active(False)
+
+        self._last_request_at = time.time()
+        self._generating = True
+        self._generating_started_at = self._last_request_at
+        self._generating_error = None
+        self._audio.set_external_music_active(True)
+        self._gen_task = asyncio.create_task(
+            self._cover_and_play(source_id.strip(), lyrics=lyrics, style=style)
+        )
+
+        return {"result": "ok", "code": "submitted",
+                "message": "Cover started. Audio will begin streaming in a few seconds. "
+                           "Stay quiet until the music kicks in."}
 
     async def _poll_loop(self, clip_id: str):
         """Poll the bridge for title/status updates while we play."""

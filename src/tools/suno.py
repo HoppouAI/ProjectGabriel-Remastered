@@ -210,7 +210,7 @@ class SunoTools(BaseTool):
                                 "Full song lyrics with [Section] tags. Default to a full "
                                 "3-5 minute song (~3000-5000 chars) unless user asks for "
                                 "something short. See description for exact format. Hard "
-                                "cap ~6000 chars."
+                                "cap ~5000 chars."
                             ),
                         },
                         "style": {
@@ -267,6 +267,109 @@ class SunoTools(BaseTool):
                 ),
                 parameters={"type": "OBJECT", "properties": {}},
             ),
+            types.FunctionDeclaration(
+                name="searchSongLibrary",
+                description=(
+                    "Search the operator's existing Suno song library (their saved playlist) "
+                    "for songs you can cover/parody. Returns a list of `{id, title, styles, "
+                    "has_lyrics}` entries. Use this to discover what's available BEFORE "
+                    "calling coverSong. The library is the operator's own catalog of past "
+                    "Suno generations and is the ONLY pool of songs that can be covered -- "
+                    "you can't cover arbitrary commercial tracks.\n\n"
+                    "Pass an optional `query` substring to filter by title (case-insensitive). "
+                    "Omit `query` to list everything (capped at 25 entries). The full lyrics "
+                    "are NOT included in this response to keep it small -- use "
+                    "`getSongLyrics` on the specific id once you've picked one.\n"
+                    "**Invocation Condition:** Call before `coverSong` to find a source "
+                    "song. Also call when someone asks 'what songs can you parody', "
+                    "'what's in your library', 'do you have a cover of X', etc."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "query": {
+                            "type": "STRING",
+                            "description": "Optional case-insensitive substring to filter by title.",
+                        },
+                    },
+                },
+            ),
+            types.FunctionDeclaration(
+                name="getSongLyrics",
+                description=(
+                    "Fetch the full lyrics of one specific song from the operator's library "
+                    "by its id. Use this AFTER `searchSongLibrary` once you've picked which "
+                    "song to cover/parody, so you can rewrite the lyrics line-for-line and "
+                    "keep the same structure/meter/rhyme scheme. Pass the id verbatim from "
+                    "`searchSongLibrary`'s response.\n"
+                    "**Invocation Condition:** Call right before `coverSong` whenever you "
+                    "intend to supply your own parody lyrics. Skip if you're doing a "
+                    "no-override cover (just remixing the same song)."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "id": {
+                            "type": "STRING",
+                            "description": "Source song uuid from searchSongLibrary.",
+                        },
+                    },
+                    "required": ["id"],
+                },
+            ),
+            types.FunctionDeclaration(
+                name="coverSong",
+                description=(
+                    "Cover or parody an existing Suno song from the operator's library. "
+                    "The bridge tells Suno to remix the source clip, optionally swapping "
+                    "in your own lyrics and/or style. The melody/voice/instrumentation are "
+                    "conditioned on the original clip's audio, so the new version will "
+                    "sound musically similar to the source -- this is the right tool for "
+                    "PARODIES (same melody, new words) and REMIXES (same words, new vibe). "
+                    "Costs a generation credit, same as generateSong.\n\n"
+                    "**Workflow:** First call `searchSongLibrary` to find a source song. "
+                    "Then call `getSongLyrics` to grab the original lyrics. Then write "
+                    "parody lyrics that match the original's structure (same number of "
+                    "[Verse]/[Chorus] blocks, similar line counts and syllable counts so "
+                    "the words actually fit the melody). Finally call `coverSong` with the "
+                    "source `id` and your `lyrics` (and optionally `style`).\n\n"
+                    "All the same rules as `generateSong` apply: don't recite lyrics "
+                    "out loud, announce briefly then SHUT UP, finished cover gets saved "
+                    "to the local music library, etc.\n\n"
+                    "If you call this with no `lyrics` or `style` overrides, Suno just "
+                    "remixes the source as-is (different take, same words, same vibe).\n"
+                    f"**Lyrics format (when overriding):**\n{LYRICS_FORMAT_DOC}\n\n"
+                    f"**Style format (when overriding):**\n{STYLE_FORMAT_DOC}\n"
+                    "**Invocation Condition:** Call when asked to parody, cover, remix, "
+                    "redo, or rewrite an existing song from the library. Do NOT use this "
+                    "for brand new original songs (use `generateSong`)."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "id": {
+                            "type": "STRING",
+                            "description": "Source song uuid from searchSongLibrary.",
+                        },
+                        "lyrics": {
+                            "type": "STRING",
+                            "description": (
+                                "Optional parody lyrics. Match the source's structure and "
+                                "line count so the new words fit the melody. Omit to keep "
+                                "the original lyrics. Same format as generateSong."
+                            ),
+                        },
+                        "style": {
+                            "type": "STRING",
+                            "description": (
+                                "Optional new style description. Omit to keep the source "
+                                "song's style. Same format as generateSong."
+                            ),
+                        },
+                    },
+                    "required": ["id"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -287,4 +390,16 @@ class SunoTools(BaseTool):
             if suno is None:
                 return {"result": "error", "message": "Suno integration is not enabled."}
             return await suno.replay("other")
+        if name == "searchSongLibrary":
+            if suno is None:
+                return {"result": "error", "message": "Suno integration is not enabled."}
+            return await suno.search_library(args.get("query"))
+        if name == "getSongLyrics":
+            if suno is None:
+                return {"result": "error", "message": "Suno integration is not enabled."}
+            return await suno.get_lyrics(args.get("id", ""))
+        if name == "coverSong":
+            if suno is None:
+                return {"result": "error", "message": "Suno integration is not enabled."}
+            return await suno.cover(args.get("id", ""), args.get("lyrics"), args.get("style"))
         return None
