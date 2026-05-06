@@ -658,6 +658,13 @@ suno:
   min_request_interval_seconds: 30
   # Hard cap on lyrics length sent to the bridge (chars).
   max_lyrics_chars: 3000
+  # Hard cap on style description length (chars). Bridge enforces 1000.
+  max_style_chars: 1000
+  # Auto-save finished songs to a folder so they show up in playMusic later.
+  save_finished_songs: true
+  # Where to save finished songs. Path is resolved relative to the repo root
+  # and must be inside (or equal to) music.music_dir for playMusic to find them.
+  save_dir: "sfx/music/suno"
 
 # ══════════════════════════════════════════════════════════
 # Tool Enable/Disable

@@ -35,6 +35,15 @@ SUNO_CH = 2
 SUNO_BYTES_PER_SAMPLE = 2  # int16
 
 
+def _sanitize_filename(name: str) -> str:
+    """Make a string safe for use as a filename on Windows + posix."""
+    import re
+    name = (name or "").strip() or "suno_song"
+    name = re.sub(r"[\\/:*?\"<>|\r\n\t]+", "", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name[:80] or "suno_song"
+
+
 def _resolve_ffmpeg() -> Optional[str]:
     """Find an ffmpeg executable. Prefer imageio_ffmpeg's bundled binary."""
     try:
@@ -87,10 +96,14 @@ class SunoBridgeClient:
             r.raise_for_status()
             return r.json()
 
-    async def create_song(self, lyrics: str, timeout_ms: int = 120000) -> list[SunoClip]:
+    async def create_song(self, lyrics: str, style: str | None = None,
+                          timeout_ms: int = 120000) -> list[SunoClip]:
         url = f"{self.base_url}/api/v1/songs?timeout_ms={timeout_ms}"
+        body: dict = {"lyrics": lyrics}
+        if style and style.strip():
+            body["style"] = style.strip()
         async with httpx.AsyncClient(timeout=self._timeout) as c:
-            r = await c.post(url, json={"lyrics": lyrics})
+            r = await c.post(url, json=body)
             if r.status_code >= 400:
                 try:
                     data = r.json()
@@ -314,6 +327,9 @@ class SunoManager:
         self._min_interval = float(config.get("suno", "min_request_interval_seconds", default=30.0))
         self._volume = int(config.get("suno", "volume", default=90))
         self._max_lyrics = int(config.get("suno", "max_lyrics_chars", default=3000))
+        self._max_style = int(config.get("suno", "max_style_chars", default=1000))
+        self._save_dir = config.get("suno", "save_dir", default="sfx/music/suno")
+        self._save_enabled = bool(config.get("suno", "save_finished_songs", default=True))
         self._last_request_at: float = 0.0
         self._player: Optional[SunoPlayer] = None
         self._poll_task: Optional[asyncio.Task] = None
@@ -356,7 +372,7 @@ class SunoManager:
         elapsed = time.time() - self._last_request_at
         return max(0.0, self._min_interval - elapsed)
 
-    async def generate(self, lyrics: str) -> dict:
+    async def generate(self, lyrics: str, style: str | None = None) -> dict:
         # Fast-path validation -- the actual bridge call happens in a
         # background task so the function response goes back to gemini
         # immediately. Otherwise the model sits silent for 5-15 seconds
@@ -374,6 +390,9 @@ class SunoManager:
         if len(lyrics) > self._max_lyrics:
             return {"result": "error", "code": "lyrics_too_long",
                     "message": f"Lyrics exceed max length ({self._max_lyrics} chars)."}
+        if style and len(style) > self._max_style:
+            return {"result": "error", "code": "style_too_long",
+                    "message": f"Style exceeds max length ({self._max_style} chars)."}
 
         # Stop any existing playback before starting a new one
         if self._player is not None:
@@ -391,20 +410,20 @@ class SunoManager:
         # Mark external music active right away so the chatbox UI takes over
         # and the AI's voice ducks while the song spins up.
         self._audio.set_external_music_active(True)
-        self._gen_task = asyncio.create_task(self._generate_and_play(lyrics))
+        self._gen_task = asyncio.create_task(self._generate_and_play(lyrics, style))
 
         return {"result": "ok", "code": "submitted",
                 "message": "Song generation started. Audio will begin streaming in a few seconds. "
                            "Stay quiet until the music kicks in."}
 
-    async def _generate_and_play(self, lyrics: str):
+    async def _generate_and_play(self, lyrics: str, style: str | None = None):
         """Background: call the bridge, then start playback."""
         request_started_ms = int(self._generating_started_at * 1000) - 2000
         async with self._lock:
             try:
                 clips: list[SunoClip] = []
                 try:
-                    clips = await self._client.create_song(lyrics)
+                    clips = await self._client.create_song(lyrics, style=style)
                 except SunoError as e:
                     err_blob = (e.code + " " + e.message).lower()
                     is_timeout = "timeout" in err_blob
@@ -494,23 +513,62 @@ class SunoManager:
 
     async def _poll_loop(self, clip_id: str):
         """Poll the bridge for title/status updates while we play."""
+        saved = False
         try:
+            # While playing
             while self._player is not None and self._player.is_playing:
-                try:
-                    clip = await self._client.get_clip(clip_id)
-                    if self._player is None:
-                        return
-                    s = self._player.state
-                    if clip.title:
-                        s.title = clip.title
-                    if clip.status:
-                        s.status = clip.status
-                    if clip.audio_url:
-                        s.audio_url = clip.audio_url
-                except Exception as e:
-                    logger.debug(f"Suno poll error: {e}")
+                saved = await self._poll_once(clip_id, saved)
                 await asyncio.sleep(5.0)
-            # After playback ends, mark external music inactive
+            # Mark external music inactive once playback ended
             self._audio.set_external_music_active(False)
+            # Keep polling briefly so we still catch a late audio_url
+            if not saved and self._save_enabled:
+                deadline = time.monotonic() + 120.0
+                while time.monotonic() < deadline and not saved:
+                    saved = await self._poll_once(clip_id, saved, allow_save=True)
+                    if saved:
+                        break
+                    await asyncio.sleep(5.0)
         except asyncio.CancelledError:
             pass
+
+    async def _poll_once(self, clip_id: str, already_saved: bool,
+                         allow_save: bool = True) -> bool:
+        try:
+            clip = await self._client.get_clip(clip_id)
+            if self._player is not None:
+                s = self._player.state
+                if clip.title:
+                    s.title = clip.title
+                if clip.status:
+                    s.status = clip.status
+                if clip.audio_url:
+                    s.audio_url = clip.audio_url
+            if clip.audio_url and self._save_enabled and allow_save and not already_saved:
+                asyncio.create_task(self._download_song(clip))
+                return True
+        except Exception as e:
+            logger.debug(f"Suno poll error: {e}")
+        return already_saved
+
+    async def _download_song(self, clip: SunoClip):
+        """Download the finished mp3 to the local music dir for replay."""
+        try:
+            os.makedirs(self._save_dir, exist_ok=True)
+            safe_title = _sanitize_filename(clip.title or "suno_song")
+            filename = f"{safe_title}_{clip.id[:8]}.mp3"
+            target = os.path.join(self._save_dir, filename)
+            if os.path.exists(target):
+                logger.info(f"Suno song already saved: {filename}")
+                return
+            tmp = target + ".part"
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as c:
+                async with c.stream("GET", clip.audio_url) as r:
+                    r.raise_for_status()
+                    with open(tmp, "wb") as f:
+                        async for chunk in r.aiter_bytes(64 * 1024):
+                            f.write(chunk)
+            os.replace(tmp, target)
+            logger.info(f"Saved Suno song to {target}")
+        except Exception as e:
+            logger.warning(f"Failed to save Suno song {clip.id}: {e}")

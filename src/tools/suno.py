@@ -47,6 +47,36 @@ LYRICS_FORMAT_DOC = (
 )
 
 
+STYLE_FORMAT_DOC = (
+    "Style is a free-form prose description of how the song should sound. It "
+    "drives Suno's instrument choice, mix, vibe, and vocal delivery. You can "
+    "use any instruments, any genre fusion, anything. Be SEMI-DETAILED -- one "
+    "well-packed paragraph (roughly 3 to 7 sentences, ~300-900 chars). Cover:\n"
+    "  * Genre / fusion (e.g. 'Indian Trap and Desi Hip-Hop fusion')\n"
+    "  * Specific instruments and their character (e.g. 'menacing distorted "
+    "808 sub-bass', 'thundering Punjabi Dhol', 'sampled Harmonium looped')\n"
+    "  * Rhythm and percussion details (e.g. 'rapid-fire rattling trap hi-hats')\n"
+    "  * Melody / harmony feel (key, mode, mood)\n"
+    "  * Vocal style, accent, delivery (e.g. 'aggressive rhythmic rap with a "
+    "distinct Indian accent and punchy flow')\n"
+    "  * Production polish, energy, atmosphere (e.g. 'polished, loud, bass-heavy, "
+    "high energy, underground, intimidating')\n\n"
+    "Example:\n"
+    "\"Hard-hitting Indian Trap and Desi Hip-Hop fusion. The track is driven by "
+    "a menacing, distorted 808 sub-bass that shakes the floor, layered over "
+    "thundering traditional Punjabi Dhol percussion for a syncopated bounce. "
+    "The rhythm features rapid-fire, rattling trap hi-hats and a sharp, snapping "
+    "snare. A dark, minor-key melody is played by a sampled Harmonium or Sitar, "
+    "looped to create a hypnotic and tense atmosphere. The vocals are delivered "
+    "in an aggressive, rhythmic rap style with a distinct Indian accent and "
+    "punchy flow. The production is polished, loud, and bass-heavy, blending "
+    "raw folk roots with modern street grit. High energy, underground, and "
+    "intimidating.\"\n\n"
+    "Hard cap is 1000 characters. If you omit style, whatever was last set in "
+    "the operator's Suno tab is reused."
+)
+
+
 @register_tool
 class SunoTools(BaseTool):
     tool_key = "suno"
@@ -58,11 +88,13 @@ class SunoTools(BaseTool):
             types.FunctionDeclaration(
                 name="generateSong",
                 description=(
-                    "Generate a new full song with Suno using your own original lyrics, "
-                    "then stream it back live as it's being made. The tool returns "
-                    "instantly with status 'submitted' -- audio actually starts "
-                    "playing about 5-10 seconds later as Suno warms up. The chatbox "
-                    "will show 'Generating song...' until then.\n\n"
+                    "Generate a new full song with Suno using your own original lyrics "
+                    "and style description, then stream it back live as it's being made. "
+                    "The tool returns instantly with status 'submitted' -- audio actually "
+                    "starts playing about 5-10 seconds later as Suno warms up. The chatbox "
+                    "will show 'Generating song...' until then. Finished songs are "
+                    "automatically saved to the local music library and can be replayed "
+                    "later with playMusic.\n\n"
                     "**CRITICAL: DO NOT speak, sing, or recite the lyrics out loud.** "
                     "The lyrics go ONLY into the `lyrics` parameter of this function call. "
                     "Suno's voice will sing them. If you say the lyrics yourself you ruin "
@@ -80,6 +112,7 @@ class SunoTools(BaseTool):
                     "submit a full-length song (target 2+ minutes / ~1500-2800 chars of "
                     "lyrics, with proper Verse/Chorus/Bridge structure). Short stub songs "
                     "waste credits.\n\n"
+                    f"**Style format:**\n{STYLE_FORMAT_DOC}\n\n"
                     f"**Lyrics format:**\n{LYRICS_FORMAT_DOC}\n\n"
                     "**Rate limit:** Only one song every 30 seconds. If it fails with "
                     "rate_limited, wait it out and tell the user. If it fails with "
@@ -101,8 +134,18 @@ class SunoTools(BaseTool):
                                 "exact format. Up to ~3000 chars."
                             ),
                         },
+                        "style": {
+                            "type": "STRING",
+                            "description": (
+                                "Semi-detailed prose description of the song's sound: "
+                                "genre/fusion, specific instruments and their character, "
+                                "rhythm, melody/key/mood, vocal style and accent, and "
+                                "overall production feel. Up to 1000 chars. See description "
+                                "for the exact format and an example."
+                            ),
+                        },
                     },
-                    "required": ["lyrics"],
+                    "required": ["lyrics", "style"],
                 },
             ),
             types.FunctionDeclaration(
@@ -123,7 +166,7 @@ class SunoTools(BaseTool):
         if name == "generateSong":
             if suno is None:
                 return {"result": "error", "message": "Suno integration is not enabled."}
-            return await suno.generate(args.get("lyrics", ""))
+            return await suno.generate(args.get("lyrics", ""), args.get("style"))
         if name == "stopSong":
             if suno is None:
                 return {"result": "error", "message": "Suno integration is not enabled."}
