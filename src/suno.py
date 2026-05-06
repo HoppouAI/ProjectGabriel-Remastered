@@ -337,6 +337,8 @@ class SunoManager:
         self._generating: bool = False
         self._generating_started_at: float = 0.0
         self._generating_error: Optional[str] = None
+        self._last_chosen: Optional[SunoClip] = None
+        self._last_other: Optional[SunoClip] = None
         self._lock = asyncio.Lock()
 
     @property
@@ -457,6 +459,7 @@ class SunoManager:
                     logger.error("Suno returned no playable stream URL")
                     return
                 chosen = valid[0]
+                other = valid[1] if len(valid) > 1 else None
 
                 player = SunoPlayer(chosen, self._audio, volume=self._volume)
                 ok = await asyncio.to_thread(player.start)
@@ -466,6 +469,8 @@ class SunoManager:
                     return
 
                 self._player = player
+                self._last_chosen = chosen
+                self._last_other = other
                 self._poll_task = asyncio.create_task(self._poll_loop(chosen.id))
             finally:
                 self._generating = False
@@ -510,6 +515,38 @@ class SunoManager:
             self._poll_task = None
             self._audio.set_external_music_active(False)
             return {"result": "ok", "message": "Stopped"}
+
+    async def replay(self, which: str = "last") -> dict:
+        """Replay one of the last generated clips without spending a credit.
+
+        which: "last"  -> the clip we picked and played
+               "other" -> the alternate clip suno generated alongside it
+        """
+        clip = self._last_chosen if which != "other" else self._last_other
+        if clip is None:
+            if which == "other":
+                return {"result": "error", "code": "no_other",
+                        "message": "Suno only returned one clip last time, no alternate to play."}
+            return {"result": "error", "code": "no_last",
+                    "message": "No previously generated song to replay."}
+        if not clip.stream_url:
+            return {"result": "error", "code": "no_stream",
+                    "message": "That clip has no stream URL anymore (probably expired). Generate a new one."}
+        # Stop anything currently playing first
+        if self._player is not None or self._generating:
+            await self.stop()
+        async with self._lock:
+            player = SunoPlayer(clip, self._audio, volume=self._volume)
+            ok = await asyncio.to_thread(player.start)
+            if not ok:
+                err = player.state.error or "playback_failed"
+                return {"result": "error", "code": "playback_failed", "message": err}
+            self._player = player
+            # Light poll loop so the chatbox stays updated and a late
+            # save still happens for the alternate clip if needed.
+            self._poll_task = asyncio.create_task(self._poll_loop(clip.id))
+        return {"result": "ok", "code": "replaying",
+                "message": f"Replaying {'alternate' if which == 'other' else 'last'} song: {clip.title or clip.id}"}
 
     async def _poll_loop(self, clip_id: str):
         """Poll the bridge for title/status updates while we play."""

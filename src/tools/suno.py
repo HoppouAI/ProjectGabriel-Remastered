@@ -159,6 +159,35 @@ class SunoTools(BaseTool):
                 ),
                 parameters={"type": "OBJECT", "properties": {}},
             ),
+            types.FunctionDeclaration(
+                name="replayLastSong",
+                description=(
+                    "Replay the last Suno song you generated this session, without spending "
+                    "another generation credit. Streams from the same temporary URL the "
+                    "bridge gave us (these stay warm for around 5 to 10 minutes after "
+                    "generation). If the URL has expired you'll get an error and need to "
+                    "generate a fresh song instead. Stops anything currently playing first.\n"
+                    "**Invocation Condition:** Call when asked to play that song again, "
+                    "replay it, do it one more time, etc. Do NOT call this for songs from "
+                    "the local music library, use playMusic for those."
+                ),
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="playOtherSong",
+                description=(
+                    "Suno actually generates 2 versions of every song; only the first one "
+                    "auto-plays and gets saved. This tool plays the OTHER version (the "
+                    "alternate take) of your most recent generation. No generation credit is "
+                    "spent. The alternate take is NOT saved to the music library, so this is "
+                    "the only way to hear it. Stops anything currently playing first.\n\n"
+                    "If the URL has expired (after roughly 5-10 minutes) or suno only gave "
+                    "us one version this time, you'll get an error.\n"
+                    "**Invocation Condition:** Call when asked to hear the other version, "
+                    "the alternate take, the second one, the B-side, etc."
+                ),
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
         ]
 
     async def handle(self, name, args):
@@ -171,4 +200,12 @@ class SunoTools(BaseTool):
             if suno is None:
                 return {"result": "error", "message": "Suno integration is not enabled."}
             return await suno.stop()
+        if name == "replayLastSong":
+            if suno is None:
+                return {"result": "error", "message": "Suno integration is not enabled."}
+            return await suno.replay("last")
+        if name == "playOtherSong":
+            if suno is None:
+                return {"result": "error", "message": "Suno integration is not enabled."}
+            return await suno.replay("other")
         return None
