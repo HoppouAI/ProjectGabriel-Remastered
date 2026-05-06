@@ -51,7 +51,11 @@ LYRICS_FORMAT_DOC = (
     "[Outro]\n"
     "four to eight closing lines that wind the song down\n\n"
     "Avoid stage directions, narration, or anything that isn't actually sung. "
-    "Style/genre/voice are set by the operator -- you only supply lyrics."
+    "You ALSO supply the music/genre/instruments/vocal direction separately via "
+    "the `style` parameter -- match your lyrics to it. If the style says rap, "
+    "write dense rhymed bars; if it says ballad, write emotional sparser lines; "
+    "if it says metal, write aggressive hooks; etc. The two parameters work "
+    "together, write them as one cohesive song."
 )
 
 
@@ -80,8 +84,9 @@ STYLE_FORMAT_DOC = (
     "punchy flow. The production is polished, loud, and bass-heavy, blending "
     "raw folk roots with modern street grit. High energy, underground, and "
     "intimidating.\"\n\n"
-    "Hard cap is 1000 characters. If you omit style, whatever was last set in "
-    "the operator's Suno tab is reused."
+    "Hard cap is 1000 characters. The `style` parameter is REQUIRED -- you "
+    "must supply both lyrics and style on every call so the song is fully "
+    "yours."
 )
 
 
