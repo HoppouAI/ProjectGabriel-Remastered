@@ -131,7 +131,7 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
         except Exception:
             plugin_tool_map = {}
 
-    rows: list[tuple[str, bool, int, int]] = []
+    rows: list[tuple[str, bool, int, int, str, str]] = []
     for entry in sorted(pdir.iterdir()):
         if not entry.is_dir() or entry.name.startswith((".", "_")):
             continue
@@ -145,6 +145,8 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
             m = {}
         name = m.get("name") or entry.name
         enabled = bool(m.get("enabled", True))
+        version = str(m.get("version") or "").strip()
+        author = str(m.get("author") or "").strip()
         sub = plugin_tool_map.get(name) or {}
         if isinstance(sub, dict):
             total = len(sub)
@@ -152,25 +154,30 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
         else:
             total = 0
             on_count = 0
-        rows.append((name, enabled, on_count, total))
+        rows.append((name, enabled, on_count, total, version, author))
 
     if not rows:
         return
 
-    # short divider so it's visually grouped under the components but distinct
     print(f"  {C.DIM}Plugins{C.RST}")
-    for name, enabled, on_count, total in rows:
+    for name, enabled, on_count, total, version, author in rows:
         if enabled:
             dot = f"{C.B_GREEN}\u25cf{C.RST}"
-            label = name
+            label = f"{C.B_WHITE}{name}{C.RST}"
         else:
             dot = f"{C.DIM}\u25cb{C.RST}"
             label = f"{C.DIM}{name}{C.RST}"
+        meta_bits = []
+        if version:
+            meta_bits.append(f"v{version}")
+        if author:
+            meta_bits.append(f"by {author}")
         if total > 0:
-            tool_info = f"  {C.DIM}({on_count}/{total} tools){C.RST}"
+            meta_bits.append(f"{on_count}/{total} tools")
         else:
-            tool_info = f"  {C.DIM}(no tools){C.RST}"
-        print(f"  {dot} {label}{tool_info}")
+            meta_bits.append("no tools")
+        meta = f"  {C.DIM}({' \u2022 '.join(meta_bits)}){C.RST}"
+        print(f"  {dot} {label}{meta}")
     print()
 
 

@@ -155,7 +155,9 @@ class PluginManager:
             return
 
         self.loaded.append((plugin_obj, ctx))
-        logger.info(
+        # the banner shows version + author per plugin so we keep this DEBUG
+        # to avoid duplicating that info in the startup log.
+        logger.debug(
             f"loaded plugin '{plugin_obj.name}' v{plugin_obj.version}"
             + (f" by {plugin_obj.author}" if plugin_obj.author else "")
         )
