@@ -14,7 +14,7 @@ class SoundboardTools(BaseTool):
         return [
             types.FunctionDeclaration(
                 name="searchSoundboard",
-                description="Search the MyInstants soundboard for short audio clips. Returns results with IDs and titles. Use playSoundboard with the ID to play one.\n**Invocation Condition:** Call only when you want to browse results before playing, or when the user asks to search. For direct playback, use playSoundboard instead (it auto-searches).",
+                description="Search the MyInstants soundboard for short audio clips. Returns results with IDs and titles. Use playSoundboard with the ID to play one.\n**Invocation Condition:** Call only when you want to browse results before playing, or when the user asks to search. For direct playback, use playSoundboard instead (it auto-searches).\n**After calling:** When telling the user what was found, ALWAYS read out the actual clip titles from the results so they know what to pick. Never say something vague like 'I found a few' or 'which one would you like' without listing the titles, the user has not seen the search output.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
