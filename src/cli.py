@@ -88,6 +88,8 @@ def print_startup_info(config):
         ("OBS Overlay", config.obs_enabled),
         ("Music Gen", config.music_gen_enabled),
         ("Web Search", config.web_search_enabled),
+        ("Discord Bot", getattr(config, "discord_bot_enabled", False)),
+        ("Social", getattr(config, "social_enabled", False)),
     ]
 
     parts = []
@@ -99,6 +101,77 @@ def print_startup_info(config):
 
     for i in range(0, len(parts), 4):
         print(f"  {'   '.join(parts[i:i + 4])}")
+    print()
+    print(f"  {C.DIM}{'\u2500' * _W}{C.RST}")
+    print()
+
+
+def print_plugins_info(plugins_dir: str = "plugins"):
+    """Walk plugins/ and print each plugin's enabled state plus tool count.
+
+    Run AFTER src.tools_sync.sync_tools_yml so the per-tool toggles are
+    fresh. Reads each plugin.yml's `enabled:` flag for the plugin level
+    state, and config/tools.yml `plugin_tools.<name>` for the per-tool
+    toggles.
+    """
+    import yaml as _yaml
+    from pathlib import Path
+
+    pdir = Path(plugins_dir)
+    if not pdir.is_dir():
+        return
+
+    # per-plugin tool toggles, if present
+    tools_path = Path("config/tools.yml")
+    plugin_tool_map: dict = {}
+    if tools_path.exists():
+        try:
+            with open(tools_path, "r", encoding="utf-8") as f:
+                tdata = _yaml.safe_load(f) or {}
+            plugin_tool_map = tdata.get("plugin_tools") or {}
+        except Exception:
+            plugin_tool_map = {}
+
+    rows: list[tuple[str, bool, int, int]] = []  # (name, enabled, on_count, total_count)
+    for entry in sorted(pdir.iterdir()):
+        if not entry.is_dir() or entry.name.startswith((".", "_")):
+            continue
+        manifest = entry / "plugin.yml"
+        if not manifest.exists():
+            continue
+        try:
+            with open(manifest, "r", encoding="utf-8") as f:
+                m = _yaml.safe_load(f) or {}
+        except Exception:
+            m = {}
+        name = m.get("name") or entry.name
+        enabled = bool(m.get("enabled", True))
+
+        sub = plugin_tool_map.get(name) or {}
+        if isinstance(sub, dict):
+            total = len(sub)
+            on_count = sum(1 for v in sub.values() if bool(v))
+        else:
+            total = 0
+            on_count = 0
+        rows.append((name, enabled, on_count, total))
+
+    if not rows:
+        return
+
+    print(f"  {C.B_WHITE}Plugins{C.RST}")
+    for name, enabled, on_count, total in rows:
+        if enabled:
+            dot = f"{C.B_GREEN}\u25cf{C.RST}"
+            label = f"{name}"
+        else:
+            dot = f"{C.DIM}\u25cb"
+            label = f"{name}{C.RST}"
+        if total > 0:
+            tool_info = f"  {C.DIM}({on_count}/{total} tools){C.RST}"
+        else:
+            tool_info = f"  {C.DIM}(no tools){C.RST}"
+        print(f"  {dot} {label}{tool_info}")
     print()
     print(f"  {C.DIM}{'\u2500' * _W}{C.RST}")
     print()

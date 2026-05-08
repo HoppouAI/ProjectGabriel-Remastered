@@ -87,6 +87,13 @@ async def main(save_audio=False):
     except Exception as e:
         logger.warning(f"tools.yml sync failed (non-fatal): {e}")
 
+    # Show plugin status now that tools.yml is fresh
+    try:
+        from src.cli import print_plugins_info
+        print_plugins_info()
+    except Exception:
+        pass
+
     audio = AudioManager(config)
     osc = VRChatOSC(config)
     tracker = PlayerTracker(config, osc) if config.tracker_enabled else None
