@@ -408,6 +408,26 @@ tools simply won't appear.
 Requires `ffmpeg` for streaming MP3 decode. The included `imageio-ffmpeg`
 pip dependency bundles a static binary so you don't need a system install.
 
+## Plugins
+
+Gabriel has a drop-in plugin system. Make a folder under `plugins/<your_name>/`
+with a `plugin.yml` manifest and an `__init__.py` that subclasses `Plugin`,
+and it gets auto-loaded on startup. Plugins can:
+
+- Register Gemini function-calling tools (same `BaseTool` API the built-ins use)
+- Register custom TTS providers (selectable via `tts.external_provider` in `config.yml`)
+- Register custom STT providers
+- Subscribe to lifecycle events: `startup`, `shutdown`, `message_in`, `message_out`
+- Read their own config from `config.yml` under `plugins.<name>.*`
+- Persist data in `data/plugins/<name>/`
+
+A reference plugin lives in `plugins/example_hello/`. The full author guide
+is in `plugins/README.md`. The `plugins/` folder is mostly gitignored so your
+own plugins stay local.
+
+To turn the whole system off set `plugins.enabled: false` in `config.yml`.
+To disable a single plugin without removing it set `plugins.<name>.enabled: false`.
+
 ---
 
 ## Project Structure

@@ -215,6 +215,14 @@ sfx/music/*.m4a
 !sfx/music/.gitkeep
 /sfx/music/suno
 /old_stuff
+
+# Plugins: ignore everything except the tracked example and README
+/plugins/*
+!/plugins/README.md
+!/plugins/example_hello/
+# per-plugin runtime data
+/data/plugins/
+
 Screenshot 2026-02-08 083943.png
 *.pt
 /sfx/myinstants

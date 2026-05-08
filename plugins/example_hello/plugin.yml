@@ -1,0 +1,10 @@
+name: example_hello
+version: 1.0.0
+api_version: 1
+author: HoppouAI
+description: minimal demo plugin that registers a sayHello tool and hooks the startup/shutdown events
+enabled: true
+# requirements: optional list of pip deps. The loader only warns when one is
+# missing, it never installs anything for you.
+# requirements:
+#   - requests>=2.28

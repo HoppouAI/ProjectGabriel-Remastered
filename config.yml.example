@@ -668,6 +668,24 @@ suno:
   save_dir: "sfx/music/suno"
 
 # ══════════════════════════════════════════════════════════
+# Plugins
+# ══════════════════════════════════════════════════════════
+# Drop-in plugin system. Anything in ./plugins/<name>/ with a plugin.yml
+# manifest gets auto-loaded on startup. See plugins/README.md for the
+# full author guide. Plugins can register Gemini tools, TTS providers,
+# STT providers, and subscribe to lifecycle events (startup, shutdown,
+# message_in, message_out).
+plugins:
+  # Master toggle for the whole plugin system. Set false to skip loading
+  # any plugins at all (useful for debugging if a plugin is misbehaving).
+  enabled: true
+  # Per-plugin overrides. Set <plugin_name>.enabled: false to disable a
+  # specific plugin without removing its folder. The example plugin below
+  # is the one shipped in plugins/example_hello/.
+  example_hello:
+    enabled: true
+
+# ══════════════════════════════════════════════════════════
 # Tool Enable/Disable
 # ══════════════════════════════════════════════════════════
 # Toggle individual tool groups on or off. When disabled, the tool's

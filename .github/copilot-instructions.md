@@ -153,6 +153,19 @@ class MyTool(BaseTool):
         return None
 ```
 
+### Plugin System
+- Drop-in plugin folder at `plugins/<name>/` with a `plugin.yml` manifest and an `__init__.py`.
+- Plugin classes subclass `src.plugins.Plugin` and implement `setup(ctx)` / `teardown(ctx)`.
+- `PluginContext` exposes: `register_tool(cls)`, `register_tts(name, factory)`, `register_stt(name, factory)`, `subscribe(event, cb)`, `plugin_config(key)`, `data_dir()`, lazy `audio` / `osc` / `session` / `tool_handler` refs.
+- Loaded BEFORE `GeminiLiveSession` is constructed so `@register_tool` fires before `ToolHandler` reads the registry.
+- Built-in events: `startup`, `shutdown`, `message_in(text, source)`, `message_out(text)`. Sync or async handlers, exceptions caught per subscriber.
+- Plugin TTS providers picked up via `tts.external_provider: <name>` in `config.yml` (only used when no built-in TTS is enabled).
+- Per-plugin config under `plugins.<name>.*`. Disable a plugin via `plugins.<name>.enabled: false` or master toggle `plugins.enabled: false`.
+- Per-plugin runtime data lives under `data/plugins/<name>/` (gitignored).
+- Missing python deps in `plugin.yml :: requirements:` are warned, never auto-installed.
+- `plugins/example_hello/` is the reference implementation (sayHello tool + lifecycle event subscribers). Only that folder + `plugins/README.md` are tracked, the rest of `plugins/` is gitignored.
+- Plugin loader code: `src/plugins/api.py` (Plugin, PluginContext, registries), `src/plugins/loader.py` (PluginManager).
+
 ### Prompt & Personality System
 - **prompts.yml**: Named base prompts structured as `**Persona:** -> **Conversational Rules:** -> **General Guidelines:** -> **Guardrails:**`. Select in `config.yml` -> `gemini.prompt`.
 - **appends.yml**: Auto-appends organized into 4 sections: (1) Conversational Rules & Identity, (2) Tool Invocation Conditions, (3) Guardrails, (4) Dynamic Context. Supports `{date}`, `{available_personalities}`, `{memories}` placeholders.

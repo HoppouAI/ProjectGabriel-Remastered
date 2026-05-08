@@ -70,6 +70,13 @@ async def main(save_audio=False):
     config = Config()
     print_startup_info(config)
 
+    # Plugin system: discover and load BEFORE the session so any tools the
+    # plugins register show up in the very first connect. plugins also get
+    # a chance to register external TTS/STT providers we'll pick up below.
+    from src.plugins import PluginManager, get_tts_factory
+    plugin_manager = PluginManager(config)
+    plugin_manager.discover_and_load()
+
     audio = AudioManager(config)
     osc = VRChatOSC(config)
     tracker = PlayerTracker(config, osc) if config.tracker_enabled else None
@@ -118,6 +125,24 @@ async def main(save_audio=False):
         tts_provider = TikTokTTSProvider(config)
         tts_provider.start()
         logger.info("Using TikTok TTS provider (Gemini audio will be discarded)")
+    else:
+        # plugin-supplied TTS provider (config: tts.external_provider: <name>)
+        ext_name = config.get("tts", "external_provider", default=None)
+        if ext_name:
+            factory = get_tts_factory(ext_name)
+            if factory is None:
+                logger.warning(
+                    f"tts.external_provider '{ext_name}' is not registered by any plugin"
+                )
+            else:
+                try:
+                    tts_provider = factory(config)
+                    if hasattr(tts_provider, "start"):
+                        tts_provider.start()
+                    logger.info(f"Using plugin TTS provider '{ext_name}' (Gemini audio will be discarded)")
+                except Exception as e:
+                    logger.error(f"plugin TTS '{ext_name}' failed to start: {e}")
+                    tts_provider = None
 
     session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
     session._save_audio = save_audio
@@ -224,6 +249,11 @@ async def main(save_audio=False):
         asyncio.create_task(social_client.start())
         logger.info("Social client starting...")
 
+    # Plugins: bind app refs and fire the startup event now that everything is wired
+    plugin_manager.bind_app(audio=audio, osc=osc, session=session,
+                            tool_handler=session.tool_handler, config=config)
+    plugin_manager.emit("startup")
+
     while True:
         try:
             await session.run()
@@ -237,6 +267,8 @@ async def main(save_audio=False):
             continue
     
     # Cleanup
+    plugin_manager.emit("shutdown")
+    await plugin_manager.teardown_all()
     if save_audio:
         session.save_audio_to_wav()
     if config.music_gen_enabled and session.tool_handler.music_gen:
