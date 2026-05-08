@@ -102,7 +102,8 @@ class PluginContext:
         Equivalent to decorating the class with `@register_tool`."""
         from src.tools._base import register_tool as _reg
         _reg(tool_cls)
-        self.logger.info(f"registered tool {tool_cls.__name__}")
+        # banner shows the per-plugin tool counts, no need to spam this on console
+        self.logger.debug(f"registered tool {tool_cls.__name__}")
 
     def register_tts(self, name: str, factory: Callable[..., Any]):
         """Register a TTS provider. `factory(config)` should return an

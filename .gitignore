@@ -223,6 +223,8 @@ sfx/music/*.m4a
 !/plugins/suno/
 # per-plugin runtime data
 /data/plugins/
+# plugin loader log files
+/data/logs/
 
 Screenshot 2026-02-08 083943.png
 *.pt

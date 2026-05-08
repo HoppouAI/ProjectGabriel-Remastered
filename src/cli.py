@@ -160,10 +160,12 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
         return
 
     try:
-        from src.plugins.loader import get_plugin_log_counts
-        log_counts = get_plugin_log_counts()
+        from src.plugins.loader import get_plugin_issues, get_plugin_log_path
+        issues_map = get_plugin_issues()
+        log_path = get_plugin_log_path()
     except Exception:
-        log_counts = {}
+        issues_map = {}
+        log_path = None
 
     print(f"  {C.DIM}Plugins{C.RST}")
     for name, enabled, on_count, total, version, author in rows:
@@ -184,16 +186,31 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
             meta_bits.append("no tools")
         meta = f"  {C.DIM}({' \u2022 '.join(meta_bits)}){C.RST}"
 
-        # warning/error tally pulled from the plugin log counter
-        counts = log_counts.get(name, {})
-        warn_n = int(counts.get("warn", 0) or 0)
-        err_n = int(counts.get("error", 0) or 0)
+        # warning / error tally with the first message inline. when there
+        # are more than one of either we tack on a "check plugins.log"
+        # hint pointing at the daily plugin log file.
+        issues = issues_map.get(name, []) or []
+        warns = [it for it in issues if it.get("level") == "warning"]
+        errs = [it for it in issues if it.get("level") == "error"]
         status_bits = []
-        if err_n:
-            status_bits.append(f"{C.B_RED}{err_n} error{'s' if err_n != 1 else ''}{C.RST}")
-        if warn_n:
-            status_bits.append(f"{C.B_YELLOW}{warn_n} warning{'s' if warn_n != 1 else ''}{C.RST}")
+        if errs:
+            n = len(errs)
+            first = str(errs[0].get("message", "")).strip()
+            text = f"{n} error{'s' if n != 1 else ''}"
+            if first:
+                text += f" ({first})"
+            status_bits.append(f"{C.B_RED}{text}{C.RST}")
+        if warns:
+            n = len(warns)
+            first = str(warns[0].get("message", "")).strip()
+            text = f"{n} warning{'s' if n != 1 else ''}"
+            if first:
+                text += f" ({first})"
+            status_bits.append(f"{C.B_YELLOW}{text}{C.RST}")
         status = f"  {' '.join(status_bits)}" if status_bits else ""
+        if status and (len(warns) + len(errs)) > 1:
+            log_name = log_path.name if log_path else "plugins.log"
+            status += f" {C.DIM}check {log_name}{C.RST}"
 
         print(f"  {dot} {label}{meta}{status}")
     print()
