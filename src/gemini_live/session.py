@@ -15,6 +15,7 @@ from .conversation_logger import ConversationLogger, CONVERSATION_DIR
 from .chatbox import ChatboxFormattersMixin
 from .config_builder import ConfigBuilderMixin
 from .audio import AudioLoopsMixin
+from .vision import VisionLoopMixin
 from .receive import ReceiveLoopMixin
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def _broadcast_console(log_type: str, content: str, extra: dict = None):
         pass
 
 
-class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, ConfigBuilderMixin, ChatboxFormattersMixin):
+class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, ConfigBuilderMixin, ChatboxFormattersMixin):
     def __init__(self, config, audio_mgr, osc, tracker, personality_mgr, tts_provider=None):
         self.config = config
         self.audio = audio_mgr

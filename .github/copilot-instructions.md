@@ -21,7 +21,8 @@ src/
     __init__.py          -- Public API: re-exports GeminiLiveSession, ConversationLogger, CONVERSATION_DIR
     session.py           -- GeminiLiveSession main class: __init__, run, reconnect, idle, send_text, session handle persistence, now_playing loop, compression helpers
     receive.py           -- ReceiveLoopMixin: _receive_loop (event demux), _update_chatbox, _finalize_chatbox
-    audio.py             -- AudioLoopsMixin: mic input, send realtime + Silero VAD, speaker output, TTS audio loop, screen capture, gate/ungate, switch_tts_provider
+    audio.py             -- AudioLoopsMixin: mic input, send realtime + Silero VAD, speaker output, TTS audio loop, gate/ungate, switch_tts_provider
+    vision.py            -- VisionLoopMixin: screen capture frame builder + capture loop (mss + PIL JPEG)
     config_builder.py    -- ConfigBuilderMixin: _build_config, _needs_alpha_api
     chatbox.py           -- ChatboxFormattersMixin: text/markdown/now-playing formatters for the VRChat chatbox
     conversation_logger.py -- ConversationLogger (privacy-gated, opt-in via config) + CONVERSATION_DIR
