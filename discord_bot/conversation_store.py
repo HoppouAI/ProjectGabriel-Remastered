@@ -13,11 +13,18 @@ class ConversationStore:
     Each channel gets a separate JSON file. Messages are appended
     and periodically saved. On startup, recent history is loaded
     to provide context to the Gemini session.
+
+    `persist=False` disables disk I/O entirely. The bot still keeps
+    conversation history in memory so the model gets context, but
+    nothing is read from or written to disk. Default off for privacy,
+    flip on via privacy.save_conversations in discord_bot/config.yml.
     """
 
-    def __init__(self, save_dir="discord_bot/data/conversations"):
+    def __init__(self, save_dir="discord_bot/data/conversations", persist: bool = False):
         self._dir = Path(save_dir)
-        self._dir.mkdir(parents=True, exist_ok=True)
+        self.persist = bool(persist)
+        if self.persist:
+            self._dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._conversations = {}  # channel_id -> list of entries
 
@@ -27,6 +34,9 @@ class ConversationStore:
     def load(self, channel_id, limit=50):
         """Load recent conversation history for a channel."""
         channel_id = str(channel_id)
+        if not self.persist:
+            self._conversations.setdefault(channel_id, [])
+            return self._conversations[channel_id]
         path = self._file_for(channel_id)
         if not path.exists():
             self._conversations[channel_id] = []
@@ -145,6 +155,8 @@ class ConversationStore:
         return turns
 
     def _save_async(self, channel_id):
+        if not self.persist:
+            return
         with self._lock:
             entries = list(self._conversations.get(channel_id, []))
         threading.Thread(

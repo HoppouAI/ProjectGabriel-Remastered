@@ -103,6 +103,13 @@ class Config:
         return self.get("app_name", default="Gabriel")
 
     @property
+    def conversation_logging_enabled(self):
+        # off by default for privacy. flip on in config.yml under
+        # privacy.save_conversations: true to write JSON transcripts
+        # of every Gemini Live session to data/conversations/.
+        return bool(self.get("privacy", "save_conversations", default=False))
+
+    @property
     def api_key(self):
         return self._keys[self._key_index]
 

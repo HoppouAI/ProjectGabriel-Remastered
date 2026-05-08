@@ -135,6 +135,18 @@ conversations:
   save_dir: "discord_bot/data/conversations"
 
 # ══════════════════════════════════════════════════════════
+# Privacy
+# ══════════════════════════════════════════════════════════
+# See README "Privacy" section. Off by default.
+privacy:
+  # When true, per-channel conversation history is also persisted to disk
+  # (one JSON file per channel under conversations.save_dir). The bot
+  # always keeps recent context in memory regardless so the model still
+  # has somewhere to look back, this only controls whether anything ends
+  # up on disk. Off by default.
+  save_conversations: false
+
+# ══════════════════════════════════════════════════════════
 # Discord Message RAG
 # ══════════════════════════════════════════════════════════
 # Hybrid long-term recall for Discord messages.

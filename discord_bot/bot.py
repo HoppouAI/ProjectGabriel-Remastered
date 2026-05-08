@@ -41,7 +41,10 @@ class DiscordBot:
         self._personality = PersonalityManager(
             personalities_file="discord_bot/prompts/personalities.yml"
         )
-        self._conversations = ConversationStore(self.config.conversations_dir)
+        self._conversations = ConversationStore(
+            self.config.conversations_dir,
+            persist=self.config.conversation_persistence_enabled,
+        )
         self._cooldowns = {}  # channel_id -> last_response_time
         self._batch_queues = {}  # channel_id -> list of (message, images) tuples
         self._batch_tasks = {}  # channel_id -> asyncio.Task (debounce timer)

@@ -6,6 +6,15 @@
 # Display name used in the WebUI, console logs, OBS overlays, and chatbox.
 app_name: "Gabriel"
 
+# Privacy controls. Off by default. See README "Privacy" section.
+privacy:
+  # When true, every Gemini Live session writes a JSON transcript of the
+  # whole conversation (user transcripts, assistant transcripts, tool
+  # calls, tool responses) to data/conversations/<timestamp>.json. Off by
+  # default. Turn on if you want a personal log to grep / replay later,
+  # leave off if you do not want any of it on disk.
+  save_conversations: false
+
 gemini:
   # Primary API key (required) - get from https://aistudio.google.com/apikey
   api_key: "YOUR_GEMINI_API_KEY_HERE"

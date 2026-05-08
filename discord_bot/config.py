@@ -231,6 +231,13 @@ class BotConfig:
         return self.get("conversations", "save_dir", default="discord_bot/data/conversations")
 
     @property
+    def conversation_persistence_enabled(self):
+        # off by default for privacy. flip on under privacy.save_conversations
+        # to write per channel JSON transcripts to discord_bot/data/conversations/.
+        # in memory history is always kept so the model still gets context.
+        return bool(self.get("privacy", "save_conversations", default=False))
+
+    @property
     def klipy_enabled(self):
         return self.get("klipy", "enabled", default=True)
 
