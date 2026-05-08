@@ -36,6 +36,41 @@ logger = logging.getLogger(__name__)
 
 TOOLS_PATH = Path("config/tools.yml")
 
+HEADER_COMMENT = """\
+config/tools.yml -- per-tool / per-plugin-tool toggles
+
+This file is auto-managed. On every startup ProjectGabriel walks the
+live tool registry and adds any newly discovered tool here, defaulting
+it to true. Existing values are never overwritten, so anything you flip
+off here stays off across upgrades.
+
+Schema:
+  tools:                 # built-in tools shipped with the host
+    <tool_name>: bool
+  plugin_tools:          # tools added by modular plugins, grouped per plugin
+    <plugin_name>:
+      <tool_name>: bool
+
+How disabling works:
+  set a tool to `false` and its FunctionDeclaration is filtered out of
+  the schema sent to gemini on connect, so the model has no idea the
+  tool exists and cannot call it. The python handler still lives in
+  memory but is unreachable.
+
+Plugin on/off:
+  whether a plugin itself loads is controlled by `enabled:` inside that
+  plugin's own plugins/<name>/plugin.yml, NOT by anything here. The
+  toggles under plugin_tools.<plugin> only hide individual tools once
+  the plugin is loaded.
+
+Examples:
+  tools:
+    vrchatJump: false        # disables a single built-in tool
+  plugin_tools:
+    suno:
+      generateSong: false    # plugin still loads, but this tool is hidden
+"""
+
 
 class _PermissiveCfg:
     """A stand in config that says yes to everything.
@@ -160,7 +195,24 @@ def sync_tools_yml(real_config=None) -> dict:
 
     # always rewrite if file missing, otherwise only if we actually added stuff
     file_missing = not TOOLS_PATH.exists()
-    if file_missing or added_tools or added_plugin_tools:
+
+    # Stamp the header comment on if it isn't already there. ruamel uses
+    # the start comment as the file banner. We detect by checking the
+    # CommentToken on the top mapping.
+    needs_header = True
+    try:
+        existing_comment = data.ca.comment if hasattr(data, "ca") else None
+        if existing_comment and existing_comment[1]:
+            for tok in existing_comment[1]:
+                if "auto-managed" in str(getattr(tok, "value", "")):
+                    needs_header = False
+                    break
+    except Exception:
+        pass
+    if needs_header and isinstance(data, CommentedMap):
+        data.yaml_set_start_comment(HEADER_COMMENT)
+
+    if file_missing or added_tools or added_plugin_tools or needs_header:
         TOOLS_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(TOOLS_PATH, "w", encoding="utf-8") as f:
             yaml_rt.dump(data, f)
