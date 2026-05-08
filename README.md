@@ -396,7 +396,8 @@ song is streaming the AI's voice ducks out (mic stays open so it can still
 hear the room) and unmutes when the song stops.
 
 This integration is **disabled by default** and the tools are hidden from
-Gemini until you flip `suno.enabled: true` in `config.yml`. Defaults to one
+Gemini until you flip `plugins.suno.enabled: true` in `config.yml`. Suno
+ships as a built-in plugin (see `plugins/suno/`). Defaults to one
 generate request per 30 seconds.
 
 **Backend not included.** Gabriel talks to a small private bridge running on

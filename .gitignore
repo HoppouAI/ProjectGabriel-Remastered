@@ -216,10 +216,11 @@ sfx/music/*.m4a
 /sfx/music/suno
 /old_stuff
 
-# Plugins: ignore everything except the tracked example and README
+# Plugins: ignore everything except the tracked example, suno, and README
 /plugins/*
 !/plugins/README.md
 !/plugins/example_hello/
+!/plugins/suno/
 # per-plugin runtime data
 /data/plugins/
 
