@@ -66,8 +66,12 @@ def setup_logging(level=logging.INFO):
     # quiet down chatty third party libs that the everyday user does not
     # care about. selfbot internals (TLS fingerprint, user agent string,
     # PyNaCl missing, "Logging in using static token") just spam scrollback.
+    # httpx logs every single HTTP call at INFO which floods the terminal
+    # when the embedding server is busy, drop it to WARNING.
     for noisy in ("discord.http", "discord.client"):
         logging.getLogger(noisy).setLevel(logging.ERROR)
+    for chatty in ("httpx", "httpcore"):
+        logging.getLogger(chatty).setLevel(logging.WARNING)
 
 
 _W = 49
