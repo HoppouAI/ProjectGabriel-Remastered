@@ -4,7 +4,9 @@ Drop-in plugin folder. Anything in here with a `plugin.yml` and an entry
 module that subclasses `Plugin` will be loaded on startup.
 
 This folder is mostly gitignored so personal plugins stay local. The
-`example_hello/` folder is tracked as a reference implementation.
+`example_hello/` folder is tracked as a reference implementation. It
+ships with `enabled: false` so a fresh checkout doesn't load it. flip
+that to `true` if you want to see it in action.
 
 ## Quick start
 
@@ -73,6 +75,11 @@ class MyTool(BaseTool):
 ctx.register_tool(MyTool)
 ```
 
+Note: do NOT decorate plugin tool classes with `@register_tool`. That
+decorator is for built in tools that auto-register at import time.
+Plugins register through `ctx.register_tool` so they show up under the
+plugin's owner in `config/tools.yml` and don't double register.
+
 ### `ctx.register_tts(name, factory)`
 
 Add a TTS provider. `factory(config)` should return an object with the
@@ -109,13 +116,15 @@ caught so one bad subscriber will not break the rest.
 
 ### `ctx.plugin_config(key=None, default=None)`
 
-Reads this plugin's config from `config.yml`:
+Reads this plugin's runtime settings from `config.yml`. Note: this
+only holds runtime knobs (api keys, urls, thresholds, etc). Whether
+the plugin loads at all is governed by `enabled:` in your
+`plugin.yml`, not here.
 
 ```yaml
 plugins:
   enabled: true   # global switch for the whole plugin system
   my_thing:
-    enabled: true        # per-plugin switch (overrides plugin.yml)
     api_key: "abc123"
     threshold: 0.5
 ```
@@ -138,14 +147,57 @@ because the rest of the app may not be wired yet. Read them lazily
 (when a tool actually runs) or grab them inside a `startup` event
 handler.
 
+## Enable / disable model
+
+There are three layers:
+
+1. **Master switch** -- `plugins.enabled` in `config.yml`. Set to
+   `false` to skip the entire plugin loader. Master kill switch.
+2. **Per-plugin enable** -- `enabled:` inside the plugin's own
+   `plugins/<name>/plugin.yml`. This is the "should this plugin load
+   at all" flag. If `false` the plugin is never imported and none of
+   its tools register.
+3. **Per-tool toggles** -- `config/tools.yml` under
+   `plugin_tools.<plugin>.<tool_name>`. Auto-populated on every
+   startup by `src/tools_sync.py`. Set a tool to `false` and its
+   `FunctionDeclaration` is filtered out of the schema sent to gemini
+   on connect, so the model has no idea that tool exists. The plugin
+   stays loaded and the rest of its tools keep working.
+
+So to fully shut a plugin down you flip `enabled: false` in its
+`plugin.yml`. To just hide one of its tools from the model you flip
+that tool to `false` in `config/tools.yml`.
+
+The legacy `plugins.<name>.enabled` key in `config.yml` still works as
+a fallback override for upgraders, but new plugins should use the
+manifest field.
+
+## How tools.yml works
+
+Every startup the host walks the live `@register_tool` registry plus
+every plugin's registered tools and writes any newly discovered name
+into `config/tools.yml`, defaulting to `true`. Existing values are
+never overwritten so anything you flip off stays off across upgrades.
+The schema is:
+
+```yaml
+tools:                 # built-in tools shipped with the host
+  <tool_name>: bool
+plugin_tools:          # tools added by modular plugins, grouped per plugin
+  <plugin_name>:
+    <tool_name>: bool
+```
+
+Disabled tools are filtered out of the gemini schema AND skipped at
+handler instantiation time, so they cost zero memory and the model
+cannot call them.
+
 ## Notes
 
-- Plugins load BEFORE the Gemini Live session is built, so any tools
-  they register show up in the very first connect.
-- Per-plugin `plugins.<name>.enabled` in `config.yml` overrides the
-  manifest.
-- Set `plugins.enabled: false` in `config.yml` to disable the whole
-  system at once.
+- Plugins load BEFORE the Gemini Live session is built and BEFORE
+  `tools_sync.sync_tools_yml()` runs, so any tools they register show
+  up in `config/tools.yml` automatically and are present in the very
+  first connect.
 - Missing pip dependencies are logged as warnings, the plugin still
   tries to load. If imports fail the plugin is skipped and the host
   keeps running.
