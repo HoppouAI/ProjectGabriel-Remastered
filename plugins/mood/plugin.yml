@@ -1,0 +1,7 @@
+name: mood
+version: 1.0.0
+api_version: 1
+author: HoppouAI
+description: Persistent mood system for Gabriel. The AI sets its own mood (1-10) with a reason, mood survives across sessions and gets injected into the system prompt so the model stays consistent with how it has been feeling.
+enabled: true
+requirements: []

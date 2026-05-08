@@ -169,6 +169,17 @@ class Config:
             content = content.replace("{memories}", memories_text)
             parts.append(content.strip())
 
+        # Plugins can inject extra context via
+        # ctx.register_prompt_contributor(). Failures are swallowed inside
+        # collect_prompt_contributions so a broken plugin can't kill the prompt.
+        try:
+            from src.plugins import collect_prompt_contributions
+            for extra in collect_prompt_contributions():
+                if extra:
+                    parts.append(extra)
+        except Exception as e:
+            logger.warning(f"plugin prompt contributors failed: {e}")
+
         return "\n\n".join(parts)
 
     @property

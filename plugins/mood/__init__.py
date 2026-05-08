@@ -1,0 +1,52 @@
+"""Mood plugin entry.
+
+Wires up:
+  - persistent MoodStore at data/plugins/mood/state.json
+  - setMood / getMood tools, exposed via the regular ToolHandler dispatch
+  - prompt contributor that injects the current mood block on every prompt build
+
+Stays out of the chatbox UI on purpose, mood is meant to be felt in the
+voice / wording, not displayed as a status.
+"""
+import logging
+
+from src.plugins import Plugin, PluginContext
+
+from .mood import MoodStore, format_for_prompt
+from .tools import MoodTools
+
+logger = logging.getLogger(__name__)
+
+
+class MoodPlugin(Plugin):
+    name = "mood"
+    version = "1.0.0"
+    description = "Persistent mood system, AI sets level 1-10 with a reason, mood injected into system prompt"
+    author = "HoppouAI"
+
+    def setup(self, ctx: PluginContext):
+        store = MoodStore(ctx.data_dir() / "state.json")
+        # MoodTools needs the store at construction time so it can hit it from .handle().
+        # We use a tiny wrapper class so register_tool's no-arg instantiation gives us
+        # an instance that already has the store closed over.
+        store_ref = store
+
+        class _BoundMoodTools(MoodTools):
+            def __init__(self):
+                super().__init__(store_ref)
+
+        _BoundMoodTools.__name__ = "MoodTools"
+        ctx.register_tool(_BoundMoodTools)
+        ctx.register_prompt_contributor("mood", lambda: format_for_prompt(store.get()))
+        # keep a handle so other plugins / debug code can poke at it
+        self._store = store
+        ctx.logger.info(
+            f"mood plugin ready, current mood = {store.state.level} ({store.state.reason or 'no reason set'})"
+        )
+
+    def teardown(self, ctx: PluginContext):
+        try:
+            if hasattr(self, "_store"):
+                self._store.save()
+        except Exception as e:
+            ctx.logger.warning(f"mood teardown save failed: {e}")

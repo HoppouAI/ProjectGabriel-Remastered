@@ -23,6 +23,10 @@ _event_subscribers: dict[str, list[Callable[..., Any]]] = {}
 # idle banner gets suppressed while they're active. Lower priority value runs
 # first when picking what to show.
 _chatbox_sources: dict[str, tuple[int, Any]] = {}
+# Prompt contributors are callables that return a string (or None) appended
+# to the system prompt every time it's built. Lets plugins inject dynamic
+# context like current mood, weather, time-of-day flavor, etc.
+_prompt_contributors: dict[str, Callable[[], Any]] = {}
 
 
 class Plugin:
@@ -157,6 +161,25 @@ class PluginContext:
     def unregister_chatbox_source(self, name: str):
         _chatbox_sources.pop(name, None)
 
+    def register_prompt_contributor(self, name: str, fn: Callable[[], Any]):
+        """Register a function that contributes text to the system prompt.
+
+        `fn()` is called every time the system prompt is built (session
+        start, reconnect, personality switch). Should return a string to
+        append, or None / empty string to skip. Exceptions are caught.
+
+        Use this for dynamic, opt-in context that the model should know
+        about - current mood, recent activity, status flags, etc. The
+        contributor's text is appended after all built in appends.
+        """
+        if name in _prompt_contributors:
+            self.logger.warning(f"prompt contributor '{name}' already registered, overwriting")
+        _prompt_contributors[name] = fn
+        self.logger.info(f"registered prompt contributor '{name}'")
+
+    def unregister_prompt_contributor(self, name: str):
+        _prompt_contributors.pop(name, None)
+
 
 def get_tts_factory(name: str):
     return _tts_providers.get(name)
@@ -178,6 +201,21 @@ def iter_chatbox_sources():
     """Yield (name, source) pairs sorted by ascending priority."""
     for name, (_prio, src) in sorted(_chatbox_sources.items(), key=lambda kv: kv[1][0]):
         yield name, src
+
+
+def collect_prompt_contributions() -> list[str]:
+    """Call every registered prompt contributor and return their non-empty
+    results in registration order. Errors get logged and skipped."""
+    out: list[str] = []
+    for name, fn in _prompt_contributors.items():
+        try:
+            text = fn()
+        except Exception as e:
+            logger.error(f"prompt contributor '{name}' raised: {e}")
+            continue
+        if text:
+            out.append(str(text).strip())
+    return out
 
 
 def emit_event(event: str, *args, **kwargs):

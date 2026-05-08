@@ -7,6 +7,7 @@ for the full author guide.
 from src.plugins.api import (
     Plugin,
     PluginContext,
+    collect_prompt_contributions,
     emit_event,
     get_stt_factory,
     get_tts_factory,

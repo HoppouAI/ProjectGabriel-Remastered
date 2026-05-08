@@ -131,6 +131,27 @@ class MyStatusSource:
 ctx.register_chatbox_source("my_status", MyStatusSource(...), priority=80)
 ```
 
+### `ctx.register_prompt_contributor(name, fn)`
+
+Inject extra text into the system prompt every time it gets built
+(session start, reconnect, personality switch). `fn()` should return a
+string to append, or None / empty string to skip this build. Errors are
+caught so a broken contributor cannot kill the prompt.
+
+Use it for dynamic context the model needs in its system prompt -
+current mood, current world status, time-of-day flavor, recent activity
+notes, etc. The contributor's text is appended after all built in
+appends.
+
+```python
+def my_status_block():
+    if not weather_known():
+        return None
+    return f"**Weather:** It's currently {weather()} outside, factor that into your mood."
+
+ctx.register_prompt_contributor("weather", my_status_block)
+```
+
 ### `ctx.subscribe(event, callback)`
 
 Hook into app lifecycle. Built in events:
