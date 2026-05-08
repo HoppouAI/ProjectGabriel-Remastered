@@ -68,11 +68,11 @@ async def main(save_audio=False):
     loop.set_exception_handler(_suppress_proactor_write_assert)
 
     config = Config()
-    print_startup_info(config)
 
     # Plugin system: discover and load BEFORE the session so any tools the
     # plugins register show up in the very first connect. plugins also get
     # a chance to register external TTS/STT providers we'll pick up below.
+    # Done before the banner so the unified banner can show fresh plugin status.
     from src.plugins import PluginManager, get_tts_factory
     plugin_manager = PluginManager(config)
     plugin_manager.discover_and_load()
@@ -87,12 +87,8 @@ async def main(save_audio=False):
     except Exception as e:
         logger.warning(f"tools.yml sync failed (non-fatal): {e}")
 
-    # Show plugin status now that tools.yml is fresh
-    try:
-        from src.cli import print_plugins_info
-        print_plugins_info()
-    except Exception:
-        pass
+    # Banner now that plugins + tools.yml are fresh
+    print_startup_info(config)
 
     audio = AudioManager(config)
     osc = VRChatOSC(config)

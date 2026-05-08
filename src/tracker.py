@@ -72,12 +72,12 @@ def _try_early_bettercam():
                 time.sleep(0.15)  # let DXGI settle (known bettercam quirk)
                 _early_camera = cam
                 _early_camera_backend = "bettercam"
-                logger.info(f"Early bettercam init OK ({args or 'default'})")
+                logger.debug(f"Early bettercam init OK ({args or 'default'})")
                 return
             except Exception as e:
                 logger.debug(f"Early bettercam attempt ({args}): {e}")
                 continue
-        logger.info("Early bettercam init failed on all attempts")
+        logger.debug("Early bettercam init failed on all attempts")
     except ImportError:
         logger.debug("bettercam not installed — skipping early init")
 

@@ -102,18 +102,18 @@ def print_startup_info(config):
     for i in range(0, len(parts), 4):
         print(f"  {'   '.join(parts[i:i + 4])}")
     print()
+
+    # Plugin status, integrated into the same banner block
+    _print_plugins_block()
+
     print(f"  {C.DIM}{'\u2500' * _W}{C.RST}")
     print()
 
 
-def print_plugins_info(plugins_dir: str = "plugins"):
-    """Walk plugins/ and print each plugin's enabled state plus tool count.
-
-    Run AFTER src.tools_sync.sync_tools_yml so the per-tool toggles are
-    fresh. Reads each plugin.yml's `enabled:` flag for the plugin level
-    state, and config/tools.yml `plugin_tools.<name>` for the per-tool
-    toggles.
-    """
+def _print_plugins_block(plugins_dir: str = "plugins"):
+    """Inline helper used inside print_startup_info to render the
+    Plugins sub-section. Reads plugin.yml + config/tools.yml so it
+    stays accurate. Emits nothing if there are no plugin folders."""
     import yaml as _yaml
     from pathlib import Path
 
@@ -121,7 +121,6 @@ def print_plugins_info(plugins_dir: str = "plugins"):
     if not pdir.is_dir():
         return
 
-    # per-plugin tool toggles, if present
     tools_path = Path("config/tools.yml")
     plugin_tool_map: dict = {}
     if tools_path.exists():
@@ -132,7 +131,7 @@ def print_plugins_info(plugins_dir: str = "plugins"):
         except Exception:
             plugin_tool_map = {}
 
-    rows: list[tuple[str, bool, int, int]] = []  # (name, enabled, on_count, total_count)
+    rows: list[tuple[str, bool, int, int]] = []
     for entry in sorted(pdir.iterdir()):
         if not entry.is_dir() or entry.name.startswith((".", "_")):
             continue
@@ -146,7 +145,6 @@ def print_plugins_info(plugins_dir: str = "plugins"):
             m = {}
         name = m.get("name") or entry.name
         enabled = bool(m.get("enabled", True))
-
         sub = plugin_tool_map.get(name) or {}
         if isinstance(sub, dict):
             total = len(sub)
@@ -159,20 +157,27 @@ def print_plugins_info(plugins_dir: str = "plugins"):
     if not rows:
         return
 
-    print(f"  {C.B_WHITE}Plugins{C.RST}")
+    # short divider so it's visually grouped under the components but distinct
+    print(f"  {C.DIM}Plugins{C.RST}")
     for name, enabled, on_count, total in rows:
         if enabled:
             dot = f"{C.B_GREEN}\u25cf{C.RST}"
-            label = f"{name}"
+            label = name
         else:
-            dot = f"{C.DIM}\u25cb"
-            label = f"{name}{C.RST}"
+            dot = f"{C.DIM}\u25cb{C.RST}"
+            label = f"{C.DIM}{name}{C.RST}"
         if total > 0:
             tool_info = f"  {C.DIM}({on_count}/{total} tools){C.RST}"
         else:
             tool_info = f"  {C.DIM}(no tools){C.RST}"
         print(f"  {dot} {label}{tool_info}")
     print()
+
+
+def print_plugins_info(plugins_dir: str = "plugins"):
+    """Backwards compat: prints the plugins block as a standalone section
+    with its own divider. Prefer print_startup_info now since it inlines."""
+    _print_plugins_block(plugins_dir)
     print(f"  {C.DIM}{'\u2500' * _W}{C.RST}")
     print()
 
