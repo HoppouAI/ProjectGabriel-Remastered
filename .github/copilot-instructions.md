@@ -17,7 +17,14 @@ vision_server.py         -- Debug vision WebUI for YOLO detections
 src/
   cli.py                 -- CLI formatting (colored logging, startup banner/info)
   config.py              -- YAML config loader + API key rotation
-  gemini_live.py         -- Gemini Live session (send/receive audio, tool dispatch, transcription, thinking)
+  gemini_live/           -- Gemini Live session package (split from old monolithic gemini_live.py)
+    __init__.py          -- Public API: re-exports GeminiLiveSession, ConversationLogger, CONVERSATION_DIR
+    session.py           -- GeminiLiveSession main class: __init__, run, reconnect, idle, send_text, session handle persistence, now_playing loop, compression helpers
+    receive.py           -- ReceiveLoopMixin: _receive_loop (event demux), _update_chatbox, _finalize_chatbox
+    audio.py             -- AudioLoopsMixin: mic input, send realtime + Silero VAD, speaker output, TTS audio loop, screen capture, gate/ungate, switch_tts_provider
+    config_builder.py    -- ConfigBuilderMixin: _build_config, _needs_alpha_api
+    chatbox.py           -- ChatboxFormattersMixin: text/markdown/now-playing formatters for the VRChat chatbox
+    conversation_logger.py -- ConversationLogger (privacy-gated, opt-in via config) + CONVERSATION_DIR
   audio.py               -- PyAudio I/O, voice boost/distortion, pygame music/SFX playback
   vrchat.py              -- VRChat OSC client (chatbox, voice, movement, grab/drop/use, smooth look)
   vrchatapi.py           -- VRChat REST API client (auth, avatar switch, friends, status, invites)
@@ -205,7 +212,7 @@ class MyTool(BaseTool):
 ### Thinking
 - Configurable via `gemini.thinking.budget` and `gemini.thinking.include_thoughts`
 - Thought summaries displayed in WebUI console and VRChat chatbox ("Thinking...")
-- `types.ThinkingConfig` wired in `gemini_live.py :: _build_config()`
+- `types.ThinkingConfig` wired in `src/gemini_live/config_builder.py :: ConfigBuilderMixin._build_config()`
 
 ### VRChat API
 - REST API client in `src/vrchatapi.py` -- base URL `https://api.vrchat.cloud/api/1`
