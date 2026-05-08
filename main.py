@@ -77,6 +77,16 @@ async def main(save_audio=False):
     plugin_manager = PluginManager(config)
     plugin_manager.discover_and_load()
 
+    # Sync the live tool registry into config/tools.yml so any newly added
+    # built-in tools or plugin tools show up as togglable. Then reload the
+    # in-memory tools cfg so the freshly written entries are visible.
+    try:
+        from src.tools_sync import sync_tools_yml
+        sync_tools_yml(config)
+        config.reload_tools_cfg()
+    except Exception as e:
+        logger.warning(f"tools.yml sync failed (non-fatal): {e}")
+
     audio = AudioManager(config)
     osc = VRChatOSC(config)
     tracker = PlayerTracker(config, osc) if config.tracker_enabled else None

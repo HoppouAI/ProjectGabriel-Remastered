@@ -40,9 +40,15 @@ def discover_tool_registry() -> dict:
 
     Imports src.tools (which triggers all @register_tool decorators) and
     PluginManager (which loads plugin folders and runs their setup so any
-    plugin tools register too). Then groups every FunctionDeclaration by
-    its owning class' tool_key, plus emotion declarations and plugin entries.
-    Returns: {"tools": {name: {"category": str}}, "plugins": [name, ...]}.
+    plugin tools register too). Returns:
+
+        {
+          "tools": {name: {"category": str}},      # built-in tools
+          "plugin_tools": {                         # plugin tools, grouped per plugin
+            plugin_name: {tool_name: {"category": "Plugin: <name>"}}
+          },
+          "plugins": [plugin_name, ...]             # plugin folders found
+        }
     """
     # Lazy import so configurator.py can still load if src/ has issues
     import importlib
@@ -79,31 +85,34 @@ def discover_tool_registry() -> dict:
 
     stub_cfg = _StubCfg()
 
-    tools_out: dict[str, dict] = {}
+    builtin_out: dict[str, dict] = {}
+    plugin_tools_out: dict[str, dict[str, dict]] = {}
+
     for cls in get_registered_tools():
         tool_key = getattr(cls, "tool_key", None) or cls.__name__
-        # Plugin tools live under plugins/<dir>/... so tag them clearly
         module = getattr(cls, "__module__", "") or ""
-        if module.startswith("plugins."):
-            plugin_name = module.split(".", 2)[1] if "." in module else tool_key
-            category = f"Plugin: {plugin_name}"
-        else:
-            category = _humanize(tool_key)
         try:
             instance = cls.__new__(cls)
             instance.handler = None
             decls = instance.declarations(config=stub_cfg) or []
         except Exception:
             decls = []
-        for d in decls:
-            tools_out[d.name] = {"category": category}
+        if module.startswith("plugins."):
+            pname = module.split(".", 2)[1] if "." in module else tool_key
+            bucket = plugin_tools_out.setdefault(pname, {})
+            for d in decls:
+                bucket[d.name] = {"category": f"Plugin: {pname}"}
+        else:
+            category = _humanize(tool_key)
+            for d in decls:
+                builtin_out[d.name] = {"category": category}
 
     # Emotions tools build their declarations dynamically from config and
     # cant be enumerated without one, so probe with the stub. Falls back
     # gracefully if anything throws.
     try:
         for d in generate_emotion_function_declarations(stub_cfg) or []:
-            tools_out[d["name"]] = {"category": "Emotions"}
+            builtin_out[d["name"]] = {"category": "Emotions"}
     except Exception:
         pass
 
@@ -121,7 +130,11 @@ def discover_tool_registry() -> dict:
             except Exception:
                 plugins_out.append(entry.name)
 
-    return {"tools": tools_out, "plugins": plugins_out}
+    return {
+        "tools": builtin_out,
+        "plugin_tools": plugin_tools_out,
+        "plugins": plugins_out,
+    }
 
 
 def load_tools_existing() -> dict:
@@ -134,26 +147,42 @@ def load_tools_existing() -> dict:
 
 def save_tools(tools_payload: dict):
     """Write tools.yml. Preserves comments from the example template if it
-    exists, otherwise writes a fresh file with a short banner."""
+    exists. Schema:
+        tools: {name: bool}
+        plugin_tools: {plugin_name: {tool_name: bool}}
+    """
     if not tools_payload:
         return
     yaml_rt = YAML()
     yaml_rt.preserve_quotes = True
 
-    if TOOLS_EXAMPLE.exists():
+    if TOOLS_OUTPUT.exists():
+        with open(TOOLS_OUTPUT, "r", encoding="utf-8") as f:
+            data = yaml_rt.load(f) or {}
+    elif TOOLS_EXAMPLE.exists():
         with open(TOOLS_EXAMPLE, "r", encoding="utf-8") as f:
             data = yaml_rt.load(f) or {}
     else:
         data = {}
-    data.setdefault("tools", {})
-    data.setdefault("plugins", {})
+
+    if not isinstance(data.get("tools"), dict):
+        data["tools"] = {}
+    if not isinstance(data.get("plugin_tools"), dict):
+        data["plugin_tools"] = {}
 
     new_tools = tools_payload.get("tools") or {}
-    new_plugins = tools_payload.get("plugins") or {}
+    new_plugin_tools = tools_payload.get("plugin_tools") or {}
+
     for k, v in new_tools.items():
         data["tools"][k] = bool(v)
-    for k, v in new_plugins.items():
-        data["plugins"][k] = bool(v)
+
+    for pname, sub in new_plugin_tools.items():
+        if not isinstance(sub, dict):
+            continue
+        if not isinstance(data["plugin_tools"].get(pname), dict):
+            data["plugin_tools"][pname] = {}
+        for k, v in sub.items():
+            data["plugin_tools"][pname][k] = bool(v)
 
     TOOLS_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with open(TOOLS_OUTPUT, "w", encoding="utf-8") as f:
@@ -356,24 +385,29 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
                 return
             user_tools = load_tools_existing()
             user_tools_map = (user_tools.get("tools") or {})
-            user_plugins_map = (user_tools.get("plugins") or {})
+            user_plugin_tools_map = (user_tools.get("plugin_tools") or {})
 
             # state: respect what the user already saved, default ON
             tools_state = {
                 name: bool(user_tools_map.get(name, True))
                 for name in registry["tools"].keys()
             }
-            plugins_state = {
-                name: bool(user_plugins_map.get(name, True))
-                for name in registry["plugins"]
-            }
-            plugins_meta = {name: True for name in registry["plugins"]}
+            plugin_tools_state: dict[str, dict[str, bool]] = {}
+            for pname, tools_in in registry["plugin_tools"].items():
+                user_sub = user_plugin_tools_map.get(pname) or {}
+                if not isinstance(user_sub, dict):
+                    user_sub = {}
+                plugin_tools_state[pname] = {
+                    name: bool(user_sub.get(name, True))
+                    for name in tools_in.keys()
+                }
 
             self._json_response({
                 "tools": registry["tools"],
-                "plugins": plugins_meta,
+                "plugin_tools": registry["plugin_tools"],
+                "plugins": registry["plugins"],
                 "tools_state": tools_state,
-                "plugins_state": plugins_state,
+                "plugin_tools_state": plugin_tools_state,
             })
 
         elif self.path == "/api/shutdown":

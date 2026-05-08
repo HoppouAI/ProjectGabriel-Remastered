@@ -1,28 +1,31 @@
-# ════════════════════════════════════════════════════════════════
-# Tools & Plugins Registry
-# ════════════════════════════════════════════════════════════════
-# Single source of truth for which Gemini tools (function declarations)
-# are exposed to the model and which plugins get loaded at startup.
+# config/tools.yml — per-tool / per-plugin-tool toggles
 #
-# How it works:
-#   - tools:    map of <tool_name>: true|false. A disabled tool is hidden
-#               from Gemini -- the FunctionDeclaration is not sent. Tools
-#               not listed here default to enabled, so you only need to
-#               list the ones you want to turn off.
-#   - plugins:  map of <plugin_dir_name>: true|false. A disabled plugin
-#               is skipped entirely (no setup, no tools, no event hooks).
-#               Plugins not listed default to enabled.
+# This file is auto-managed. On startup ProjectGabriel walks the live
+# tool registry and adds any newly discovered tool here, defaulting it
+# to `true`. Existing values are never overwritten, so flipping anything
+# off here will stick across upgrades.
 #
-# The configurator WebUI introspects the live tool registry, so any new
-# tool added to src/tools/ or to a plugin shows up automatically. You
-# do not need to maintain the list below by hand. The entries here are
-# just examples of the format.
-# ════════════════════════════════════════════════════════════════
+# Schema:
+#   tools:                 # built-in tools shipped with the host
+#     <tool_name>: bool
+#   plugin_tools:          # tools added by modular plugins, grouped per plugin
+#     <plugin_name>:
+#       <tool_name>: bool
+#
+# Note: whether a plugin itself is loaded is controlled by the
+# `enabled:` field inside that plugin's own plugins/<name>/plugin.yml,
+# NOT by anything in this file. The toggles under plugin_tools.<plugin>
+# only decide which of that plugin's tools get exposed to gemini once
+# the plugin is loaded. This keeps the "is the plugin alive" decision
+# next to the plugin code itself, while the per-tool toggles live here
+# alongside everything else the operator can flip.
+#
+# Example:
+#   tools:
+#     vrchatJump: false      # disables a single built-in tool
+#   plugin_tools:
+#     suno:
+#       generateSong: false  # plugin still loads, but this tool is hidden
 
-plugins:
-  # example_hello: true
-  # suno: false
-
-tools:
-  # vrchatJump: false
-  # webSearch: false
+tools: {}
+plugin_tools: {}

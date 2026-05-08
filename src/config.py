@@ -23,37 +23,42 @@ class Config:
         self._tools_cfg = self._load_tools_cfg()
 
     def _load_tools_cfg(self) -> dict:
-        # tools/plugin enable map. tries config/tools.yml then falls back
-        # to the example. legacy `tools.<key>.enabled` and `plugins.<name>.enabled`
-        # in the main config are still honored as a fallback for upgraders.
+        # Tool enable map. Reads config/tools.yml (auto generated on
+        # startup by src.tools_sync). Falls back to the .example for
+        # first-run before sync has had a chance to create the real file.
+        # The schema is: {tools: {name: bool}, plugin_tools: {plugin: {name: bool}}}.
+        # Plugin enable itself lives in plugins/<name>/plugin.yml, NOT here.
         path = Path("config/tools.yml")
         if not path.exists():
             path = Path("config/tools.yml.example")
         if not path.exists():
-            return {"tools": {}, "plugins": {}}
+            return {"tools": {}, "plugin_tools": {}}
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
         except Exception as exc:
             logger.warning(f"failed to load {path}: {exc}")
-            return {"tools": {}, "plugins": {}}
+            return {"tools": {}, "plugin_tools": {}}
         return {
             "tools": data.get("tools") or {},
-            "plugins": data.get("plugins") or {},
+            "plugin_tools": data.get("plugin_tools") or {},
         }
 
+    def reload_tools_cfg(self):
+        """Reread tools.yml. Call after src.tools_sync.sync_tools_yml() so
+        any newly written entries are visible to is_tool_enabled."""
+        self._tools_cfg = self._load_tools_cfg()
+
     def is_tool_enabled(self, name: str) -> bool:
-        # primary source: config/tools.yml individual entry
-        tools_map = self._tools_cfg.get("tools", {})
+        # Check the built-in section first, then walk every plugin's
+        # sub block. Anything not listed defaults to enabled, otherwise
+        # an upgrade that adds a new tool would silently disable it.
+        tools_map = self._tools_cfg.get("tools", {}) or {}
         if name in tools_map:
             return bool(tools_map[name])
-        return True
-
-    def is_plugin_enabled(self, plugin_name: str) -> bool:
-        # plugins not listed default to enabled (consistent with tools)
-        plugins_map = self._tools_cfg.get("plugins", {})
-        if plugin_name in plugins_map:
-            return bool(plugins_map[plugin_name])
+        for _pname, sub in (self._tools_cfg.get("plugin_tools", {}) or {}).items():
+            if isinstance(sub, dict) and name in sub:
+                return bool(sub[name])
         return True
 
     def _load_prompts(self) -> dict:
