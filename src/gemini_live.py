@@ -363,6 +363,11 @@ class GeminiLiveSession:
                 await self._session.send_realtime_input(activity_start=types.ActivityStart())
                 await self._session.send_realtime_input(activity_end=types.ActivityEnd())
                 self._conv_logger.add_user_message(text)
+                try:
+                    from src.plugins import emit_event
+                    emit_event("message_in", text, "text")
+                except Exception as e:
+                    logger.debug(f"plugin message_in dispatch failed: {e}")
                 logger.info(f"Sent text to model: {text[:50]}...")
             except Exception as e:
                 logger.error(f"Failed to send text: {e}")
@@ -454,10 +459,17 @@ class GeminiLiveSession:
         """Wait for late transcription events, then finalize the user entry."""
         try:
             await asyncio.sleep(0.5)
+            final_text = self._input_transcript_buffer.strip()
             self._conv_logger.finalize_user_message()
             self._input_transcript_buffer = ""
             if self.config.obs_enabled:
                 _broadcast_console("user_turn_complete", "")
+            if final_text:
+                try:
+                    from src.plugins import emit_event
+                    emit_event("message_in", final_text, "vrchat")
+                except Exception as e:
+                    logger.debug(f"plugin message_in dispatch failed: {e}")
         except asyncio.CancelledError:
             pass
         finally:
@@ -1553,9 +1565,16 @@ class GeminiLiveSession:
                         if self.config.obs_enabled:
                             _broadcast_console("turn_complete", "")
                         # User message already streamed in-place via stream_user_message
-                        if self._transcript_buffer.strip():
+                        ai_text = self._transcript_buffer.strip()
+                        if ai_text:
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
+                        if ai_text:
+                            try:
+                                from src.plugins import emit_event
+                                emit_event("message_out", ai_text)
+                            except Exception as e:
+                                logger.debug(f"plugin message_out dispatch failed: {e}")
                         # Flush remaining text to TTS provider
                         if self._tts:
                             self._tts.turn_complete()
@@ -1574,9 +1593,16 @@ class GeminiLiveSession:
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         self.osc.set_typing(False)
-                        if self._transcript_buffer.strip():
+                        ai_text = self._transcript_buffer.strip()
+                        if ai_text:
                             self._conv_logger.add_assistant_message(self._transcript_buffer)
                         self._transcript_buffer = ""
+                        if ai_text:
+                            try:
+                                from src.plugins import emit_event
+                                emit_event("message_out", ai_text)
+                            except Exception as e:
+                                logger.debug(f"plugin message_out dispatch failed: {e}")
                         # Interrupt external TTS provider
                         if self._tts:
                             self._tts.interrupt()

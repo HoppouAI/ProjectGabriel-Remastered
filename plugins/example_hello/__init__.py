@@ -65,6 +65,13 @@ class HelloPlugin(Plugin):
         ctx.register_tool(HelloTool)
         ctx.subscribe("startup", lambda: ctx.logger.info("startup event recieved"))
         ctx.subscribe("shutdown", lambda: ctx.logger.info("shutdown event recieved"))
+        # message_in fires for both transcribed VRChat speech and text input
+        # (e.g. Discord relays). source is "vrchat" or "text".
+        ctx.subscribe("message_in", lambda text, source="?":
+                      ctx.logger.info(f"<- ({source}) {text[:80]}"))
+        # message_out fires whenever the AI finishes a turn (or gets interrupted)
+        ctx.subscribe("message_out", lambda text:
+                      ctx.logger.info(f"-> {text[:80]}"))
         ctx.logger.info(f"example plugin ready, loaded from {ctx.plugin_dir}")
 
     def teardown(self, ctx: PluginContext):
