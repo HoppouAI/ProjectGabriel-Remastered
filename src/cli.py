@@ -159,6 +159,12 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
     if not rows:
         return
 
+    try:
+        from src.plugins.loader import get_plugin_log_counts
+        log_counts = get_plugin_log_counts()
+    except Exception:
+        log_counts = {}
+
     print(f"  {C.DIM}Plugins{C.RST}")
     for name, enabled, on_count, total, version, author in rows:
         if enabled:
@@ -177,7 +183,19 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
         else:
             meta_bits.append("no tools")
         meta = f"  {C.DIM}({' \u2022 '.join(meta_bits)}){C.RST}"
-        print(f"  {dot} {label}{meta}")
+
+        # warning/error tally pulled from the plugin log counter
+        counts = log_counts.get(name, {})
+        warn_n = int(counts.get("warn", 0) or 0)
+        err_n = int(counts.get("error", 0) or 0)
+        status_bits = []
+        if err_n:
+            status_bits.append(f"{C.B_RED}{err_n} error{'s' if err_n != 1 else ''}{C.RST}")
+        if warn_n:
+            status_bits.append(f"{C.B_YELLOW}{warn_n} warning{'s' if warn_n != 1 else ''}{C.RST}")
+        status = f"  {' '.join(status_bits)}" if status_bits else ""
+
+        print(f"  {dot} {label}{meta}{status}")
     print()
 
 

@@ -6,6 +6,7 @@ single plugin are caught so the host stays up.
 """
 import importlib.util
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -21,11 +22,67 @@ logger = logging.getLogger(__name__)
 PLUGIN_API_VERSION = 1
 
 
+# Per-plugin log tally so the startup banner can show how many warnings
+# or errors a plugin emitted while loading. Filled by _PluginLogCounter
+# below, read by src.cli._print_plugins_block.
+_plugin_log_counts: dict[str, dict[str, int]] = {}
+_PLUGIN_NAME_RE = re.compile(r"plugin '([^']+)'")
+
+
+class _PluginLogCounter(logging.Filter):
+    """Tally WARNING/ERROR log records by plugin name.
+
+    Plugins log under the `plugin.<name>` namespace via PluginContext,
+    so we can grab the name from record.name. The loader itself logs
+    under `src.plugins.loader` but uses the format "plugin '<name>'..."
+    so we regex it out of the message.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno < logging.WARNING:
+            return True
+        name = None
+        if record.name.startswith("plugin."):
+            name = record.name.split(".", 1)[1]
+        else:
+            try:
+                m = _PLUGIN_NAME_RE.search(record.getMessage())
+            except Exception:
+                m = None
+            if m:
+                name = m.group(1)
+        if name:
+            d = _plugin_log_counts.setdefault(name, {"warn": 0, "error": 0})
+            if record.levelno >= logging.ERROR:
+                d["error"] += 1
+            else:
+                d["warn"] += 1
+        return True
+
+
+def _install_log_counter():
+    # filters on a logger only fire when that logger's own .log() is
+    # called; they do NOT run during propagation. so we attach to every
+    # handler on the root logger instead, which is where StreamHandler
+    # ends up after setup_logging().
+    root = logging.getLogger()
+    for h in root.handlers:
+        if not any(isinstance(f, _PluginLogCounter) for f in h.filters):
+            h.addFilter(_PluginLogCounter())
+    if not any(isinstance(f, _PluginLogCounter) for f in root.filters):
+        root.addFilter(_PluginLogCounter())
+
+
+def get_plugin_log_counts() -> dict[str, dict[str, int]]:
+    return dict(_plugin_log_counts)
+
+
 class PluginManager:
     def __init__(self, config, plugins_dir: str = "plugins"):
         self.config = config
         self.plugins_dir = Path(plugins_dir)
         self.loaded: list[tuple[Plugin, PluginContext]] = []
+        _install_log_counter()
 
     def discover_and_load(self):
         """Scan the plugins dir, load each enabled plugin, call setup().
