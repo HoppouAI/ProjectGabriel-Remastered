@@ -8,10 +8,13 @@ from .mood import MOOD_LEVELS, clamp_level, info_for
 
 class MoodTools(BaseTool):
     tool_key = "mood"
+    # set by the plugin entry point before ToolHandler instantiates the class
+    _store = None
 
-    def __init__(self, store):
-        super().__init__()
-        self._store = store
+    def __init__(self, handler):
+        super().__init__(handler)
+        # _store is a class attribute populated by the plugin so it survives
+        # ToolHandler's no-arg-extra instantiation pattern
 
     def declarations(self, config=None):
         # Build a description that lists the levels so the model knows the scale

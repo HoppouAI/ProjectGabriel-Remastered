@@ -26,17 +26,11 @@ class MoodPlugin(Plugin):
 
     def setup(self, ctx: PluginContext):
         store = MoodStore(ctx.data_dir() / "state.json")
-        # MoodTools needs the store at construction time so it can hit it from .handle().
-        # We use a tiny wrapper class so register_tool's no-arg instantiation gives us
-        # an instance that already has the store closed over.
-        store_ref = store
-
-        class _BoundMoodTools(MoodTools):
-            def __init__(self):
-                super().__init__(store_ref)
-
-        _BoundMoodTools.__name__ = "MoodTools"
-        ctx.register_tool(_BoundMoodTools)
+        # ToolHandler instantiates each registered tool as cls(handler), so we
+        # cant inject the store via __init__. Stash it as a class attribute on
+        # the MoodTools class instead, the instance reads self._store at call time.
+        MoodTools._store = store
+        ctx.register_tool(MoodTools)
         ctx.register_prompt_contributor("mood", lambda: format_for_prompt(store.get()))
         # keep a handle so other plugins / debug code can poke at it
         self._store = store
