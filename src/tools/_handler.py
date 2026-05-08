@@ -45,7 +45,29 @@ class ToolHandler:
         from src.tools import web_search as web_search_tools  # noqa: F401
         from src.tools._base import get_registered_tools
 
-        self._tools = [cls(self) for cls in get_registered_tools()]
+        # Only instantiate tools that have at least one enabled declaration.
+        # Tools whose entire declaration set is disabled in config/tools.yml
+        # are skipped so we dont allocate state, run __init__ side effects,
+        # or hold references for tools that gemini can never call anyway.
+        self._tools = []
+        skipped = 0
+        for cls in get_registered_tools():
+            try:
+                probe = cls.__new__(cls)
+                probe.handler = self
+                decls = probe.declarations(config=config) or []
+            except Exception:
+                decls = []
+            if not decls:
+                # Tool self-gated itself off (eg discord disabled in config)
+                continue
+            if config is not None and hasattr(config, "is_tool_enabled"):
+                if not any(config.is_tool_enabled(getattr(d, "name", "")) for d in decls):
+                    skipped += 1
+                    continue
+            self._tools.append(cls(self))
+        if skipped:
+            logger.info(f"tool handler: skipped {skipped} tool class(es) with all declarations disabled")
 
     def _get_vrchat_api(self):
         if self.vrchat_api is None:
