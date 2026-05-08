@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import io
 import logging
 import random
@@ -19,6 +20,28 @@ from src.personalities import PersonalityManager
 logger = logging.getLogger(__name__)
 
 _CTRL_TOKEN_PATTERN = re.compile(r"<\s*ctrl\s*\d+\s*>?", re.IGNORECASE)
+
+
+@contextlib.asynccontextmanager
+async def _safe_typing(channel):
+    """channel.typing() that never propagates errors. Discord rate limits the
+    typing endpoint pretty aggressively (see error 40062 outage windows) and
+    we never want a typing 429 to take down the whole reply."""
+    cm = None
+    try:
+        cm = channel.typing()
+        await cm.__aenter__()
+    except Exception as e:
+        logger.debug(f"typing start failed (ignored): {e}")
+        cm = None
+    try:
+        yield
+    finally:
+        if cm is not None:
+            try:
+                await cm.__aexit__(None, None, None)
+            except Exception as e:
+                logger.debug(f"typing stop failed (ignored): {e}")
 
 
 class DiscordBot:
@@ -716,7 +739,7 @@ class DiscordBot:
                 self._tool_handler._current_channel = last_message.channel
                 self._tool_handler._tool_sent_message = False
 
-                async with last_message.channel.typing():
+                async with _safe_typing(last_message.channel):
                     delay = self.config.typing_delay_ms / 1000.0
                     if delay > 0:
                         await asyncio.sleep(delay)
@@ -783,7 +806,7 @@ class DiscordBot:
                     if i < len(parts) - 1:
                         next_len = len(parts[i + 1])
                         typing_delay = 0.5 + next_len * 0.065
-                        async with channel.typing():
+                        async with _safe_typing(channel):
                             await asyncio.sleep(min(typing_delay, 8.0))
 
                 self._conversations.add_message(channel_id, "assistant", response)
