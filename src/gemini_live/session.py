@@ -839,11 +839,14 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
             # Check if Lyria music gen is playing
             music_gen = getattr(self.tool_handler, 'music_gen', None)
             music_gen_active = music_gen.is_active if music_gen else False
-            # Check if Suno song is streaming
-            suno = getattr(self.tool_handler, 'suno', None)
-            suno_active = suno.is_active if suno else False
+            # Plugin contributed chatbox sources get to mark themselves busy too
+            try:
+                from src.plugins import iter_chatbox_sources
+                plugin_busy = any(src.is_active() for _, src in iter_chatbox_sources())
+            except Exception:
+                plugin_busy = False
             # Anything keeping the AI busy suppresses idle
-            busy = music_playing or tracker_active or music_gen_active or suno_active
+            busy = music_playing or tracker_active or music_gen_active or plugin_busy
             # Don't trigger idle during active tasks
             if self._emotion_system:
                 self._emotion_system.set_seated(self.osc.seated)
@@ -886,16 +889,23 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     display = self._format_now_playing(progress)
                     self.osc.send_chatbox(display)
                 else:
-                    suno = getattr(self.tool_handler, 'suno', None)
-                    suno_progress = suno.get_progress() if suno else None
-                    if suno_progress:
-                        display = self._format_suno_now_playing(suno_progress)
+                    music_gen = getattr(self.tool_handler, 'music_gen', None)
+                    if music_gen and music_gen.is_active:
+                        display = self._format_music_gen_display(music_gen)
                         self.osc.send_chatbox(display)
                     else:
-                        music_gen = getattr(self.tool_handler, 'music_gen', None)
-                        if music_gen and music_gen.is_active:
-                            display = self._format_music_gen_display(music_gen)
-                            self.osc.send_chatbox(display)
+                        # Fall through to plugin chatbox sources, first active one wins
+                        try:
+                            from src.plugins import iter_chatbox_sources
+                            for _name, src in iter_chatbox_sources():
+                                if not src.is_active():
+                                    continue
+                                display = src.render()
+                                if display:
+                                    self.osc.send_chatbox(display)
+                                    break
+                        except Exception as e:
+                            logger.debug(f"chatbox source iter failed: {e}")
                 await asyncio.sleep(1.3)
             except Exception as e:
                 logger.error(f"Now Playing loop error: {e}")

@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 _tts_providers: dict[str, Callable[..., Any]] = {}
 _stt_providers: dict[str, Callable[..., Any]] = {}
 _event_subscribers: dict[str, list[Callable[..., Any]]] = {}
+# Chatbox sources let plugins contribute their own VRChat chatbox displays
+# (now-playing screens, status overlays, etc) and also signal "busy" so the
+# idle banner gets suppressed while they're active. Lower priority value runs
+# first when picking what to show.
+_chatbox_sources: dict[str, tuple[int, Any]] = {}
 
 
 class Plugin:
@@ -132,6 +137,26 @@ class PluginContext:
         _event_subscribers.setdefault(event, []).append(callback)
         self.logger.debug(f"subscribed to event '{event}'")
 
+    def register_chatbox_source(self, name: str, source: Any, priority: int = 100):
+        """Register a VRChat chatbox display source.
+
+        `source` must be an object with two methods:
+          - `is_active() -> bool` -- True while this source wants screen time,
+            also used by the host to mark itself as busy and suppress the idle banner
+          - `render() -> str | None` -- the chatbox text to show, or None to skip
+
+        Lower `priority` wins when multiple sources are active at once.
+        Built in displays (local music, lyria) sit at priority 10/20, plugins
+        default to 100 so they yield to host displays unless they ask for less.
+        """
+        if name in _chatbox_sources:
+            self.logger.warning(f"chatbox source '{name}' already registered, overwriting")
+        _chatbox_sources[name] = (priority, source)
+        self.logger.info(f"registered chatbox source '{name}' (priority={priority})")
+
+    def unregister_chatbox_source(self, name: str):
+        _chatbox_sources.pop(name, None)
+
 
 def get_tts_factory(name: str):
     return _tts_providers.get(name)
@@ -147,6 +172,12 @@ def list_tts_factories() -> list[str]:
 
 def list_stt_factories() -> list[str]:
     return sorted(_stt_providers.keys())
+
+
+def iter_chatbox_sources():
+    """Yield (name, source) pairs sorted by ascending priority."""
+    for name, (_prio, src) in sorted(_chatbox_sources.items(), key=lambda kv: kv[1][0]):
+        yield name, src
 
 
 def emit_event(event: str, *args, **kwargs):

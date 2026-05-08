@@ -102,6 +102,35 @@ natively, so this hook is mainly for plugins that want their own
 pipeline (for example local Whisper inside a Discord plugin). Factory
 shape matches TTS.
 
+### `ctx.register_chatbox_source(name, source, priority=100)`
+
+Contribute a VRChat chatbox display, like a now-playing screen or a
+status banner. The host iterates registered sources in ascending
+priority order and shows the first active one when no built in display
+(local music, lyria) is up.
+
+`source` must implement two methods:
+
+- `is_active() -> bool` -- True while the source wants screen time. Also
+  used by the host to mark itself busy and suppress the idle banner.
+- `render() -> str | None` -- the chatbox text (max 144 chars), or None
+  to skip this tick.
+
+Built in displays sit at priority 10 (local music) and 20 (lyria).
+Plugins default to 100 so they yield to host displays unless they ask
+for less. The bundled `suno` plugin registers at priority 50 so a local
+file always wins but suno wins over lyria.
+
+```python
+class MyStatusSource:
+    def is_active(self):
+        return self.mgr.has_pending_alert
+    def render(self):
+        return f"\u26a0 {self.mgr.alert_text[:140]}"
+
+ctx.register_chatbox_source("my_status", MyStatusSource(...), priority=80)
+```
+
 ### `ctx.subscribe(event, callback)`
 
 Hook into app lifecycle. Built in events:
