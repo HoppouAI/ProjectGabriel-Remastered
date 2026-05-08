@@ -188,7 +188,14 @@ class ReceiveLoopMixin:
                         # Interrupt TTS -- model will regenerate after tool response
                         if self._tts:
                             self._tts.interrupt()
+                        # Cut off any in-flight playback chunk and drain stale pre-tool audio
+                        # so the post-tool reply starts clean instead of fighting old buffer
                         self._playback_interrupted = True
+                        while not self._audio_in_queue.empty():
+                            try:
+                                self._audio_in_queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
                         # Finalize user message immediately - model has processed input
                         self._conv_logger.finalize_user_message()
                         if self._pending_finalize_task:
@@ -231,6 +238,9 @@ class ReceiveLoopMixin:
                                 )
                         finally:
                             self._tool_call_pending = False
+                            # Reset playback flag BEFORE ungating so the first chunk of the
+                            # post-tool reply doesn't get swallowed by stale interrupt state
+                            self._playback_interrupted = False
                             # Ungate audio after tool response sent
                             self._ungate_audio()
 
