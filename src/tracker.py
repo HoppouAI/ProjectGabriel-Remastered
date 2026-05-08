@@ -158,9 +158,9 @@ class PlayerTracker:
         Non-blocking — call at startup so startFollow is instant later."""
         def _do_preload():
             try:
-                logger.info("Background preload: loading YOLO model...")
+                logger.debug("Background preload: loading YOLO model...")
                 self._ensure_model()
-                logger.info("Background preload: model ready")
+                logger.debug("Background preload: model ready")
             except Exception as e:
                 logger.error(f"Background preload failed: {e}")
             finally:
@@ -213,14 +213,14 @@ class PlayerTracker:
         logger.info(f"{MODEL_NAME} loaded on {device} (FP16={self._use_half})")
 
         # Warmup inference (JIT compile kernels, allocate buffers)
-        logger.info("Running warmup inference...")
+        logger.debug("Running warmup inference...")
         dummy = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
         for _ in range(3):
             self.model.track(
                 dummy, persist=False, conf=0.5, classes=[0],
                 max_det=5, verbose=False, half=self._use_half,
             )
-        logger.info("Warmup done")
+        logger.debug("Warmup done")
 
     # ── Public API (called by Gemini tools) ───────────────────────────────
 

@@ -134,7 +134,7 @@ class FaceTracker:
         """Pre-load the face YOLO model in a background thread."""
         def _do_preload():
             try:
-                logger.info("Face tracker: background preload starting...")
+                logger.debug("Face tracker: background preload starting...")
                 self._ensure_model()
                 logger.info("Face tracker: model ready")
             except Exception as e:
@@ -189,7 +189,7 @@ class FaceTracker:
             self.model.predict(
                 dummy, conf=0.5, max_det=5, verbose=False, half=self._use_half,
             )
-        logger.info("Face tracker warmup done")
+        logger.debug("Face tracker warmup done")
 
     def start(self):
         """Start the face tracking loop."""

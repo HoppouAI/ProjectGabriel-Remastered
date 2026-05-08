@@ -190,7 +190,7 @@ class DiscordBot:
         async def _backfill():
             result = await self._message_rag.backfill_from_conversations(self._conversations)
             if result.get("success"):
-                logger.info(f"Discord RAG startup backfill: {result}")
+                logger.debug(f"Discord RAG startup backfill: {result}")
             else:
                 logger.warning(f"Discord RAG startup backfill skipped: {result}")
 

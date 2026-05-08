@@ -275,7 +275,7 @@ class MemorySystem:
                 self.rag_enabled = False
                 return
             self._ensure_vector_index()
-            logger.info(f"RAG enabled (gemini, model={self._embedding_model}, dims={self._embedding_dimensions})")
+            logger.debug(f"RAG enabled (gemini, model={self._embedding_model}, dims={self._embedding_dimensions})")
         else:
             logger.warning(f"Unknown rag_provider '{self.rag_provider}', disabling RAG")
             self.rag_enabled = False
@@ -300,7 +300,7 @@ class MemorySystem:
                 metadata={"hnsw:space": "cosine"},
             )
             self._httpx_client = _httpx.Client(timeout=30)
-            logger.info(
+            logger.debug(
                 f"RAG enabled (local, model={self._local_embedding_model}, "
                 f"db={self._chroma_path}, memories={self._chroma_collection.count()})"
             )
@@ -740,7 +740,7 @@ class MemorySystem:
         self._cleanup_running = True
         self._cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
         self._cleanup_thread.start()
-        logger.info("Memory cleanup thread started")
+        logger.debug("Memory cleanup thread started")
 
     def _cleanup_loop(self):
         """Background cleanup of expired memories."""

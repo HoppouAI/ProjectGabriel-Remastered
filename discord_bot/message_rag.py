@@ -265,7 +265,7 @@ class DiscordMessageRag:
             self._collection.create_index([("chunk_type", ASCENDING), ("created_at", DESCENDING)], name="idx_chunk_created")
             self._ensure_mongo_vector_index()
             self._ready = True
-            logger.info(f"Discord RAG enabled (gemini, MongoDB {self.mongo_db}.{self.mongo_collection_name})")
+            logger.debug(f"Discord RAG enabled (gemini, MongoDB {self.mongo_db}.{self.mongo_collection_name})")
         except Exception as e:
             logger.warning(f"Discord RAG Mongo connection failed: {e}")
             self.enabled = False
@@ -317,7 +317,7 @@ class DiscordMessageRag:
             )
             self._httpx_client = httpx.Client(timeout=30)
             self._ready = True
-            logger.info(
+            logger.debug(
                 f"Discord RAG enabled (local, model={self.local_embedding_model}, "
                 f"db={self.chroma_dir}, docs={self._chroma_collection.count()})"
             )
@@ -655,7 +655,7 @@ class DiscordMessageRag:
             if self.provider == "gemini" and i + self.backfill_batch_size < len(to_index):
                 time.sleep(1.0)
         result = {"success": True, "indexed": indexed, "skipped": len(existing), "failed": failed, "total_docs": len(docs)}
-        logger.info(f"Discord RAG backfill complete: {result}")
+        logger.debug(f"Discord RAG backfill complete: {result}")
         return result
 
     def _upsert_mongo_many(self, docs: list[dict[str, Any]], embeddings: list[list[float]]):

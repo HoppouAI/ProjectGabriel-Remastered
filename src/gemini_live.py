@@ -708,8 +708,8 @@ class GeminiLiveSession:
                     logger.info("Using 2.5 model (thinkingBudget, send_client_content, v1alpha features available)")
                 # Log VAD mode
                 if self.config.vad_mode == "silero":
-                    logger.info(f"Silero VAD enabled (threshold={self.config.vad_silero_threshold}, silence={self.config.vad_silence_duration_ms}ms)")
-                    logger.info("Audio gating active: outbound suppressed during model speech and tool calls")
+                    logger.debug(f"Silero VAD enabled (threshold={self.config.vad_silero_threshold}, silence={self.config.vad_silence_duration_ms}ms)")
+                    logger.debug("Audio gating active: outbound suppressed during model speech and tool calls")
                 else:
                     logger.info("Using Gemini server-side VAD (auto mode)")
                 if self._session_handle:
@@ -794,7 +794,7 @@ class GeminiLiveSession:
                         task_specs.append(("tts-audio", self._tts_audio_loop()))
                         if self.config.vision_enabled:
                             task_specs.append(("screen-capture", self._capture_screen_loop()))
-                            logger.info(f"Screen capture enabled (monitor {self.config.vision_monitor})")
+                            logger.debug(f"Screen capture enabled (monitor {self.config.vision_monitor})")
                         tasks = [
                             asyncio.create_task(coro, name=f"gemini-{name}")
                             for name, coro in task_specs
@@ -1220,7 +1220,7 @@ class GeminiLiveSession:
         if self._silero_vad is not None:
             return self._silero_vad
         import torch
-        logger.info("Loading Silero VAD model...")
+        logger.debug("Loading Silero VAD model...")
         torch.set_num_threads(1)  # single thread is fine for VAD
         model, _ = torch.hub.load(
             repo_or_dir="snakers4/silero-vad",
@@ -1229,7 +1229,7 @@ class GeminiLiveSession:
         )
         model.eval()
         self._silero_vad = model
-        logger.info("Silero VAD model loaded")
+        logger.debug("Silero VAD model loaded")
         return model
 
     def _silero_detect_speech(self, data: bytes) -> float:
@@ -1418,7 +1418,7 @@ class GeminiLiveSession:
                 logger.warning(f"Monitor {monitor_idx} not found, using monitor 0")
                 monitor_idx = 0
             monitor = sct.monitors[monitor_idx]
-            logger.info(f"Capturing monitor {monitor_idx}: {monitor['width']}x{monitor['height']}")
+            logger.debug(f"Capturing monitor {monitor_idx}: {monitor['width']}x{monitor['height']}")
         interval = self.config.vision_interval
         # Auto-increase interval for 3.1 models if user hasn't set a higher value
         if self.config.is_31_model and interval < 2.0:
@@ -1428,9 +1428,9 @@ class GeminiLiveSession:
         pause_on_idle = self.config.vision_pause_on_idle
         idle_interval = self.config.vision_idle_interval
         if pause_on_output:
-            logger.info("Vision pause enabled (skips frames during speech/music, not live music)")
+            logger.debug("Vision pause enabled (skips frames during speech/music, not live music)")
         if pause_on_idle:
-            logger.info(f"Vision slows to {idle_interval}s interval when idle (normal: {interval}s)")
+            logger.debug(f"Vision slows to {idle_interval}s interval when idle (normal: {interval}s)")
         try:
             while True:
                 current_interval = interval

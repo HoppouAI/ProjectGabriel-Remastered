@@ -63,6 +63,12 @@ def setup_logging(level=logging.INFO):
     handler.setFormatter(ColoredFormatter())
     root.addHandler(handler)
 
+    # quiet down chatty third party libs that the everyday user does not
+    # care about. selfbot internals (TLS fingerprint, user agent string,
+    # PyNaCl missing, "Logging in using static token") just spam scrollback.
+    for noisy in ("discord.http", "discord.client"):
+        logging.getLogger(noisy).setLevel(logging.ERROR)
+
 
 _W = 49
 

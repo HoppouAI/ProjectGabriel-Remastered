@@ -47,7 +47,7 @@ class VRChatAPI:
                 self._auth_cookie = data.get("auth")
                 self._twofa_cookie = data.get("twoFactorAuth")
                 if self._auth_cookie:
-                    logger.info("Loaded VRChat auth cookie from disk")
+                    logger.debug("Loaded VRChat auth cookie from disk")
             except Exception as e:
                 logger.warning(f"Failed to load VRChat cookies: {e}")
 
@@ -235,7 +235,7 @@ class VRChatAPI:
                 data = await resp.json()
                 self._user_id = data.get("id")
                 if self._user_id:
-                    logger.info(f"Cached user ID: {self._user_id}")
+                    logger.debug(f"Cached user ID: {self._user_id}")
 
     async def select_avatar(self, avatar_id: str):
         """Switch to an avatar by its ID."""

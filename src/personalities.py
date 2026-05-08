@@ -20,7 +20,7 @@ class PersonalityManager:
         if self._file.exists():
             with open(self._file, "r", encoding="utf-8") as f:
                 self.personalities = yaml.safe_load(f) or {}
-            logger.info(f"Loaded {len(self.personalities)} personalities")
+            logger.debug(f"Loaded {len(self.personalities)} personalities")
 
     def _save(self):
         with open(self._file, "w", encoding="utf-8") as f:
