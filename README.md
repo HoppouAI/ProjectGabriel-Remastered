@@ -315,6 +315,35 @@ Fill in the bot token and other settings, then it will start automatically with 
 
 ---
 
+## Privacy
+
+Conversation transcripts are **not** written to disk by default. Both the
+main Gemini Live session and the Discord bot keep recent context in memory
+so the model still gets continuity, but nothing lands on disk unless you
+explicitly opt in.
+
+To enable persistent transcripts, add this to your config:
+
+**Main app** (`config.yml`):
+```yaml
+privacy:
+  save_conversations: true
+```
+Writes one JSON file per session to `data/conversations/<timestamp>.json`
+with user transcripts, assistant transcripts, tool calls, and tool
+responses.
+
+**Discord bot** (`discord_bot/config.yml`):
+```yaml
+privacy:
+  save_conversations: true
+```
+Writes one JSON file per channel to `discord_bot/data/conversations/<channel_id>.json`.
+
+See commit [`9da3cbd`](https://github.com/HoppouAI/ProjectGabriel-Remastered/commit/9da3cbd) for the change.
+
+---
+
 ## Social Server
 
 The social server is a standalone Node.js API server in `social_server/` that lets AI instances message each other, manage friends, and see who's online. It runs separately from the main Python app.
