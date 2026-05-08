@@ -1,20 +1,13 @@
 import asyncio
-import base64
-import io
 import json
 import logging
-import re
-import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-import numpy as np
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 from websockets.exceptions import ConnectionClosed
-import mss
-from PIL import Image
 from src.tools import get_tool_declarations, ToolHandler
 from src.emotions import init_emotion_system, get_emotion_system
 from src.idle_chatbox import IdleChatbox
