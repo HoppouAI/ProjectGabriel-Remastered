@@ -69,6 +69,11 @@ async def main(save_audio=False):
 
     config = Config()
 
+    # Apply log level from config now that it's loaded. Default INFO from
+    # boot stays unless config.yml has logging.level set.
+    from src.cli import apply_log_level
+    apply_log_level(config.log_level)
+
     # Plugin system: discover and load BEFORE the session so any tools the
     # plugins register show up in the very first connect. plugins also get
     # a chance to register external TTS/STT providers we'll pick up below.

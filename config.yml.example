@@ -15,6 +15,13 @@ privacy:
   # leave off if you do not want any of it on disk.
   save_conversations: false
 
+# Logging. Controls how chatty the terminal is.
+logging:
+  # DEBUG / INFO / WARNING / ERROR. Use DEBUG to see everything including
+  # third party libs (httpx, discord internals, etc), INFO is the everyday
+  # level, WARNING hides per-event status spam.
+  level: "INFO"
+
 gemini:
   # Primary API key (required) - get from https://aistudio.google.com/apikey
   api_key: "YOUR_GEMINI_API_KEY_HERE"

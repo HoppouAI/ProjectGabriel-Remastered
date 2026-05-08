@@ -74,6 +74,35 @@ def setup_logging(level=logging.INFO):
         logging.getLogger(chatty).setLevel(logging.WARNING)
 
 
+_LEVEL_NAMES = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARN": logging.WARNING,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+    "FATAL": logging.CRITICAL,
+}
+
+
+def parse_log_level(value, default=logging.INFO):
+    """Accept a string like 'debug' / 'INFO' / 'warn' or an int and return a
+    logging level int. Falls back to default on garbage input."""
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return value
+    name = str(value).strip().upper()
+    return _LEVEL_NAMES.get(name, default)
+
+
+def apply_log_level(level):
+    """Re-apply a level on the root logger after setup_logging has run.
+    Used so config.yml can override the boot default once Config loads."""
+    level = parse_log_level(level)
+    logging.getLogger().setLevel(level)
+
+
 _W = 49
 
 

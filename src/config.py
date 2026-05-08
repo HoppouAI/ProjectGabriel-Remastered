@@ -110,6 +110,12 @@ class Config:
         return bool(self.get("privacy", "save_conversations", default=False))
 
     @property
+    def log_level(self):
+        # logging.<LEVEL> string from config. accepts debug/info/warn/error.
+        # set to "DEBUG" if you want every chatty third party log back.
+        return str(self.get("logging", "level", default="INFO") or "INFO")
+
+    @property
     def api_key(self):
         return self._keys[self._key_index]
 
