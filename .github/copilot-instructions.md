@@ -84,6 +84,8 @@ config/
     *.yml.example        -- Template files for new users
 config.yml               -- Main config (gitignored, see config.yml.example)
 config.yml.example       -- Template config with placeholder values
+config/tools.yml         -- Per-tool + per-plugin enable map (gitignored, see .example)
+config/tools.yml.example -- Template tools.yml with full tool catalog
 webui/                   -- Dashboard + memory manager HTML/JS/CSS
 models/yolov8/           -- YOLOv8n model (auto-downloaded) + config.json
 sfx/music/               -- Local music files for playback
@@ -160,7 +162,7 @@ class MyTool(BaseTool):
 - Loaded BEFORE `GeminiLiveSession` is constructed so `@register_tool` fires before `ToolHandler` reads the registry.
 - Built-in events: `startup`, `shutdown`, `message_in(text, source)`, `message_out(text)`. Sync or async handlers, exceptions caught per subscriber.
 - Plugin TTS providers picked up via `tts.external_provider: <name>` in `config.yml` (only used when no built-in TTS is enabled).
-- Per-plugin config under `plugins.<name>.*`. Disable a plugin via `plugins.<name>.enabled: false` or master toggle `plugins.enabled: false`.
+- Per-plugin runtime config under `plugins.<name>.*` in `config.yml`. Per-plugin enable lives in `config/tools.yml` under `plugins:` (alongside per-tool toggles). Master toggle for the whole plugin loader is `plugins.enabled` in `config.yml`.
 - Per-plugin runtime data lives under `data/plugins/<name>/` (gitignored).
 - Missing python deps in `plugin.yml :: requirements:` are warned, never auto-installed.
 - `plugins/example_hello/` is the reference implementation (sayHello tool + lifecycle event subscribers). Only that folder + `plugins/README.md` are tracked, the rest of `plugins/` is gitignored.

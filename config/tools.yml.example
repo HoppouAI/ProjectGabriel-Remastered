@@ -1,0 +1,28 @@
+# ════════════════════════════════════════════════════════════════
+# Tools & Plugins Registry
+# ════════════════════════════════════════════════════════════════
+# Single source of truth for which Gemini tools (function declarations)
+# are exposed to the model and which plugins get loaded at startup.
+#
+# How it works:
+#   - tools:    map of <tool_name>: true|false. A disabled tool is hidden
+#               from Gemini -- the FunctionDeclaration is not sent. Tools
+#               not listed here default to enabled, so you only need to
+#               list the ones you want to turn off.
+#   - plugins:  map of <plugin_dir_name>: true|false. A disabled plugin
+#               is skipped entirely (no setup, no tools, no event hooks).
+#               Plugins not listed default to enabled.
+#
+# The configurator WebUI introspects the live tool registry, so any new
+# tool added to src/tools/ or to a plugin shows up automatically. You
+# do not need to maintain the list below by hand. The entries here are
+# just examples of the format.
+# ════════════════════════════════════════════════════════════════
+
+plugins:
+  # example_hello: true
+  # suno: false
+
+tools:
+  # vrchatJump: false
+  # webSearch: false

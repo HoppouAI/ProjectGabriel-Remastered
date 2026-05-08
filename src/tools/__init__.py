@@ -28,10 +28,6 @@ from src.tools._handler import ToolHandler  # noqa: F401
 def get_tool_declarations(config=None):
     function_decls = []
     for cls in get_registered_tools():
-        # skip tool groups disabled in config.tools.<key>.enabled
-        key = getattr(cls, "tool_key", None)
-        if key and config and not config.get("tools", key, "enabled", default=True):
-            continue
         instance = cls.__new__(cls)
         instance.handler = None
         decls = instance.declarations(config=config)
@@ -46,6 +42,10 @@ def get_tool_declarations(config=None):
                 description=decl["description"],
                 parameters=decl["parameters"],
             ))
+
+    # filter individually disabled tools (config/tools.yml)
+    if config and hasattr(config, "is_tool_enabled"):
+        function_decls = [d for d in function_decls if config.is_tool_enabled(d.name)]
 
     tools = []
     if config and config.google_search_enabled:

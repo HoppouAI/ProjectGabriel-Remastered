@@ -37,6 +37,9 @@
     <div class="nav-item" data-section="features" onclick="showSection('features')">
       <span class="icon"><i class="fas fa-puzzle-piece"></i></span> Features
     </div>
+    <div class="nav-item" data-section="tools" onclick="showSection('tools')">
+      <span class="icon"><i class="fas fa-toolbox"></i></span> Tools &amp; Plugins
+    </div>
   </div>
   <div class="sidebar-footer">
     <button class="btn-save-all" id="saveBtn" onclick="saveAll()">Save & Finish</button>
@@ -711,7 +714,29 @@
     </div>
     <div class="section-nav">
       <button class="btn-back" onclick="showSection('prompt')"><i class="fas fa-arrow-left" style="margin-right:6px;"></i> Back</button>
-      <button class="btn-next" onclick="confirmSave()"><i class="fas fa-save" style="margin-right:6px;"></i> Save & Finish</button>
+      <button class="btn-next" onclick="showSection('tools')">Next: Tools &amp; Plugins <i class="fas fa-arrow-right" style="margin-left:6px;"></i></button>
+    </div>
+  </div>
+
+  <!-- Tools & Plugins -->
+  <div class="section" id="sec-tools">
+    <div class="section-header">
+      <h2>Tools &amp; Plugins</h2>
+      <p>Toggle individual tools the AI can call, and which plugins get loaded on startup. Disabling a tool removes its declaration from Gemini so the model can't see or call it. Saved to <code>config/tools.yml</code>.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn-add" type="button" onclick="toolsBulk(true)">Enable all</button>
+        <button class="btn-add" type="button" onclick="toolsBulk(false)">Disable all</button>
+        <input type="text" id="toolsFilter" placeholder="Filter tools..." oninput="renderTools()" style="flex:1;min-width:160px;">
+      </div>
+      <div id="toolsContainer" class="tools-grid">
+        <div class="hint">Loading tool registry...</div>
+      </div>
+    </div>
+    <div class="section-nav">
+      <button class="btn-back" onclick="showSection('features')"><i class="fas fa-arrow-left" style="margin-right:6px;"></i> Back</button>
+      <button class="btn-next" onclick="confirmSave()"><i class="fas fa-save" style="margin-right:6px;"></i> Save &amp; Finish</button>
     </div>
   </div>
 

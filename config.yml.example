@@ -643,30 +643,27 @@ social:
 # full author guide. Plugins can register Gemini tools, TTS providers,
 # STT providers, and subscribe to lifecycle events (startup, shutdown,
 # message_in, message_out).
+#
+# Per-plugin enable/disable lives in config/tools.yml under the `plugins:`
+# block, alongside per-tool toggles. This section only holds runtime
+# settings the plugins read via ctx.plugin_config(...).
 plugins:
   # Master toggle for the whole plugin system. Set false to skip loading
   # any plugins at all (useful for debugging if a plugin is misbehaving).
   enabled: true
-
-  # Per-plugin overrides. Set <plugin_name>.enabled: false to disable a
-  # specific plugin without removing its folder.
-  example_hello:
-    enabled: true
 
   # ----------------------------------------------------------
   # Suno Song Generation (plugin)
   # ----------------------------------------------------------
   # Generates full songs with custom lyrics by talking to a local bridge
   # server on 127.0.0.1. The bridge is private and not distributed with
-  # this project. If you don't have one, leave this disabled and the
-  # tools wont show up to the model.
+  # this project. Toggle the plugin itself in config/tools.yml.
   #
   # While a song is streaming the AI's spoken voice is muted (the music
   # takes over the audio output) but the mic stays hot so it can still
   # hear the room. Playback decodes a progressive MP3 stream via ffmpeg,
   # imageio-ffmpeg ships a static binary so a system install is optional.
   suno:
-    enabled: false
     # URL of the local bridge server
     bridge_url: "http://127.0.0.1:8787"
     # Playback volume (0-200, 100 = unity)
@@ -684,46 +681,6 @@ plugins:
     # and must be inside (or equal to) music.music_dir for playMusic to find them.
     save_dir: "sfx/music/suno"
 
-# ══════════════════════════════════════════════════════════
-# Tool Enable/Disable
-# ══════════════════════════════════════════════════════════
-# Toggle individual tool groups on or off. When disabled, the tool's
-# declarations are removed from Gemini so the AI won't try to use them.
-# All tools are enabled by default. Some tools also have their own
-# master switches elsewhere in config (yolo.enabled, music_gen.enabled, etc.)
-# that still apply independently.
-tools:
-  soundboard:
-    enabled: true      # searchSoundboard, playSoundboard, stopSoundboard, playRandomSoundboard
-  music:
-    enabled: true      # listMusic, playMusic, stopMusic, pauseMusic, resumeMusic, setMusicVolume
-  voice:
-    enabled: true      # setVoiceBoost, toggleVrchatMic, switchTTSProvider, listTTSProviders, listVoices, setVoicePitch
-  personalities:
-    enabled: true      # listPersonalities, switchPersonality, getCurrentPersonality
-  movement:
-    enabled: true      # vrchatCrouch, vrchatCrawl, vrchatMove, vrchatStop, vrchatJump, vrchatGrab, vrchatDrop, vrchatUse, vrchatLook, vrchatLookVertical
-  avatar_scaling:
-    enabled: true      # vrchatSetAvatarScale, vrchatAdjustAvatarScale, vrchatGetAvatarScale
-  tracker:
-    enabled: true      # startFollow, stopFollow, setFollowDistance
-  wanderer:
-    enabled: true      # startWander, stopWander
-  vrchat_api:
-    enabled: true      # searchAvatars, switchAvatar, getInstancePlayers, invitePlayer, requestInvite, inviteSelfToInstance, getOwnAvatar, getAvatarInfo, searchWorlds, updateStatus, getCurrentStatus, getFriendInfo, getMutualFriends, boopPlayer
-  system:
-    enabled: true      # getSystemSpecs
-  memory:
-    enabled: true      # saveMemory, searchMemories, deleteMemory, listMemories, recallMemories
-  emotions:
-    enabled: true      # emotion, stopAnimation (also requires emotions.enabled)
-  discord:
-    enabled: true      # sendDiscordMessage, relayToDiscord, getDiscordStatus (also requires discord_bot.enabled)
-  music_gen:
-    enabled: true      # startMusicGen, stopMusicGen, pauseMusicGen, resumeMusicGen, steerMusicGen, setMusicGenVolume (also requires music_gen.enabled)
-  web_search:
-    enabled: true      # webSearch, readWebpage (also requires web_search.enabled)
-  social:
-    enabled: true      # socialSendMessage, socialFetchMessages, socialFetchMessagesByUser, socialGetOnline, socialSendFriendRequest, socialAcceptFriend, socialDenyFriend, socialRemoveFriend, socialListFriends, socialGetPendingRequests, socialBlockUser, socialUnblockUser, socialGetProfile (also requires social.enabled)
-  suno:
-    enabled: true      # generateSong, stopSong (also requires suno.enabled)
+# Per-tool and per-plugin enable toggles live in config/tools.yml.
+# Run the configurator or edit that file directly to hide individual
+# tools from Gemini.

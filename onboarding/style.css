@@ -328,6 +328,20 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .btn-add:hover { border-color: var(--accent); }
 
+/* ── Tools registry grid ── */
+.tools-grid { display: flex; flex-direction: column; gap: 4px; }
+.tools-section { margin-bottom: 8px; }
+.tool-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; border-radius: 6px;
+  cursor: pointer; user-select: none;
+  font-size: 13px; color: var(--text);
+  transition: background 0.15s;
+}
+.tool-row:hover { background: var(--bg-soft, rgba(255,255,255,0.04)); }
+.tool-row input[type="checkbox"] { margin: 0; cursor: pointer; }
+.tool-row span { font-family: var(--mono, ui-monospace, monospace); }
+
 /* ── Conditional ── */
 .cond { display: none; }
 .cond.visible { display: block; }

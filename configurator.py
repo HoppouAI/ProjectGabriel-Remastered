@@ -24,7 +24,141 @@ PROMPTS_DIR = Path("config/prompts")
 PROMPTS_OUTPUT = PROMPTS_DIR / "prompts.yml"
 APPENDS_EXAMPLE = PROMPTS_DIR / "appends.yml.example"
 APPENDS_OUTPUT = PROMPTS_DIR / "appends.yml"
+TOOLS_EXAMPLE = Path("config/tools.yml.example")
+TOOLS_OUTPUT = Path("config/tools.yml")
+PLUGINS_DIR = Path("plugins")
 ONBOARDING_HTML = Path("onboarding/index.html")
+
+
+def _humanize(name: str) -> str:
+    """Turn 'vrchat_api' or 'avatar_scaling' into 'Vrchat Api' / 'Avatar Scaling'."""
+    return " ".join(p.capitalize() for p in name.replace("-", "_").split("_") if p)
+
+
+def discover_tool_registry() -> dict:
+    """Walk the live tool + plugin registry so the WebUI never goes stale.
+
+    Imports src.tools (which triggers all @register_tool decorators) and
+    PluginManager (which loads plugin folders and runs their setup so any
+    plugin tools register too). Then groups every FunctionDeclaration by
+    its owning class' tool_key, plus emotion declarations and plugin entries.
+    Returns: {"tools": {name: {"category": str}}, "plugins": [name, ...]}.
+    """
+    # Lazy import so configurator.py can still load if src/ has issues
+    import importlib
+
+    importlib.import_module("src.tools")
+    from src.tools._base import get_registered_tools
+    from src.emotions import generate_emotion_function_declarations
+    # Pull in modules that aren't auto-imported by src/tools/__init__.py
+    for extra in ("src.tools.time",):
+        try:
+            importlib.import_module(extra)
+        except Exception:
+            pass
+    try:
+        from src.plugins import PluginManager
+        pm = PluginManager(None)
+        pm.discover_and_load()
+    except Exception:
+        pm = None
+
+    # A stub config that says "yes" to everything so tools that gate
+    # their own declarations() (discord, social, suno, etc.) still
+    # show up in the WebUI for the operator to toggle.
+    class _StubCfg:
+        def get(self, *keys, default=None):
+            if default is False:
+                return True
+            if default is None:
+                return True
+            return default if not isinstance(default, bool) else True
+
+        def __getattr__(self, _name):
+            return True
+
+    stub_cfg = _StubCfg()
+
+    tools_out: dict[str, dict] = {}
+    for cls in get_registered_tools():
+        tool_key = getattr(cls, "tool_key", None) or cls.__name__
+        # Plugin tools live under plugins/<dir>/... so tag them clearly
+        module = getattr(cls, "__module__", "") or ""
+        if module.startswith("plugins."):
+            plugin_name = module.split(".", 2)[1] if "." in module else tool_key
+            category = f"Plugin: {plugin_name}"
+        else:
+            category = _humanize(tool_key)
+        try:
+            instance = cls.__new__(cls)
+            instance.handler = None
+            decls = instance.declarations(config=stub_cfg) or []
+        except Exception:
+            decls = []
+        for d in decls:
+            tools_out[d.name] = {"category": category}
+
+    # Emotions tools build their declarations dynamically from config and
+    # cant be enumerated without one, so probe with the stub. Falls back
+    # gracefully if anything throws.
+    try:
+        for d in generate_emotion_function_declarations(stub_cfg) or []:
+            tools_out[d["name"]] = {"category": "Emotions"}
+    except Exception:
+        pass
+
+    plugins_out: list[str] = []
+    if PLUGINS_DIR.is_dir():
+        for entry in sorted(PLUGINS_DIR.iterdir()):
+            if not entry.is_dir() or entry.name.startswith((".", "_")):
+                continue
+            if not (entry / "plugin.yml").exists():
+                continue
+            try:
+                with open(entry / "plugin.yml", "r", encoding="utf-8") as f:
+                    manifest = yaml.safe_load(f) or {}
+                plugins_out.append(manifest.get("name") or entry.name)
+            except Exception:
+                plugins_out.append(entry.name)
+
+    return {"tools": tools_out, "plugins": plugins_out}
+
+
+def load_tools_existing() -> dict:
+    """Load the user's tools.yml, returning an empty layout if missing."""
+    if TOOLS_OUTPUT.exists():
+        with open(TOOLS_OUTPUT, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+
+def save_tools(tools_payload: dict):
+    """Write tools.yml. Preserves comments from the example template if it
+    exists, otherwise writes a fresh file with a short banner."""
+    if not tools_payload:
+        return
+    yaml_rt = YAML()
+    yaml_rt.preserve_quotes = True
+
+    if TOOLS_EXAMPLE.exists():
+        with open(TOOLS_EXAMPLE, "r", encoding="utf-8") as f:
+            data = yaml_rt.load(f) or {}
+    else:
+        data = {}
+    data.setdefault("tools", {})
+    data.setdefault("plugins", {})
+
+    new_tools = tools_payload.get("tools") or {}
+    new_plugins = tools_payload.get("plugins") or {}
+    for k, v in new_tools.items():
+        data["tools"][k] = bool(v)
+    for k, v in new_plugins.items():
+        data["plugins"][k] = bool(v)
+
+    TOOLS_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    with open(TOOLS_OUTPUT, "w", encoding="utf-8") as f:
+        yaml_rt.dump(data, f)
+
 
 
 def get_audio_devices():
@@ -214,6 +348,34 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
             else:
                 self._json_response({"exists": False})
 
+        elif self.path == "/api/tools-config":
+            try:
+                registry = discover_tool_registry()
+            except Exception as e:
+                self._json_response({"error": f"discovery failed: {e}"}, 500)
+                return
+            user_tools = load_tools_existing()
+            user_tools_map = (user_tools.get("tools") or {})
+            user_plugins_map = (user_tools.get("plugins") or {})
+
+            # state: respect what the user already saved, default ON
+            tools_state = {
+                name: bool(user_tools_map.get(name, True))
+                for name in registry["tools"].keys()
+            }
+            plugins_state = {
+                name: bool(user_plugins_map.get(name, True))
+                for name in registry["plugins"]
+            }
+            plugins_meta = {name: True for name in registry["plugins"]}
+
+            self._json_response({
+                "tools": registry["tools"],
+                "plugins": plugins_meta,
+                "tools_state": tools_state,
+                "plugins_state": plugins_state,
+            })
+
         elif self.path == "/api/shutdown":
             self._json_response({"success": True})
             threading.Thread(target=lambda: (server.shutdown()), daemon=True).start()
@@ -243,6 +405,7 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
                 config_values = data.get("config", data)
                 prompt_data = data.get("prompt")
                 appends_data = data.get("appends")
+                tools_data = data.get("tools")
 
                 if prompt_data:
                     # Point config to the saved prompt key name
@@ -257,6 +420,9 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
                 if appends_data:
                     save_appends(appends_data)
                     saved_files.append(str(APPENDS_OUTPUT.resolve()))
+                if tools_data:
+                    save_tools(tools_data)
+                    saved_files.append(str(TOOLS_OUTPUT.resolve()))
 
                 self._json_response({
                     "success": True,

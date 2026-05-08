@@ -804,6 +804,7 @@ async function saveAll(confirmed) {
         config: collectValues(),
         prompt: collectPromptData(),
         appends: collectAppendsData(),
+        tools: collectToolsData(),
       }),
     });
     const data = await res.json();
@@ -834,4 +835,75 @@ function showToast(msg, type = 'success') {
   toast._timer = setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
+// ── Tools & Plugins registry ──
+let toolsRegistry = null;     // {tools: {name: {category, enabled}}, plugins: {name: enabled}}
+let toolsState = { tools: {}, plugins: {} };
+
+async function loadTools() {
+  try {
+    const res = await fetch('/api/tools-config');
+    const data = await res.json();
+    toolsRegistry = data;
+    toolsState = {
+      tools: { ...data.tools_state },
+      plugins: { ...data.plugins_state },
+    };
+    renderTools();
+  } catch (e) {
+    const c = $('#toolsContainer');
+    if (c) c.innerHTML = '<div class="hint" style="color:var(--danger);">Failed to load tools registry: ' + e.message + '</div>';
+  }
+}
+
+function renderTools() {
+  const c = $('#toolsContainer');
+  if (!c || !toolsRegistry) return;
+  const filterEl = $('#toolsFilter');
+  const filter = (filterEl ? filterEl.value : '').toLowerCase().trim();
+
+  // Plugins block first
+  let html = '<div class="tools-section"><h4 style="margin:8px 0;color:var(--text-muted);text-transform:uppercase;font-size:11px;letter-spacing:.6px;">Plugins</h4>';
+  for (const [name, _] of Object.entries(toolsRegistry.plugins)) {
+    if (filter && !name.toLowerCase().includes(filter)) continue;
+    const checked = toolsState.plugins[name] !== false;
+    html += `<label class="tool-row"><input type="checkbox" data-plugin="${name}" ${checked ? 'checked' : ''} onchange="toolsState.plugins['${name}']=this.checked"><span>${name}</span></label>`;
+  }
+  html += '</div>';
+
+  // Tools grouped by category
+  const byCategory = {};
+  for (const [name, meta] of Object.entries(toolsRegistry.tools)) {
+    const cat = meta.category || 'Other';
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(name);
+  }
+  for (const cat of Object.keys(byCategory).sort()) {
+    const names = byCategory[cat].filter(n => !filter || n.toLowerCase().includes(filter));
+    if (!names.length) continue;
+    html += `<div class="tools-section"><h4 style="margin:12px 0 6px;color:var(--text-muted);text-transform:uppercase;font-size:11px;letter-spacing:.6px;">${cat}</h4>`;
+    for (const name of names) {
+      const checked = toolsState.tools[name] !== false;
+      html += `<label class="tool-row"><input type="checkbox" data-tool="${name}" ${checked ? 'checked' : ''} onchange="toolsState.tools['${name}']=this.checked"><span>${name}</span></label>`;
+    }
+    html += '</div>';
+  }
+  c.innerHTML = html;
+}
+
+function toolsBulk(enable) {
+  if (!toolsRegistry) return;
+  for (const name of Object.keys(toolsRegistry.tools)) toolsState.tools[name] = enable;
+  for (const name of Object.keys(toolsRegistry.plugins)) toolsState.plugins[name] = enable;
+  renderTools();
+}
+
+function collectToolsData() {
+  if (!toolsRegistry) return null;
+  return {
+    tools: { ...toolsState.tools },
+    plugins: { ...toolsState.plugins },
+  };
+}
+
 init();
+loadTools();

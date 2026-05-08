@@ -68,9 +68,14 @@ class PluginManager:
             logger.info(f"plugin '{name}' disabled in manifest, skipping")
             return
 
-        # Per-plugin override from the host config
-        # (config.yml -> plugins -> <name> -> enabled: false)
+        # Per-plugin override. Primary source is config/tools.yml ->
+        # plugins.<name>. Falls back to the legacy
+        # config.yml -> plugins.<name>.enabled key for upgraders.
         if self.config is not None:
+            if hasattr(self.config, "is_plugin_enabled"):
+                if not self.config.is_plugin_enabled(name):
+                    logger.info(f"plugin '{name}' disabled in tools.yml, skipping")
+                    return
             cfg_enabled = self.config.get("plugins", name, "enabled", default=None)
             if cfg_enabled is False:
                 logger.info(f"plugin '{name}' disabled in host config, skipping")
