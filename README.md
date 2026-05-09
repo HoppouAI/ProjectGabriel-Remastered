@@ -424,39 +424,99 @@ shows a "Now Playing" bar that updates as more audio buffers in. While the
 song is streaming the AI's voice ducks out (mic stays open so it can still
 hear the room) and unmutes when the song stops.
 
-This integration is **disabled by default** and the tools are hidden from
-Gemini until you flip `plugins.suno.enabled: true` in `config.yml`. Suno
-ships as a built-in plugin (see `plugins/suno/`). Defaults to one
-generate request per 30 seconds.
+This integration ships as a separate plugin in the
+**[ProjectGabriel-Plugins](https://github.com/HoppouAI/ProjectGabriel-Plugins/tree/main/suno)**
+repo. See the [Plugins](#plugins) section below for install steps. The tools
+are hidden from Gemini until you flip `plugins.suno.enabled: true` in
+`config.yml`. Defaults to one generate request per 30 seconds.
 
 **Backend not included.** Gabriel talks to a small private bridge running on
-`127.0.0.1`. That bridge is not part of this repository and is not being
+`127.0.0.1`. That bridge is not part of either repository and is not being
 released publicly. No further details on how it works will be shared. If you
-don't have a compatible bridge already, leave the integration off and the
-tools simply won't appear.
+don't have a compatible bridge already, leave the plugin off and the tools
+simply won't appear.
 
 Requires `ffmpeg` for streaming MP3 decode. The included `imageio-ffmpeg`
 pip dependency bundles a static binary so you don't need a system install.
 
 ## Plugins
 
-Gabriel has a drop-in plugin system. Make a folder under `plugins/<your_name>/`
-with a `plugin.yml` manifest and an `__init__.py` that subclasses `Plugin`,
-and it gets auto-loaded on startup. Plugins can:
+Gabriel has a drop-in plugin system. The host code looks at every folder
+under `plugins/<name>/` for a `plugin.yml` manifest plus an `__init__.py`
+that subclasses `Plugin`, and loads it on startup. Plugins can:
 
 - Register Gemini function-calling tools (same `BaseTool` API the built-ins use)
-- Register custom TTS providers (selectable via `tts.external_provider` in `config.yml`)
-- Register custom STT providers
+- Register custom TTS / STT providers (selectable via `tts.external_provider` in `config.yml`)
+- Write to the VRChat chatbox (now-playing displays, status banners)
+- Inject extra text into the system prompt every session
 - Subscribe to lifecycle events: `startup`, `shutdown`, `message_in`, `message_out`
 - Read their own config from `config.yml` under `plugins.<name>.*`
 - Persist data in `data/plugins/<name>/`
 
-A reference plugin lives in `plugins/example_hello/`. The full author guide
-is in `plugins/README.md`. The `plugins/` folder is mostly gitignored so your
-own plugins stay local.
+The full author guide is in [plugins/README.md](plugins/README.md).
 
-To turn the whole system off set `plugins.enabled: false` in `config.yml`.
-To disable a single plugin without removing it set `plugins.<name>.enabled: false`.
+### Where to get plugins
+
+Official plugins live in a separate repo: **[HoppouAI/ProjectGabriel-Plugins](https://github.com/HoppouAI/ProjectGabriel-Plugins)**.
+
+That repo currently has:
+
+- `diary/` -- long term first-person diary, written by a background sub-agent every couple hours
+- `mood/` -- persistent emotion + intensity system, injected into the system prompt
+- `suno/` -- Suno song generation with live MP3 streaming (needs a private bridge, off by default)
+- `example_hello/` -- minimal reference plugin
+
+### Installing a plugin
+
+1. Clone the plugins repo somewhere outside this folder:
+
+   ```bash
+   git clone https://github.com/HoppouAI/ProjectGabriel-Plugins.git
+   ```
+
+2. Copy the plugin folder you want into your install's `plugins/` directory:
+
+   ```powershell
+   Copy-Item -Recurse path\to\ProjectGabriel-Plugins\diary plugins\diary
+   ```
+
+3. Open `plugins/<name>/plugin.yml` and make sure `enabled: true`.
+4. If the plugin has a `requirements:` list in its `plugin.yml`, install
+   those into your venv:
+
+   ```powershell
+   .venv\Scripts\python.exe -m pip install <each requirement>
+   ```
+
+5. Add any optional config to `config.yml` under `plugins.<name>:`. Each
+   plugin's own README explains what knobs it exposes.
+6. Restart Gabriel. You should see `loaded plugin '<name>' v<x.y.z>` in
+   the log. Any tools the plugin registers also show up in
+   `config/tools.yml` under `plugin_tools.<name>`.
+
+The `plugins/` folder in this repo is gitignored, so anything you drop in
+there stays local to your install.
+
+### Disable / per-tool toggles
+
+There are three layers:
+
+1. **Master switch** -- `plugins.enabled` in `config.yml`. Turns the
+   whole plugin loader off.
+2. **Per-plugin enable** -- `enabled:` inside each plugin's
+   `plugin.yml`. Skips loading that plugin entirely.
+3. **Per-tool toggles** -- `config/tools.yml` under
+   `plugin_tools.<plugin>.<tool_name>`. Auto-populated on first run.
+   Flip a tool to `false` and it's hidden from the model without
+   disabling the rest of the plugin.
+
+### Writing your own
+
+Drop a folder under `plugins/<your_name>/` with a `plugin.yml` and an
+`__init__.py` that subclasses `Plugin`. The author guide in
+[plugins/README.md](plugins/README.md) walks through every hook with
+working code samples. PRs to the plugins repo are welcome if you want
+yours featured.
 
 ---
 

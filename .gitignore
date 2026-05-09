@@ -216,16 +216,11 @@ sfx/music/*.m4a
 /sfx/music/suno
 /old_stuff
 
-# Plugins: ignore everything except the tracked example, suno, mood, diary, and README
+# Plugins: only the authoring guide stays in this repo. Actual plugins
+# live in the separate ProjectGabriel-Plugins repo and get copied into
+# this folder by the user.
 /plugins/*
 !/plugins/README.md
-!/plugins/example_hello/
-!/plugins/suno/
-!/plugins/mood/
-!/plugins/diary/
-# user-customizable mood overrides, only ship the example
-/plugins/mood/moods.json
-/plugins/mood/emotions.json
 # per-plugin runtime data
 /data/plugins/
 # plugin loader log files
