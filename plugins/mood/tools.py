@@ -72,7 +72,12 @@ class MoodTools(BaseTool):
                 "result": "ok",
                 "level": state.level,
                 "label": info["label"],
+                "vibe": info["vibe"],
                 "reason": state.reason,
+                "instruction": (
+                    f"Your mood is now {state.level}/10 ({info['label']}). "
+                    f"Act like this from now on: {info['vibe']}"
+                ),
             }
         if name == "getMood":
             state = self._store.get()
