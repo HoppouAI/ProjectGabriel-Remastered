@@ -9,10 +9,11 @@ Stays out of the chatbox UI on purpose, mood is meant to be felt in the
 voice / wording, not displayed as a status.
 """
 import logging
+from pathlib import Path
 
 from src.plugins import Plugin, PluginContext
 
-from .mood import MoodStore, format_for_prompt
+from .mood import MoodStore, format_for_prompt, load_custom_moods
 from .tools import MoodTools
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,8 @@ class MoodPlugin(Plugin):
     author = "HoppouAI"
 
     def setup(self, ctx: PluginContext):
+        # let users override the mood scale by dropping a moods.json next to this file
+        load_custom_moods(Path(__file__).parent / "moods.json")
         store = MoodStore(ctx.data_dir() / "state.json")
         # ToolHandler instantiates each registered tool as cls(handler), so we
         # cant inject the store via __init__. Stash it as a class attribute on

@@ -63,6 +63,54 @@ MOOD_LEVELS: dict[int, dict[str, str]] = {
 DEFAULT_MOOD = 3  # content/neutral is the resting state
 
 
+def load_custom_moods(path: Path) -> bool:
+    """Try to load user mood overrides from moods.json. Must be a json object
+    with string keys "1".."10", each mapping to {"label": str, "vibe": str}.
+    Anything missing, malformed, or out of range = log a warning and keep
+    whatever defaults we already have. Returns True if anything was applied."""
+    if not path.exists():
+        return False
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"mood: couldnt parse {path.name}, using defaults ({e})")
+        return False
+    if not isinstance(raw, dict):
+        logger.warning(f"mood: {path.name} root must be an object, using defaults")
+        return False
+    new_levels: dict[int, dict[str, str]] = {}
+    for key, val in raw.items():
+        # let json files have informational keys like "_comment" without spam
+        if isinstance(key, str) and key.startswith("_"):
+            continue
+        try:
+            n = int(key)
+        except (TypeError, ValueError):
+            logger.warning(f"mood: skipping non-numeric key {key!r} in {path.name}")
+            continue
+        if n < 1 or n > 10:
+            logger.warning(f"mood: key {n} out of range 1-10 in {path.name}, skipping")
+            continue
+        if not isinstance(val, dict):
+            logger.warning(f"mood: level {n} must be an object in {path.name}, skipping")
+            continue
+        label = val.get("label")
+        vibe = val.get("vibe")
+        if not isinstance(label, str) or not isinstance(vibe, str) or not label.strip() or not vibe.strip():
+            logger.warning(f"mood: level {n} needs non-empty label+vibe strings, skipping")
+            continue
+        new_levels[n] = {"label": label.strip(), "vibe": vibe.strip()}
+    if not new_levels:
+        logger.warning(f"mood: no valid levels found in {path.name}, sticking with defaults")
+        return False
+    # missing levels fall back to defaults so we always have a full 1-10 scale
+    for n in range(1, 11):
+        if n in new_levels:
+            MOOD_LEVELS[n] = new_levels[n]
+    logger.info(f"mood: loaded {len(new_levels)} custom mood level(s) from {path.name}")
+    return True
+
+
 @dataclass
 class MoodState:
     level: int = DEFAULT_MOOD

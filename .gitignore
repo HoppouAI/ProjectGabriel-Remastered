@@ -222,6 +222,8 @@ sfx/music/*.m4a
 !/plugins/example_hello/
 !/plugins/suno/
 !/plugins/mood/
+# user-customizable mood overrides, only ship the example
+/plugins/mood/moods.json
 # per-plugin runtime data
 /data/plugins/
 # plugin loader log files
