@@ -16,7 +16,7 @@ from typing import Optional
 from google import genai
 from google.genai import types as gtypes
 
-from .diary import DiaryEntry, DiaryStore, today_str, now_time_str
+from .diary import DiaryEntry, DiaryStore, now_written_str, today_str
 
 logger = logging.getLogger(__name__)
 
@@ -229,14 +229,19 @@ async def summarize_sessions(
         if not text:
             continue
         rendered_sessions.append(text)
-        # track time range from filename (YYYY-MM-DD_HH-MM-SS.json)
-        stem = p.stem
-        if "_" in stem:
-            time_part = stem.split("_", 1)[1].replace("-", ":")
-            if earliest_ts is None or time_part < earliest_ts:
-                earliest_ts = time_part
-            if latest_ts is None or time_part > latest_ts:
-                latest_ts = time_part
+        # build a friendly 12h time string from the file mtime so the session
+        # range matches the rest of the diary's clock format
+        try:
+            t = datetime.fromtimestamp(p.stat().st_mtime).strftime("%I:%M %p")
+            if t.startswith("0"):
+                t = t[1:]
+        except Exception:
+            t = ""
+        if t:
+            if earliest_ts is None or t < earliest_ts:
+                earliest_ts = t
+            if latest_ts is None or t > latest_ts:
+                latest_ts = t
 
     if not rendered_sessions:
         return None
@@ -284,7 +289,7 @@ async def summarize_sessions(
     entry = DiaryEntry(
         date=date,
         part=0,  # caller assigns the real part number
-        written_at=now_time_str(),
+        written_at=now_written_str(),
         sessions_covered=len(rendered_sessions),
         session_range=session_range,
         people=people,
@@ -313,11 +318,12 @@ async def write_next_entry(
 
     prior_today = store.entries_for_date(date)
 
-    # skip the run if no NEW session has appeared since the last entry was written
-    if prior_today:
-        last = max(prior_today, key=lambda e: e.part)
+    # skip the run if no NEW session has appeared since the diary file was
+    # last written. We use the diary file mtime instead of parsing the
+    # written_at field so format changes never break this check.
+    if prior_today and store.path.exists():
         try:
-            last_written = datetime.strptime(f"{date} {last.written_at}", "%Y-%m-%d %H:%M:%S").timestamp()
+            last_written = store.path.stat().st_mtime
             newest_session_mtime = max(s.stat().st_mtime for s in sessions)
             if newest_session_mtime <= last_written:
                 logger.info("diary: no new sessions since last entry, skipping")

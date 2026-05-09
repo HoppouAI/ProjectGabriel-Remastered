@@ -32,18 +32,20 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# entry block markers
-_HEADER_RE = re.compile(r"^===\s*(\d{4}-\d{2}-\d{2})\s+part\s+(\d+)\s*\(written\s+([\d:]+)\)\s*===\s*$")
+# entry block markers. The bit inside (written ...) is just human-readable
+# metadata, the parser captures it loosely so we can switch formats without
+# breaking older diary files.
+_HEADER_RE = re.compile(r"^===\s*(\d{4}-\d{2}-\d{2})\s+part\s+(\d+)\s*\(written\s+(.+?)\)\s*===\s*$")
 _END_MARKER = "=== END ==="
 
 
 @dataclass
 class DiaryEntry:
-    date: str                       # YYYY-MM-DD
+    date: str                       # YYYY-MM-DD, used as the grouping key
     part: int                       # 1-based, multiple parts per day allowed
-    written_at: str                 # HH:MM:SS when this entry was written
+    written_at: str                 # human readable timestamp, US 12h format like "May 8, 2026 at 02:30:11 PM"
     sessions_covered: int = 0       # how many transcripts fed into this entry
-    session_range: str = ""         # "HH:MM - HH:MM" of first/last session
+    session_range: str = ""         # "hh:mm AM - hh:mm PM" of first/last session
     people: list[str] = field(default_factory=list)
     mood_arc: str = ""
     body: str = ""
@@ -221,4 +223,29 @@ def today_str() -> str:
 
 
 def now_time_str() -> str:
-    return datetime.now().strftime("%H:%M:%S")
+    """US 12h format like "02:30:11 PM". Matches what the AI's time tool
+    returns so the model doesnt have to mentally translate between 24h and
+    12h when reading its own diary."""
+    raw = datetime.now().strftime("%I:%M:%S %p")
+    return raw.lstrip("0") if raw.startswith("0") else raw
+
+
+def now_written_str() -> str:
+    """Full friendly 'May 8, 2026 at 02:30:11 PM' style string for the
+    diary header. Same format the AI sees from its time tool."""
+    now = datetime.now()
+    date_part = now.strftime("%B %d, %Y").replace(" 0", " ")  # strip leading zero on day
+    time_part = now.strftime("%I:%M:%S %p")
+    if time_part.startswith("0"):
+        time_part = time_part[1:]
+    return f"{date_part} at {time_part}"
+
+
+def friendly_date(iso_date: str) -> str:
+    """Turn '2026-05-08' into 'May 8, 2026'. Returns the input unchanged on
+    parse failure so we never blow up on hand-edited dates."""
+    try:
+        d = datetime.strptime(iso_date, "%Y-%m-%d")
+    except Exception:
+        return iso_date
+    return d.strftime("%B %d, %Y").replace(" 0", " ")

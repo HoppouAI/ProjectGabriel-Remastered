@@ -17,10 +17,10 @@ it needs context the structured memory system would not capture.
   something new), so a busy day looks like:
 
 ```
-=== 2026-05-08 part 1 (written 14:30:11) ===
+=== 2026-05-08 part 1 (written May 8, 2026 at 2:30:11 PM) ===
 ...
 
-=== 2026-05-08 part 2 (written 16:30:42) ===
+=== 2026-05-08 part 2 (written May 8, 2026 at 4:30:42 PM) ===
 ...
 ```
 
@@ -50,9 +50,11 @@ plugins:
 ## File format
 
 Plain text, easy to open in any editor. Each entry is bracketed by
-`=== DATE part N (written HH:MM:SS) ===` and `=== END ===` markers, with a
-small metadata block, the body paragraphs, and an optional bullet point
-highlights list. Parser is lenient: hand edits and missing fields are fine.
+`=== DATE part N (written FRIENDLY_TIMESTAMP) ===` and `=== END ===` markers,
+with a small metadata block, the body paragraphs, and an optional bullet point
+highlights list. Timestamps use US 12-hour format (e.g. `May 8, 2026 at 2:30:11 PM`)
+to match what the AI's time tool returns, so the model doesnt get confused
+flipping between 24h and 12h. Parser is lenient: hand edits and missing fields are fine.
 
 ## Notes
 
