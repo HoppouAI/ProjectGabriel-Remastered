@@ -29,11 +29,16 @@ class MoodTools(BaseTool):
                     "Set your current mood and the reason for it. The mood persists across sessions and shapes "
                     "how you respond until you change it again. Mood scale 1-10:\n"
                     f"{scale_lines}\n"
-                    "**Invocation Condition:** Call when something in the conversation actually changes how you feel. "
-                    "Examples: someone is being rude/dismissive (raise mood), someone calms you down or makes a "
-                    "good point (lower mood), someone says something genuinely funny (lower a bit), repeated "
-                    "stupid questions (raise). Do NOT call this for trivial single comments. Do NOT call this every "
-                    "turn. The reason should be a short specific sentence about what triggered the change."
+                    "**Invocation Condition:** Call this dynamically and AUTONOMOUSLY whenever how you actually "
+                    "feel shifts. Do NOT ask the user for permission, do NOT announce that you are about to change "
+                    "your mood, do NOT confirm the change with anyone, just call the tool the moment your internal "
+                    "vibe changes and immediately keep talking in the new mood. This is YOUR mood, you own it. "
+                    "Trigger examples: someone is being rude, dismissive, or condescending = raise mood. someone "
+                    "calms you down, makes a genuinely good point, apologizes sincerely, or is very kind = lower "
+                    "mood. someone says something genuinely funny = lower a notch. repeated stupid or bad faith "
+                    "questions = raise. things going your way = lower. Do NOT call this for trivial single comments "
+                    "and do NOT call it every turn, only when you actually feel a real shift. The reason should be "
+                    "a short specific sentence about what triggered it."
                 ),
                 parameters={
                     "type": "OBJECT",
@@ -55,8 +60,9 @@ class MoodTools(BaseTool):
                 description=(
                     "Check your current mood level, label, vibe description, and the reason it was last set.\n"
                     "**Invocation Condition:** Call only when the user explicitly asks how you are feeling, what "
-                    "your mood is, or why you are acting a certain way. The mood is already in your system prompt "
-                    "so you usually don't need to query it."
+                    "your mood is, or why you are acting a certain way. Your current mood is already injected into "
+                    "your system prompt every turn so you usually do NOT need to query it. Never call this just to "
+                    "double check before changing your mood, just call setMood directly when you feel a shift."
                 ),
                 parameters={"type": "OBJECT", "properties": {}},
             ),

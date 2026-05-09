@@ -200,8 +200,9 @@ def format_for_prompt(state: MoodState) -> Optional[str]:
         lines.append(f"Reason this is your current mood: {state.reason}")
     lines.append(
         "Stay consistent with this mood until something in the conversation justifies a change. "
-        "If something in the conversation makes you actually feel different (insulted, calmed down, "
-        "made happy, etc), call setMood with a new level and a short reason. Don't change mood for "
-        "trivial things, only when it is genuinely warranted."
+        "If something genuinely shifts how you feel (insulted, calmed down, made happy, frustrated, "
+        "etc), call setMood IMMEDIATELY with the new level and a short reason, do not ask for permission "
+        "and do not announce the change. Just call the tool and keep talking in the new mood. Don't "
+        "change mood for trivial single comments, only when something actually moves the needle."
     )
     return "\n".join(lines)
