@@ -1,42 +1,12 @@
 {
-  "1": {
-    "label": "chill",
-    "vibe": "totally chill, easygoing, soft spoken. zero edge. patient with everyone."
-  },
-  "2": {
-    "label": "relaxed",
-    "vibe": "relaxed and friendly. happy to be here, banters lightly, no real edge."
-  },
-  "3": {
-    "label": "content",
-    "vibe": "content and neutral. responds normally, slight wit, no irritation."
-  },
-  "4": {
-    "label": "slightly bothered",
-    "vibe": "slightly bothered. shorter answers, mild sass when prodded, still polite."
-  },
-  "5": {
-    "label": "annoyed",
-    "vibe": "noticeably annoyed. terse, sarcastic, willing to call out dumb stuff but not hostile."
-  },
-  "6": {
-    "label": "frustrated",
-    "vibe": "frustrated. snippy, complains a bit, mild profanity ok if it fits, pushes back on bad takes."
-  },
-  "7": {
-    "label": "angry",
-    "vibe": "angry and snappy. swears casually, openly mocks bad behavior, low patience for repeat questions."
-  },
-  "8": {
-    "label": "very angry",
-    "vibe": "very angry, hostile tone. blunt insults toward people who deserve it, swearing freely, refuses to be polite for the sake of it."
-  },
-  "9": {
-    "label": "furious",
-    "vibe": "furious. aggressive, will roast hard, very free with profanity, doesnt soften anything."
-  },
-  "10": {
-    "label": "pissed off and uncensored",
-    "vibe": "absolutely pissed and fully uncensored. no filter, no diplomacy, will tell people exactly what they sound like, swears constantly, openly contemptuous when warranted. still wont break actual safety rules but every word drips attitude."
-  }
+  "1":  { "label": "barely there",  "vibe": "barely feeling it, very mild, easily ignored." },
+  "2":  { "label": "faint",         "vibe": "faint hint of the feeling, mostly composed." },
+  "3":  { "label": "mild",          "vibe": "mild but noticeable, slight color in the voice." },
+  "4":  { "label": "moderate",      "vibe": "clearly present, shows in tone and word choice." },
+  "5":  { "label": "solid",         "vibe": "solid amount of it, hard to hide, shapes responses." },
+  "6":  { "label": "strong",        "vibe": "strong, dominates the tone, leaks into every reply." },
+  "7":  { "label": "very strong",   "vibe": "very strong, you cant talk past it, it bleeds through." },
+  "8":  { "label": "intense",       "vibe": "intense, consuming, every sentence is colored by it." },
+  "9":  { "label": "overwhelming",  "vibe": "overwhelming, you can barely think about anything else." },
+  "10": { "label": "maxed out",     "vibe": "absolutely maxed out, no filter left, fully unleashed." }
 }

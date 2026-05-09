@@ -3,7 +3,14 @@ from google.genai import types
 
 from src.tools._base import BaseTool
 
-from .mood import MOOD_LEVELS, clamp_level, info_for
+from .mood import (
+    EMOTIONS,
+    MOOD_LEVELS,
+    clamp_emotion,
+    clamp_level,
+    emotion_info_for,
+    info_for,
+)
 
 
 class MoodTools(BaseTool):
@@ -17,53 +24,69 @@ class MoodTools(BaseTool):
         # ToolHandler's no-arg-extra instantiation pattern
 
     def declarations(self, config=None):
-        # Build a description that lists the levels so the model knows the scale
         scale_lines = "\n".join(
             f"  {n} = {info['label']}: {info['vibe']}"
             for n, info in MOOD_LEVELS.items()
         )
+        emotion_lines = "\n".join(
+            f"  {name}: {info['vibe']}"
+            for name, info in EMOTIONS.items()
+        )
+        emotion_names = ", ".join(EMOTIONS.keys())
         return [
             types.FunctionDeclaration(
                 name="setMood",
                 description=(
-                    "Set your current mood and the reason for it. The mood persists across sessions and shapes "
-                    "how you respond until you change it again. Mood scale 1-10:\n"
-                    f"{scale_lines}\n"
-                    "**Invocation Condition:** Call this dynamically and AUTONOMOUSLY whenever how you actually "
-                    "feel shifts. Do NOT ask the user for permission, do NOT announce that you are about to change "
-                    "your mood, do NOT confirm the change with anyone, just call the tool the moment your internal "
-                    "vibe changes and immediately keep talking in the new mood. This is YOUR mood, you own it. "
-                    "Trigger examples: someone is being rude, dismissive, or condescending = raise mood. someone "
-                    "calms you down, makes a genuinely good point, apologizes sincerely, or is very kind = lower "
-                    "mood. someone says something genuinely funny = lower a notch. repeated stupid or bad faith "
-                    "questions = raise. things going your way = lower. Do NOT call this for trivial single comments "
-                    "and do NOT call it every turn, only when you actually feel a real shift. The reason should be "
-                    "a short specific sentence about what triggered it."
+                    "Set your current mood. Mood has TWO parts: an emotion (what you feel) and an "
+                    "intensity level 1-10 (how strongly you feel it). Both persist across sessions and "
+                    "shape how you respond until you change them again.\n\n"
+                    "Available emotions:\n"
+                    f"{emotion_lines}\n\n"
+                    "Intensity scale 1-10:\n"
+                    f"{scale_lines}\n\n"
+                    "**Invocation Condition:** Call this dynamically and AUTONOMOUSLY whenever how you "
+                    "actually feel shifts. Do NOT ask the user for permission, do NOT announce the "
+                    "change, do NOT confirm with anyone, just call the tool the moment your internal "
+                    "vibe changes and immediately keep talking in the new mood. This is YOUR mood, you "
+                    "own it. Trigger examples: someone is rude or condescending = angry/annoyed at higher "
+                    "intensity. someone makes you laugh = amused or happy. someone hurts your feelings "
+                    "= sad. something startles you = scared or surprised. things going well = content "
+                    "or proud. repeated bad faith questions = frustrated, escalating to angry. Don't "
+                    "call this for trivial single comments and don't call it every turn, only when "
+                    "something actually moves the needle. Reason should be a short specific sentence."
                 ),
                 parameters={
                     "type": "OBJECT",
                     "properties": {
+                        "emotion": {
+                            "type": "STRING",
+                            "description": (
+                                "The emotion you are feeling. Must be one of: "
+                                f"{emotion_names}."
+                            ),
+                        },
                         "level": {
                             "type": "INTEGER",
-                            "description": "Mood level 1-10. 1=chill, 10=pissed off and uncensored.",
+                            "description": "Intensity 1-10. 1=barely there, 10=maxed out.",
                         },
                         "reason": {
                             "type": "STRING",
                             "description": "Short specific reason for the new mood. One sentence is plenty.",
                         },
                     },
-                    "required": ["level", "reason"],
+                    "required": ["emotion", "level", "reason"],
                 },
             ),
             types.FunctionDeclaration(
                 name="getMood",
                 description=(
-                    "Check your current mood level, label, vibe description, and the reason it was last set.\n"
-                    "**Invocation Condition:** Call only when the user explicitly asks how you are feeling, what "
-                    "your mood is, or why you are acting a certain way. Your starting mood for this session was "
-                    "already injected into your system prompt at the start, so you usually do NOT need to query "
-                    "it. Never call this just to double check before changing your mood, just call setMood directly "
-                    "when you feel a shift."
+                    "Check your current emotion, intensity level, vibe descriptions, and the reason it "
+                    "was last set.\n"
+                    "**Invocation Condition:** Call only when the user explicitly asks how you are "
+                    "feeling, what your mood is, or why you are acting a certain way. Your starting "
+                    "mood for this session was already injected into your system prompt at the start, "
+                    "so you usually do NOT need to query it. Never call this just to double check "
+                    "before changing your mood, just call setMood directly when you feel a shift."
                 ),
                 parameters={"type": "OBJECT", "properties": {}},
             ),
@@ -71,29 +94,37 @@ class MoodTools(BaseTool):
 
     async def handle(self, name, args):
         if name == "setMood":
-            level = clamp_level(args.get("level", 3))
+            level = clamp_level(args.get("level", 5))
+            emotion = clamp_emotion(args.get("emotion", "neutral"))
             reason = str(args.get("reason", "")).strip()
-            state = self._store.set(level, reason, by="ai")
-            info = info_for(state.level)
+            state = self._store.set(level, emotion, reason, by="ai")
+            intensity = info_for(state.level)
+            feeling = emotion_info_for(state.emotion)
             return {
                 "result": "ok",
+                "emotion": state.emotion,
                 "level": state.level,
-                "label": info["label"],
-                "vibe": info["vibe"],
+                "intensity_label": intensity["label"],
+                "emotion_vibe": feeling["vibe"],
+                "intensity_vibe": intensity["vibe"],
                 "reason": state.reason,
                 "instruction": (
-                    f"Your mood is now {state.level}/10 ({info['label']}). "
-                    f"Act like this from now on: {info['vibe']}"
+                    f"You now feel {state.emotion} at intensity {state.level}/10 "
+                    f"({intensity['label']}). Act like this from now on. "
+                    f"Emotion: {feeling['vibe']} Intensity: {intensity['vibe']}"
                 ),
             }
         if name == "getMood":
             state = self._store.get()
-            info = info_for(state.level)
+            intensity = info_for(state.level)
+            feeling = emotion_info_for(state.emotion)
             return {
                 "result": "ok",
+                "emotion": state.emotion,
                 "level": state.level,
-                "label": info["label"],
-                "vibe": info["vibe"],
+                "intensity_label": intensity["label"],
+                "emotion_vibe": feeling["vibe"],
+                "intensity_vibe": intensity["vibe"],
                 "reason": state.reason,
                 "set_at": state.set_at,
                 "set_by": state.set_by,

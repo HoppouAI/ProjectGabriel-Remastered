@@ -1,27 +1,46 @@
 # Mood Plugin
 
-A persistent 1-10 mood scale for the AI. The current mood gets injected into the system prompt every build, and the AI can change its own mood mid-conversation by calling the `setMood` tool.
+A persistent mood system for the AI with two dimensions:
 
-- `1` = chill / no edge
-- `10` = pissed off and uncensored
+- **emotion**: what the AI is feeling (`happy`, `sad`, `scared`, `angry`, `amused`, `lonely`, ...)
+- **intensity**: how strongly it feels it, on a 1-10 scale
 
-## Customizing the mood scale
+Combined, these get injected into the system prompt at every Gemini session start, and the AI can change its own mood mid-conversation by calling the `setMood` tool. Mood persists across restarts via `data/plugins/mood/state.json`.
 
-Copy `moods.json.example` to `moods.json` in this folder and edit any of the levels. Each entry needs a `label` (short name) and a `vibe` (one or two sentence description of how the AI should act at that level).
+## Default emotions
+
+`neutral, happy, excited, content, amused, annoyed, frustrated, angry, furious, sad, lonely, scared, anxious, confused, curious, proud, embarrassed, disgusted, surprised, playful, uncensored`
+
+## Customizing
+
+Both files live in this folder and are gitignored, only the `.example` files are tracked.
+
+### Override the intensity scale
+
+Copy `moods.json.example` to `moods.json` and edit any of the levels. Each entry needs a `label` (short name) and a `vibe` (one or two sentence description).
 
 ```json
 {
-  "1": { "label": "zen",  "vibe": "pure zen mode, nothing fazes you" },
+  "1":  { "label": "zen",  "vibe": "pure zen mode, nothing fazes you" },
   "10": { "label": "NUKE", "vibe": "absolute scorched earth mode" }
 }
 ```
 
-Rules:
-- Levels 1-10 only, anything outside that range is skipped with a warning.
-- You don't have to provide all 10. Missing levels keep the built-in defaults.
-- If `moods.json` is missing or invalid JSON, the defaults are used and a warning is logged.
-- `moods.json` is gitignored so your edits stay local. `moods.json.example` is the tracked template.
+### Add or override emotions
 
-## State
+Copy `emotions.json.example` to `emotions.json` and edit it. Each entry is an emotion name (lowercase) mapping to a `vibe` describing how it shows up in behavior. You can override built-in emotions or add brand new ones.
 
-Current mood is persisted to `data/plugins/mood/state.json` and survives restarts.
+```json
+{
+  "smug":      { "vibe": "insufferably pleased with yourself, gloats lightly, drops 'I told you so' a lot" },
+  "wholesome": { "vibe": "soft hearted, encouraging, gently supportive of everyone" }
+}
+```
+
+## Rules
+
+- Levels 1-10 only, anything outside that range is skipped with a warning
+- You don't have to provide all 10 levels or all emotions, missing entries keep the built-in defaults
+- If either file is missing or invalid JSON, defaults are used and a warning is logged
+- Emotion names are normalized to lowercase
+- Keys starting with `_` (like `_comment`) are silently ignored
