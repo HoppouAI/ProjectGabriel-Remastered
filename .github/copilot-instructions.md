@@ -173,8 +173,17 @@ class MyTool(BaseTool):
 - Per-plugin runtime config under `plugins.<name>.*` in `config.yml`. Whether a plugin LOADS is set by `enabled:` inside that plugin's own `plugins/<name>/plugin.yml`. Per-tool toggles live in `config/tools.yml` under `plugin_tools.<plugin>.<tool_name>` (auto-populated on startup by `src/tools_sync.py`). Master toggle for the whole plugin loader is `plugins.enabled` in `config.yml`.
 - Per-plugin runtime data lives under `data/plugins/<name>/` (gitignored).
 - Missing python deps in `plugin.yml :: requirements:` are warned, never auto-installed.
-- `plugins/example_hello/` is the reference implementation (sayHello tool + lifecycle event subscribers). Only that folder + `plugins/README.md` are tracked, the rest of `plugins/` is gitignored.
+- `plugins/example_hello/` is the reference implementation (sayHello tool + lifecycle event subscribers). `plugins/mood/` (persistent emotion+intensity, prompt contributor) and `plugins/diary/` (background sub-agent + tools) are bigger reference plugins. Only those folders + `plugins/suno/` + `plugins/README.md` are tracked, the rest of `plugins/` is gitignored.
 - Plugin loader code: `src/plugins/api.py` (Plugin, PluginContext, registries), `src/plugins/loader.py` (PluginManager).
+
+### Diary Plugin
+- `plugins/diary/` -- long term first person diary for the AI, separate from the structured memory system.
+- Background `DiaryScheduler` ticks every 2 hours (configurable via `plugins.diary.interval_hours`), runs after a 5 minute warmup.
+- Each tick gathers the most recent N session JSON files for today from `data/conversations/` (default 5), passes them to `gemini-3.1-flash-lite-preview` along with any earlier diary entries from today.
+- Sub-agent returns strict JSON `{people, mood_arc, body, highlights}`, the plugin wraps it as a `DiaryEntry` and appends to `data/plugins/diary/gabriel.diary` (custom plain text format, lenient parser).
+- Multiple entries per day allowed, numbered as "part 1, part 2, ...". Tick is skipped if no new sessions appeared since the last entry.
+- Tools: `readDiary(date?, limit?)`, `searchDiary(query, limit?)`, `listDiaryDates()`, `updateDiaryNow()` (force tick).
+- Requires `privacy.save_conversations: true` to have anything to summarize.
 
 ### Prompt & Personality System
 - **prompts.yml**: Named base prompts structured as `**Persona:** -> **Conversational Rules:** -> **General Guidelines:** -> **Guardrails:**`. Select in `config.yml` -> `gemini.prompt`.

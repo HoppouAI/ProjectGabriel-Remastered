@@ -1,0 +1,7 @@
+name: diary
+version: 1.0.0
+api_version: 1
+author: HoppouAI
+description: Long term life diary for Gabriel. A background sub-agent (gemini-3.1-flash-lite-preview) reads recent VRChat session transcripts every couple hours and writes first person diary entries to a custom .diary file. Tools let the AI read back its own life story to fill in gaps the memory system doesnt cover.
+enabled: true
+requirements: []
