@@ -118,8 +118,7 @@ priority order and shows the first active one when no built in display
 
 Built in displays sit at priority 10 (local music) and 20 (lyria).
 Plugins default to 100 so they yield to host displays unless they ask
-for less. The bundled `suno` plugin registers at priority 50 so a local
-file always wins but suno wins over lyria.
+for less.
 
 ```python
 class MyStatusSource:

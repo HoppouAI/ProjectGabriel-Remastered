@@ -415,28 +415,6 @@ See [social_server/README.md](social_server/README.md) for full API docs and con
 
 ---
 
-## Suno Song Generation (optional)
-
-Gabriel can generate full songs with custom lyrics through Suno and stream
-them back live as they're being made. The AI announces the song, drops the
-lyrics, and the song fills in vocals and instrumentals while the chatbox
-shows a "Now Playing" bar that updates as more audio buffers in. While the
-song is streaming the AI's voice ducks out (mic stays open so it can still
-hear the room) and unmutes when the song stops.
-
-This integration ships as a private plugin and is **not part of either
-public repository**. Gabriel talks to a small private bridge running on
-`127.0.0.1`. Neither the bridge nor the plugin are being released
-publicly. No further details on how it works will be shared.
-
-If you somehow have a compatible bridge and the plugin folder, drop it
-under `plugins/suno/` and flip `plugins.suno.enabled: true` in
-`config.yml`. Otherwise the tools simply won't appear and you can ignore
-this section entirely. Defaults to one generate request per 30 seconds.
-
-Requires `ffmpeg` for streaming MP3 decode. The included `imageio-ffmpeg`
-pip dependency bundles a static binary so you don't need a system install.
-
 ## Plugins
 
 Gabriel has a drop-in plugin system. The host code looks at every folder

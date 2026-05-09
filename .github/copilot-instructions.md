@@ -173,7 +173,7 @@ class MyTool(BaseTool):
 - Per-plugin runtime config under `plugins.<name>.*` in `config.yml`. Whether a plugin LOADS is set by `enabled:` inside that plugin's own `plugins/<name>/plugin.yml`. Per-tool toggles live in `config/tools.yml` under `plugin_tools.<plugin>.<tool_name>` (auto-populated on startup by `src/tools_sync.py`). Master toggle for the whole plugin loader is `plugins.enabled` in `config.yml`.
 - Per-plugin runtime data lives under `data/plugins/<name>/` (gitignored).
 - Missing python deps in `plugin.yml :: requirements:` are warned, never auto-installed.
-- `plugins/example_hello/` is the reference implementation (sayHello tool + lifecycle event subscribers). `plugins/mood/` (persistent emotion+intensity, prompt contributor) and `plugins/diary/` (background sub-agent + tools) are bigger reference plugins. Only those folders + `plugins/suno/` + `plugins/README.md` are tracked, the rest of `plugins/` is gitignored.
+- Plugins live in a separate repo: [HoppouAI/ProjectGabriel-Plugins](https://github.com/HoppouAI/ProjectGabriel-Plugins) (public) plus a private one for non-shareable backends. Reference plugins there: `example_hello/` (sayHello tool + lifecycle subscribers), `mood/` (persistent emotion+intensity, prompt contributor), `diary/` (background sub-agent + tools). The host's `plugins/` folder is gitignored end-to-end except `plugins/README.md` (the authoring guide). Users install plugins by copying folders from the plugins repo into their `plugins/` dir.
 - Plugin loader code: `src/plugins/api.py` (Plugin, PluginContext, registries), `src/plugins/loader.py` (PluginManager).
 
 ### Diary Plugin
