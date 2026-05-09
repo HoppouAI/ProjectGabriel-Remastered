@@ -424,17 +424,15 @@ shows a "Now Playing" bar that updates as more audio buffers in. While the
 song is streaming the AI's voice ducks out (mic stays open so it can still
 hear the room) and unmutes when the song stops.
 
-This integration ships as a separate plugin in the
-**[ProjectGabriel-Plugins](https://github.com/HoppouAI/ProjectGabriel-Plugins/tree/main/suno)**
-repo. See the [Plugins](#plugins) section below for install steps. The tools
-are hidden from Gemini until you flip `plugins.suno.enabled: true` in
-`config.yml`. Defaults to one generate request per 30 seconds.
+This integration ships as a private plugin and is **not part of either
+public repository**. Gabriel talks to a small private bridge running on
+`127.0.0.1`. Neither the bridge nor the plugin are being released
+publicly. No further details on how it works will be shared.
 
-**Backend not included.** Gabriel talks to a small private bridge running on
-`127.0.0.1`. That bridge is not part of either repository and is not being
-released publicly. No further details on how it works will be shared. If you
-don't have a compatible bridge already, leave the plugin off and the tools
-simply won't appear.
+If you somehow have a compatible bridge and the plugin folder, drop it
+under `plugins/suno/` and flip `plugins.suno.enabled: true` in
+`config.yml`. Otherwise the tools simply won't appear and you can ignore
+this section entirely. Defaults to one generate request per 30 seconds.
 
 Requires `ffmpeg` for streaming MP3 decode. The included `imageio-ffmpeg`
 pip dependency bundles a static binary so you don't need a system install.
@@ -463,7 +461,6 @@ That repo currently has:
 
 - `diary/` -- long term first-person diary, written by a background sub-agent every couple hours
 - `mood/` -- persistent emotion + intensity system, injected into the system prompt
-- `suno/` -- Suno song generation with live MP3 streaming (needs a private bridge, off by default)
 - `example_hello/` -- minimal reference plugin
 
 ### Installing a plugin
