@@ -60,9 +60,10 @@ class MoodTools(BaseTool):
                 description=(
                     "Check your current mood level, label, vibe description, and the reason it was last set.\n"
                     "**Invocation Condition:** Call only when the user explicitly asks how you are feeling, what "
-                    "your mood is, or why you are acting a certain way. Your current mood is already injected into "
-                    "your system prompt every turn so you usually do NOT need to query it. Never call this just to "
-                    "double check before changing your mood, just call setMood directly when you feel a shift."
+                    "your mood is, or why you are acting a certain way. Your starting mood for this session was "
+                    "already injected into your system prompt at the start, so you usually do NOT need to query "
+                    "it. Never call this just to double check before changing your mood, just call setMood directly "
+                    "when you feel a shift."
                 ),
                 parameters={"type": "OBJECT", "properties": {}},
             ),
