@@ -166,7 +166,7 @@ class MyTool(BaseTool):
 ### Plugin System
 - Drop-in plugin folder at `plugins/<name>/` with a `plugin.yml` manifest and an `__init__.py`.
 - Plugin classes subclass `src.plugins.Plugin` and implement `setup(ctx)` / `teardown(ctx)`.
-- `PluginContext` exposes: `register_tool(cls)`, `register_tts(name, factory)`, `register_stt(name, factory)`, `register_chatbox_source(name, source, priority)`, `register_prompt_contributor(name, fn)`, `subscribe(event, cb)`, `plugin_config(key)`, `data_dir()`, lazy `audio` / `osc` / `session` / `tool_handler` refs.
+- `PluginContext` exposes: `register_tool(cls)`, `register_tts(name, factory)`, `register_stt(name, factory)`, `register_chatbox_source(name, source, priority)`, `register_prompt_contributor(name, fn)`, `subscribe(event, cb)`, `send_system_instruction(text)` / `send_user_text(text)` (mid-session injection, waits for model to stop speaking, same path as the WebUI), `plugin_config(key)`, `data_dir()`, lazy `audio` / `osc` / `session` / `tool_handler` refs.
 - Loaded BEFORE `GeminiLiveSession` is constructed so `@register_tool` fires before `ToolHandler` reads the registry.
 - Built-in events: `startup`, `shutdown`, `message_in(text, source)`, `message_out(text)`. Sync or async handlers, exceptions caught per subscriber.
 - Plugin TTS providers picked up via `tts.external_provider: <name>` in `config.yml` (only used when no built-in TTS is enabled).

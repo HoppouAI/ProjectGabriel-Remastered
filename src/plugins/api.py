@@ -180,6 +180,55 @@ class PluginContext:
     def unregister_prompt_contributor(self, name: str):
         _prompt_contributors.pop(name, None)
 
+    # runtime messaging ------------------------------------------------------
+
+    async def send_system_instruction(self, text: str):
+        """Push a mid-session system instruction to the model, same path
+        the WebUI uses. Wraps it as `SYSTEM INSTRUCTION: <text>`
+        and sends via `send_client_content_safe`, which waits until the
+        model stops speaking before injecting so it doesnt cut off a
+        reply.
+
+        Only works after the live session is up. During `setup()` the
+        session is None and this returns False without doing anything.
+        Returns True if the message was queued, False otherwise.
+        """
+        session = self._app.get("session")
+        if session is None or not getattr(session, "_session", None):
+            self.logger.warning("send_system_instruction called before session was ready, skipping")
+            return False
+        try:
+            from google.genai import types
+            await session.send_client_content_safe(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=f"SYSTEM INSTRUCTION: {text}")],
+                ),
+                turn_complete=True,
+            )
+            return True
+        except Exception as e:
+            self.logger.error(f"send_system_instruction failed: {e}")
+            return False
+
+    async def send_user_text(self, text: str):
+        """Send a normal user-style text message into the live session,
+        as if it came from the chat input. The model will respond like
+        any other user turn. Returns True on success.
+        """
+        session = self._app.get("session")
+        if session is None:
+            self.logger.warning("send_user_text called before session was ready, skipping")
+            return False
+        if not hasattr(session, "send_text"):
+            self.logger.warning("session has no send_text, cant inject user text")
+            return False
+        try:
+            await session.send_text(text)
+            return True
+        except Exception as e:
+            self.logger.error(f"send_user_text failed: {e}")
+            return False
 
 def get_tts_factory(name: str):
     return _tts_providers.get(name)

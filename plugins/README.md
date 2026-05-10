@@ -163,6 +163,34 @@ Hook into app lifecycle. Built in events:
 Callbacks can be sync or async. Exceptions in any single handler are
 caught so one bad subscriber will not break the rest.
 
+### `await ctx.send_system_instruction(text)` / `await ctx.send_user_text(text)`
+
+Inject text into the live Gemini session mid-conversation. Same code
+path the WebUI uses.
+
+- `send_system_instruction(text)` wraps the text as
+  `System instruction update - <text>` and pushes it as a user-role
+  client content turn. The host waits up to 30 seconds for the model
+  to stop speaking before injecting so it doesnt cut off a reply.
+  Use this for runtime behavior changes ("stop using emojis", "go
+  back to default voice", "the user is afk now").
+- `send_user_text(text)` injects a normal user-style text message.
+  The model responds like any other user turn. Use this for proxying
+  external messages (relay from Discord, voice command, etc).
+
+Both return `True` on success, `False` if the live session isn't up
+yet or sending failed. Don't call these inside `setup()`, the session
+is None there. Safe to call from a tool handler, an event subscriber,
+or any time after `startup` fires.
+
+```python
+async def on_user_msg(text, source):
+    if "shut up" in text.lower():
+        await ctx.send_system_instruction("Stop talking until further notice.")
+
+ctx.subscribe("message_in", on_user_msg)
+```
+
 ### `ctx.plugin_config(key=None, default=None)`
 
 Reads this plugin's runtime settings from `config.yml`. Note: this
