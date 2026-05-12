@@ -40,6 +40,31 @@ class DiscordToolHandler:
             PersonalityTool(self),
             VoiceControlTool(self),
         ]
+        # Pull in any plugin-contributed Discord tools registered before
+        # the bot started up. Tools registered later go through
+        # register_plugin_tool below.
+        try:
+            from src.plugins import iter_discord_tool_classes
+            for cls in iter_discord_tool_classes():
+                self.register_plugin_tool(cls)
+        except Exception as e:
+            logger.error(f"failed to load plugin discord tools: {e}")
+
+    def register_plugin_tool(self, tool_cls):
+        """Instantiate and attach a plugin-contributed tool. Called by
+        the plugin api when ctx.discord.register_tool runs after the
+        bot is already up, and during _load_tools for any tools
+        registered before. Idempotent on the class."""
+        for existing in self._tools:
+            if type(existing) is tool_cls:
+                return  # already attached
+        try:
+            instance = tool_cls(self)
+        except Exception as e:
+            logger.error(f"failed to instantiate plugin discord tool {tool_cls.__name__}: {e}")
+            return
+        self._tools.append(instance)
+        logger.info(f"attached plugin discord tool {tool_cls.__name__}")
 
     def set_discord_client(self, client):
         self._discord_client = client

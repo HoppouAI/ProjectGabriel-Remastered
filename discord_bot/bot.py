@@ -104,6 +104,16 @@ class DiscordBot:
         # Register event handlers
         self._register_events()
 
+        # Wire the plugin api so plugins that registered ctx.discord
+        # tools / prompt contributors can find this session and so any
+        # tools registered before now get attached. Safe even if the
+        # plugin loader hasnt run (no-op).
+        try:
+            from src.plugins.api import _bind_discord_session
+            _bind_discord_session(self._gemini, self._tool_handler)
+        except Exception as e:
+            logger.warning(f"discord plugin bind failed: {e}")
+
         # Start Gemini session in background
         gemini_task = asyncio.create_task(self._gemini.run_forever())
 
@@ -359,6 +369,11 @@ class DiscordBot:
                 self._gemini.discord_username = self._client.user.name
             self._restore_mutes()
             self._maybe_start_rag_backfill()
+            try:
+                from src.plugins import emit_discord_event
+                emit_discord_event("bot_ready", self._client)
+            except Exception as e:
+                logger.debug(f"emit bot_ready failed: {e}")
 
         @self._client.event
         async def on_message(message):
@@ -393,6 +408,18 @@ class DiscordBot:
 
             if not should_respond:
                 return
+
+            # Fire plugin-side events. Plugins can hook these to react
+            # to incoming Discord messages without needing to subclass
+            # the bot. Errors per subscriber are swallowed inside emit.
+            try:
+                from src.plugins import emit_discord_event
+                if isinstance(message.channel, (discord.DMChannel, discord.GroupChannel)):
+                    emit_discord_event("dm_received", message)
+                else:
+                    emit_discord_event("mention_received", message)
+            except Exception as e:
+                logger.debug(f"emit discord message event failed: {e}")
 
             # Global disable check (admin commands still work above)
             if self._disabled:
@@ -820,6 +847,11 @@ class DiscordBot:
                     "index Discord assistant response",
                 )
                 self._cooldowns[channel_id] = time.time()
+                try:
+                    from src.plugins import emit_discord_event
+                    emit_discord_event("message_sent", channel_id, response)
+                except Exception as e:
+                    logger.debug(f"emit message_sent failed: {e}")
 
                 # Schedule left-on-read follow-up (20% chance, skip if conversation ended naturally)
                 if last_sent and random.random() < 0.2 and not self._looks_like_conversation_end(response):

@@ -115,6 +115,18 @@ class BotConfig:
             content = content.replace("{discord_username}", discord_username or "unknown")
             parts.append(content.strip())
 
+        # Plugins can inject Discord-scoped context via
+        # ctx.discord.register_prompt_contributor(). Failures swallowed
+        # in collect_discord_prompt_contributions so a broken plugin
+        # cant kill the bot's prompt build.
+        try:
+            from src.plugins import collect_discord_prompt_contributions
+            for extra in collect_discord_prompt_contributions():
+                if extra:
+                    parts.append(extra)
+        except Exception as e:
+            logger.warning(f"discord plugin prompt contributors failed: {e}")
+
         return "\n\n".join(parts)
 
     @property
