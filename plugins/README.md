@@ -16,7 +16,7 @@ that to `true` if you want to see it in action.
    ```yaml
    name: my_thing
    version: 0.1.0
-   api_version: 1
+   api_version: 2
    author: HoppouAI
    description: does a cool thing
    enabled: true
@@ -109,16 +109,33 @@ status banner. The host iterates registered sources in ascending
 priority order and shows the first active one when no built in display
 (local music, lyria) is up.
 
-`source` must implement two methods:
+`source` must implement two methods, plus one optional method:
 
 - `is_active() -> bool` -- True while the source wants screen time. Also
   used by the host to mark itself busy and suppress the idle banner.
 - `render() -> str | None` -- the chatbox text (max 144 chars), or None
   to skip this tick.
+- `on_clear()` (optional) -- fires once when this source loses the
+  chatbox to a different winner OR transitions to inactive with
+  nothing to take over. Useful for closing UI state. Safe to omit.
 
 Built in displays sit at priority 10 (local music) and 20 (lyria).
 Plugins default to 100 so they yield to host displays unless they ask
 for less.
+
+Lifecycle guarantees the orchestrator gives you (host API v2+):
+
+- Same text isnt re-sent every tick. The host dedupes and only resends
+  when text changes or after a force-refresh interval (about 6 sec)
+  to keep the chatbox alive.
+- When you go from `is_active() == True` to `False`, the host stops
+  writing your text immediately and lets the idle banner take over.
+  No stale text lingers.
+- If your `is_active()` or `render()` raises 5 times in a row the
+  host suspends your source for the rest of the run and logs a
+  warning. Other sources keep working.
+- A source returning `None` from `render()` while still active falls
+  through to the next source instead of blanking the chatbox.
 
 ```python
 class MyStatusSource:
@@ -189,6 +206,67 @@ async def on_user_msg(text, source):
         await ctx.send_system_instruction("Stop talking until further notice.")
 
 ctx.subscribe("message_in", on_user_msg)
+```
+
+### `ctx.discord` -- Discord bot integration
+
+The Discord selfbot module runs its own Gemini Live session, separate
+from the VRChat session. To extend that session use `ctx.discord.*`.
+The host main session hooks (`ctx.register_tool`,
+`ctx.register_prompt_contributor`, `ctx.subscribe`,
+`ctx.send_system_instruction`, `ctx.send_user_text`) are unchanged
+and still target VRChat only -- nothing about your existing plugins
+breaks.
+
+Plugins can register on both sides safely. They don't share state, so
+a tool registered on both ends gets two separate instances.
+
+Available calls under `ctx.discord`:
+
+- `register_tool(tool_cls)` -- attach a tool to the Discord bot's
+  tool handler. Same shape as the bot's built-in tools in
+  `discord_bot/tools/`. Tool class needs `__init__(self, handler)`,
+  `declarations(self) -> list[FunctionDeclaration]`, and
+  `async handle(self, name, args)`.
+- `register_prompt_contributor(name, fn)` -- append text to the
+  Discord bot's system prompt. Called every time the bot rebuilds
+  its prompt. Errors are swallowed.
+- `subscribe(event, callback)` -- subscribe to Discord-scoped events:
+  - `bot_ready` (`client`) -- fires when the discord client connects
+  - `dm_received` (`message`) -- raw `discord.Message` for a DM
+  - `mention_received` (`message`) -- raw `discord.Message` for an @
+  - `message_sent` (`channel_id, text`) -- the bot replied
+- `await send_system_instruction(text)` -- inject a SYSTEM
+  INSTRUCTION style turn into the Discord session.
+- `await send_user_text(text)` -- inject a user-style text turn.
+- `session` / `tool_handler` -- properties returning the live Discord
+  Gemini session and tool handler, or None if the bot is offline.
+
+Safe to call all of these from `setup()`. If the Discord bot is
+disabled in config the registrations are kept and simply never used.
+`send_*` returns `False` while the bot is offline.
+
+```python
+class DiaryPlugin(Plugin):
+    name = "diary"
+
+    def setup(self, ctx):
+        # Same tools work on both sides
+        ctx.register_tool(DiaryTool)
+        ctx.discord.register_tool(DiaryTool)
+
+        # Same prompt context goes into both prompts
+        ctx.register_prompt_contributor("diary_today", self._today_summary)
+        ctx.discord.register_prompt_contributor("diary_today", self._today_summary)
+
+        # React to incoming Discord DMs
+        ctx.discord.subscribe("dm_received", self._on_dm)
+
+    async def _on_dm(self, message):
+        if "remember this" in message.content.lower():
+            await self.ctx.discord.send_system_instruction(
+                "User just asked you to remember the last DM verbatim."
+            )
 ```
 
 ### `ctx.plugin_config(key=None, default=None)`

@@ -25,6 +25,7 @@ src/
     vision.py            -- VisionLoopMixin: screen capture frame builder + capture loop (mss + PIL JPEG)
     config_builder.py    -- ConfigBuilderMixin: _build_config, _needs_alpha_api
     chatbox.py           -- ChatboxFormattersMixin: text/markdown/now-playing formatters for the VRChat chatbox
+    chatbox_orchestrator.py -- ChatboxOrchestrator: per-tick winner pick across builtins (music, music_gen) and plugin sources, dedupe + force refresh + on_clear lifecycle hook
     conversation_logger.py -- ConversationLogger (privacy-gated, opt-in via config) + CONVERSATION_DIR
   audio.py               -- PyAudio I/O, voice boost/distortion, pygame music/SFX playback
   vrchat.py              -- VRChat OSC client (chatbox, voice, movement, grab/drop/use, smooth look)
@@ -167,6 +168,8 @@ class MyTool(BaseTool):
 - Drop-in plugin folder at `plugins/<name>/` with a `plugin.yml` manifest and an `__init__.py`.
 - Plugin classes subclass `src.plugins.Plugin` and implement `setup(ctx)` / `teardown(ctx)`.
 - `PluginContext` exposes: `register_tool(cls)`, `register_tts(name, factory)`, `register_stt(name, factory)`, `register_chatbox_source(name, source, priority)`, `register_prompt_contributor(name, fn)`, `subscribe(event, cb)`, `send_system_instruction(text)` / `send_user_text(text)` (mid-session injection, waits for model to stop speaking, same path as the WebUI), `plugin_config(key)`, `data_dir()`, lazy `audio` / `osc` / `session` / `tool_handler` refs.
+- `ctx.discord` sub-context (API v2+) extends the same hooks to the Discord bot's separate Gemini Live session: `ctx.discord.register_tool(cls)`, `ctx.discord.register_prompt_contributor(name, fn)`, `ctx.discord.subscribe(event, cb)`, `await ctx.discord.send_system_instruction(text)`, `await ctx.discord.send_user_text(text)`. Discord events: `bot_ready(client)`, `dm_received(message)`, `mention_received(message)`, `message_sent(channel_id, text)`. Returns `False` from send_* when bot is offline. Main and Discord registries are independent so plugins can register on both safely.
+- Chatbox lifecycle is centralized in `src/gemini_live/chatbox_orchestrator.py :: ChatboxOrchestrator`. Builtins (local music, music_gen) always beat plugin sources. Lower priority value wins inside each tier. Dedupes identical text, force-refreshes after ~6s for VRChat keepalive, calls optional `source.on_clear()` when winner changes or source goes inactive, suspends a source after 5 consecutive `is_active`/`render` exceptions and logs via `record_plugin_issue`.
 - Loaded BEFORE `GeminiLiveSession` is constructed so `@register_tool` fires before `ToolHandler` reads the registry.
 - Built-in events: `startup`, `shutdown`, `message_in(text, source)`, `message_out(text)`. Sync or async handlers, exceptions caught per subscriber.
 - Plugin TTS providers picked up via `tts.external_provider: <name>` in `config.yml` (only used when no built-in TTS is enabled).
