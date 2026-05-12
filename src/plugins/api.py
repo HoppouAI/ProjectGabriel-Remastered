@@ -28,6 +28,14 @@ _chatbox_sources: dict[str, tuple[int, Any]] = {}
 # context like current mood, weather, time-of-day flavor, etc.
 _prompt_contributors: dict[str, Callable[[], Any]] = {}
 
+# Discord-side registries. Mirror their main-session counterparts but
+# scoped to the Discord bot's separate Gemini Live session, so plugins
+# can extend the bot without affecting the VRChat session and vice
+# versa. Plugins reach these via `ctx.discord.*`.
+_discord_tool_classes: list[type] = []
+_discord_prompt_contributors: dict[str, Callable[[], Any]] = {}
+_discord_event_subscribers: dict[str, list[Callable[..., Any]]] = {}
+
 
 class Plugin:
     """Base class for plugins. Subclass and override setup/teardown.
@@ -103,6 +111,27 @@ class PluginContext:
         d = Path("data") / "plugins" / self.plugin_name
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    @property
+    def discord(self) -> "DiscordPluginContext":
+        """Sub-context for Discord bot integration. Use this to register
+        tools, prompt contributors, and event subscribers that live on
+        the Discord bot's separate Gemini Live session.
+
+        Existing main-session hooks (`ctx.register_tool`,
+        `ctx.register_prompt_contributor`, `ctx.subscribe`,
+        `ctx.send_system_instruction`, `ctx.send_user_text`) are
+        unchanged -- they continue to target the VRChat session only.
+        Anything Discord-scoped goes through `ctx.discord.*`.
+
+        The Discord bot does not have to be running for plugins to
+        register here. If the Discord bot is disabled in config the
+        registrations are still kept and simply never used. send_*
+        helpers return False when the Discord session isnt up yet.
+        """
+        if not hasattr(self, "_discord_ctx"):
+            self._discord_ctx = DiscordPluginContext(self)
+        return self._discord_ctx
 
     # registration helpers ---------------------------------------------------
 
@@ -283,3 +312,187 @@ def emit_event(event: str, *args, **kwargs):
                     asyncio.run(res)
         except Exception as e:
             logger.error(f"event '{event}' subscriber {cb} raised: {e}")
+
+
+# Discord plugin surface --------------------------------------------------
+
+# Reference to the Discord bot's GeminiTextSession, set by the bot at
+# startup so plugins can push mid-session messages into it. None when
+# the bot is disabled or hasn't connected yet.
+_discord_session: Any = None
+# Reference to the Discord tool handler so register_tool can hot-attach
+# new tools after the handler is already constructed.
+_discord_tool_handler: Any = None
+
+
+def _bind_discord_session(session, tool_handler):
+    """Called by the Discord bot after it has constructed both objects
+    so module-level helpers (and the DiscordPluginContext send_* methods)
+    can find them. Plugins shouldn't call this directly."""
+    global _discord_session, _discord_tool_handler
+    _discord_session = session
+    _discord_tool_handler = tool_handler
+    # Late-binding any tools registered before the bot was up.
+    if tool_handler is not None and _discord_tool_classes:
+        for cls in _discord_tool_classes:
+            try:
+                tool_handler.register_plugin_tool(cls)
+            except Exception as e:
+                logger.error(f"failed to attach plugin discord tool {cls.__name__}: {e}")
+
+
+def iter_discord_tool_classes() -> list[type]:
+    """Return the currently registered plugin tool classes for the
+    Discord bot. Used by DiscordToolHandler at startup to instantiate
+    them alongside the built-in tools."""
+    return list(_discord_tool_classes)
+
+
+def collect_discord_prompt_contributions() -> list[str]:
+    """Same as collect_prompt_contributions but for the Discord bot's
+    system prompt. Errors are logged and skipped so a broken plugin
+    cant kill the bot's prompt build."""
+    out: list[str] = []
+    for name, fn in _discord_prompt_contributors.items():
+        try:
+            text = fn()
+        except Exception as e:
+            logger.error(f"discord prompt contributor '{name}' raised: {e}")
+            continue
+        if text:
+            out.append(str(text).strip())
+    return out
+
+
+def emit_discord_event(event: str, *args, **kwargs):
+    """Fire a Discord-scoped event. Built-in events: 'bot_ready',
+    'dm_received', 'mention_received', 'message_sent'. Plugins can
+    define their own too."""
+    for cb in _discord_event_subscribers.get(event, []):
+        try:
+            res = cb(*args, **kwargs)
+            if asyncio.iscoroutine(res):
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(res)
+                except RuntimeError:
+                    asyncio.run(res)
+        except Exception as e:
+            logger.error(f"discord event '{event}' subscriber {cb} raised: {e}")
+
+
+class DiscordPluginContext:
+    """Per-plugin handle for the Discord bot's separate Gemini Live
+    session. Reached via `ctx.discord` from inside `Plugin.setup()`.
+
+    Mirrors the main-session API (`register_tool`,
+    `register_prompt_contributor`, `subscribe`, `send_system_instruction`,
+    `send_user_text`) but everything here is scoped to the bot. A plugin
+    can register on both sides safely -- they don't share state.
+    """
+
+    def __init__(self, parent: PluginContext):
+        self._parent = parent
+        self.logger = logging.getLogger(f"plugin.{parent.plugin_name}.discord")
+
+    # passthroughs to keep ergonomics nice
+    @property
+    def plugin_name(self) -> str:
+        return self._parent.plugin_name
+
+    @property
+    def session(self):
+        """The Discord bot's GeminiTextSession, or None if the bot is
+        disabled or hasnt finished connecting."""
+        return _discord_session
+
+    @property
+    def tool_handler(self):
+        """The DiscordToolHandler instance, or None if the bot isnt up."""
+        return _discord_tool_handler
+
+    def register_tool(self, tool_cls: type):
+        """Register a tool class against the Discord bot's tool handler.
+
+        Tool class must define `declarations(self)` returning a list of
+        FunctionDeclaration and `async handle(self, name, args)`
+        returning a result dict or None when it doesnt own the call.
+        Same shape as the built-in Discord tools in
+        `discord_bot/tools/`.
+
+        Safe to call from `setup()` even if the bot isn't running yet --
+        the class is held and attached to the handler when the bot
+        starts. If the bot is already running it's attached immediately.
+        """
+        if tool_cls in _discord_tool_classes:
+            self.logger.warning(
+                f"discord tool {tool_cls.__name__} already registered, skipping"
+            )
+            return
+        _discord_tool_classes.append(tool_cls)
+        if _discord_tool_handler is not None:
+            try:
+                _discord_tool_handler.register_plugin_tool(tool_cls)
+            except Exception as e:
+                self.logger.error(
+                    f"failed to attach discord tool {tool_cls.__name__}: {e}"
+                )
+        self.logger.info(f"registered discord tool {tool_cls.__name__}")
+
+    def register_prompt_contributor(self, name: str, fn: Callable[[], Any]):
+        """Append text to the Discord bot's system prompt. `fn()` is
+        called every time the bot rebuilds its prompt (session start,
+        reconnect). Return a string or None. Exceptions are caught."""
+        scoped = f"{self.plugin_name}.{name}"
+        if scoped in _discord_prompt_contributors:
+            self.logger.warning(
+                f"discord prompt contributor '{scoped}' already registered, overwriting"
+            )
+        _discord_prompt_contributors[scoped] = fn
+        self.logger.info(f"registered discord prompt contributor '{scoped}'")
+
+    def unregister_prompt_contributor(self, name: str):
+        scoped = f"{self.plugin_name}.{name}"
+        _discord_prompt_contributors.pop(scoped, None)
+
+    def subscribe(self, event: str, callback: Callable[..., Any]):
+        """Subscribe to a Discord-scoped event. Built-in events:
+          - 'bot_ready' -- (client) when the discord client connects
+          - 'dm_received' -- (message) raw discord.Message for a DM
+          - 'mention_received' -- (message) raw discord.Message
+          - 'message_sent' -- (channel_id: str, text: str) bot replied
+        Sync or async callbacks both fine."""
+        _discord_event_subscribers.setdefault(event, []).append(callback)
+        self.logger.debug(f"subscribed to discord event '{event}'")
+
+    async def send_system_instruction(self, text: str):
+        """Inject a SYSTEM INSTRUCTION style message into the Discord
+        Gemini session. Same wrapping as the main-session helper:
+        prefixes with 'SYSTEM INSTRUCTION: '. Returns False if the
+        bot isnt connected."""
+        session = _discord_session
+        if session is None or not getattr(session, "_session", None):
+            self.logger.debug("discord send_system_instruction: bot not connected")
+            return False
+        try:
+            await session.inject_context(f"SYSTEM INSTRUCTION: {text}")
+            return True
+        except Exception as e:
+            self.logger.error(f"discord send_system_instruction failed: {e}")
+            return False
+
+    async def send_user_text(self, text: str):
+        """Inject a user-style text message into the Discord Gemini
+        session. The bot will see this as if a user typed it but no
+        actual Discord message is created. Returns False if the bot
+        isnt connected."""
+        session = _discord_session
+        if session is None or not getattr(session, "_session", None):
+            self.logger.debug("discord send_user_text: bot not connected")
+            return False
+        try:
+            await session.inject_context(text)
+            return True
+        except Exception as e:
+            self.logger.error(f"discord send_user_text failed: {e}")
+            return False

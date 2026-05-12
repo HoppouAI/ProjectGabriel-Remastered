@@ -20,7 +20,13 @@ logger = logging.getLogger(__name__)
 # Bump this when adding or changing anything in PluginContext that
 # plugins can rely on. Plugins declare api_version in their manifest and
 # we warn when they target a newer version than the host supports.
-PLUGIN_API_VERSION = 1
+#
+# History:
+#   1 -- initial drop, register_tool/tts/stt/chatbox_source/prompt_contributor,
+#        subscribe(), send_system_instruction, send_user_text
+#   2 -- ctx.discord namespace for the Discord bot's Gemini session,
+#        ChatboxOrchestrator with on_clear lifecycle hook
+PLUGIN_API_VERSION = 2
 
 
 # Per-plugin issue tally so the startup banner can show how many warnings
