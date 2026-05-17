@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { TbPlayerPlay, TbPlayerStop, TbRobot, TbCrosshair, TbAlertTriangle, TbTrash, TbDatabase, TbSettings, TbRun } from 'react-icons/tb'
+import { TbPlayerPlay, TbPlayerStop, TbRobot, TbCrosshair, TbAlertTriangle, TbTrash, TbDatabase, TbSettings, TbRun, TbEdit } from 'react-icons/tb'
 import { api } from '../lib/api'
 
 interface Pose { x: number; y: number; z: number; yaw: number }
@@ -57,6 +57,10 @@ export default function Mapping({ onToast }: Props) {
   const [tickHz, setTickHz] = useState(20)
   const [forceRun, setForceRun] = useState(false)
   const [wallDist, setWallDist] = useState(0.35)
+  const [editMode, setEditMode] = useState(false)
+  const [editMenu, setEditMenu] = useState<
+    { x: number; y: number; serial: [number, number, number]; existed: boolean } | null
+  >(null)
 
   // three.js scene refs (kept in refs so React doesnt re-create them)
   const sceneRefs = useRef<{
@@ -285,6 +289,50 @@ export default function Mapping({ onToast }: Props) {
   // click pathfinding
   // -----------------------------------------------------------------
   const onCanvasClick = useCallback(async (e: React.MouseEvent) => {
+    if (editMode) {
+      // edit cells: first try to hit an existing voxel, otherwise drop a
+      // new one on the ground plane.
+      const refs = sceneRefs.current
+      if (!refs.renderer || !refs.camera || !refs.raycaster) return
+      const rect = refs.renderer.domElement.getBoundingClientRect()
+      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      const y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+      refs.raycaster.setFromCamera(new THREE.Vector2(x, y), refs.camera)
+      const meshes = [refs.meshReach, refs.meshWall, refs.meshIffy].filter(Boolean) as THREE.InstancedMesh[]
+      const hits = refs.raycaster.intersectObjects(meshes, false)
+      const tmp = new THREE.Matrix4()
+      const pos = new THREE.Vector3()
+      for (const h of hits) {
+        if (h.instanceId === undefined) continue
+        const mesh = h.object as THREE.InstancedMesh
+        mesh.getMatrixAt(h.instanceId, tmp)
+        pos.setFromMatrixPosition(tmp)
+        const sx = Math.floor(pos.x / CELL)
+        const sy = Math.floor(pos.y / CELL)
+        const sz = Math.floor(pos.z / CELL)
+        setEditMenu({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+          serial: [sx, sy, sz],
+          existed: true,
+        })
+        return
+      }
+      // no cell hit, fall back to the ground plane to spawn a new one.
+      if (!refs.plane) return
+      const ground = refs.raycaster.intersectObject(refs.plane)[0]
+      if (!ground) return
+      const sx = Math.floor(ground.point.x / CELL)
+      const sy = Math.floor(ground.point.y / CELL)
+      const sz = Math.floor(ground.point.z / CELL)
+      setEditMenu({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        serial: [sx, sy, sz],
+        existed: false,
+      })
+      return
+    }
     if (!pickEnabled) return
     const refs = sceneRefs.current
     if (!refs.renderer || !refs.camera || !refs.plane || !refs.raycaster) return
@@ -304,7 +352,29 @@ export default function Mapping({ onToast }: Props) {
     } catch (err) {
       onToast(`pathfind failed: ${(err as Error).message}`, 'error')
     }
-  }, [pickEnabled, onToast])
+  }, [pickEnabled, editMode, onToast])
+
+  const refreshWorld = useCallback(async () => {
+    try {
+      const w = await api<WorldCells>('/api/mapping/world')
+      packCells(sceneRefs.current.meshReach, w.reach)
+      packCells(sceneRefs.current.meshWall, w.wall)
+      packCells(sceneRefs.current.meshIffy, w.iffy)
+    } catch { /* ignore */ }
+  }, [])
+
+  const applyCellEdit = useCallback(async (kind: 'reach' | 'wall' | 'iffy' | 'delete') => {
+    if (!editMenu) return
+    const [sx, sy, sz] = editMenu.serial
+    try {
+      await api('/api/mapping/cell', 'POST', { sx, sy, sz, kind })
+      onToast(`cell ${sx},${sy},${sz} -> ${kind}`, 'success')
+      setEditMenu(null)
+      refreshWorld()
+    } catch (err) {
+      onToast(`edit failed: ${(err as Error).message}`, 'error')
+    }
+  }, [editMenu, onToast, refreshWorld])
 
   // -----------------------------------------------------------------
   // controls
@@ -413,8 +483,61 @@ export default function Mapping({ onToast }: Props) {
         ref={mountRef}
         onClick={onCanvasClick}
         className="absolute inset-0"
-        style={{ cursor: pickEnabled ? 'crosshair' : 'grab' }}
+        style={{ cursor: (pickEnabled || editMode) ? 'crosshair' : 'grab' }}
       />
+
+      {/* edit cell context menu */}
+      {editMode && editMenu && (
+        <div
+          className="absolute z-30 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-lg p-2 shadow-xl flex flex-col gap-1 text-[12px] font-mono"
+          style={{
+            left: Math.min(editMenu.x + 6, (mountRef.current?.clientWidth ?? 9999) - 170),
+            top: Math.min(editMenu.y + 6, (mountRef.current?.clientHeight ?? 9999) - 180),
+            minWidth: 160,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="text-text-muted/80 px-1 pb-1 border-b border-white/5">
+            cell <span className="text-text">{editMenu.serial.join(', ')}</span>
+            <span className="ml-1 text-text-muted/50">{editMenu.existed ? '' : '(new)'}</span>
+          </div>
+          <button
+            onClick={() => applyCellEdit('reach')}
+            className="text-left px-2 py-1 rounded hover:bg-mint/15 text-mint flex items-center gap-2"
+          >
+            <span className="w-3 h-3 rounded-sm" style={{ background: '#4ade80' }} />
+            Reachable
+          </button>
+          <button
+            onClick={() => applyCellEdit('wall')}
+            className="text-left px-2 py-1 rounded hover:bg-rose/15 text-rose flex items-center gap-2"
+          >
+            <span className="w-3 h-3 rounded-sm" style={{ background: '#f87171' }} />
+            Wall
+          </button>
+          <button
+            onClick={() => applyCellEdit('iffy')}
+            className="text-left px-2 py-1 rounded hover:bg-yellow-500/15 text-yellow-300 flex items-center gap-2"
+          >
+            <span className="w-3 h-3 rounded-sm" style={{ background: '#facc15' }} />
+            Iffy
+          </button>
+          {editMenu.existed && (
+            <button
+              onClick={() => applyCellEdit('delete')}
+              className="text-left px-2 py-1 rounded hover:bg-white/10 text-text-muted flex items-center gap-2 border-t border-white/5 mt-1 pt-1.5"
+            >
+              <TbTrash size={12} /> Delete
+            </button>
+          )}
+          <button
+            onClick={() => setEditMenu(null)}
+            className="text-left px-2 py-1 rounded text-text-muted/50 hover:text-text text-[11px]"
+          >
+            cancel
+          </button>
+        </div>
+      )}
 
       {/* top-left HUD */}
       <div className="absolute top-3 left-3 bg-surface/80 backdrop-blur-xl border border-white/10 rounded-lg p-3 text-[12px] font-mono leading-relaxed min-w-[220px]">
@@ -543,6 +666,17 @@ export default function Mapping({ onToast }: Props) {
           }`}
         >
           <TbCrosshair size={14} /> {pickEnabled ? 'Click to pathfind' : 'Pathfind'}
+        </button>
+        <button
+          onClick={() => { setEditMode(m => !m); setEditMenu(null); if (!editMode) setPickEnabled(false) }}
+          title="Click cells in the 3D view to change their type or delete them. Click empty floor to drop a new wall/reachable/iffy cell."
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${
+            editMode
+              ? 'bg-orange-500/20 text-orange-300 hover:bg-orange-500/30'
+              : 'bg-white/5 text-text-muted hover:bg-white/10'
+          }`}
+        >
+          <TbEdit size={14} /> {editMode ? 'Editing cells' : 'Edit Cells'}
         </button>
         {path?.found && (
           <span className="text-[11px] text-text-muted ml-1">

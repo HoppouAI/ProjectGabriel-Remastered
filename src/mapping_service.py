@@ -454,6 +454,36 @@ class MappingService:
         return ok
 
     # ------------------------------------------------------------------
+    # manual cell edits (3D viewer)
+    # ------------------------------------------------------------------
+    def edit_cell(self, sx: int, sy: int, sz: int, kind: str) -> dict:
+        """Manually flip a voxel from the WebUI. `kind` is one of
+        reach / wall / iffy / delete."""
+        kind_norm = (kind or "").strip().lower()
+        serial = (int(sx), int(sy), int(sz))
+        type_map = {
+            "reach": NodeType.REACHABLE,
+            "reachable": NodeType.REACHABLE,
+            "wall": NodeType.UNREACHABLE,
+            "unreachable": NodeType.UNREACHABLE,
+            "iffy": NodeType.IFFY,
+        }
+        if kind_norm == "delete":
+            existed = self._nav.delete_cell(serial)
+            self._nav.flush()
+            logger.info("mapping: edit delete %s (existed=%s)", serial, existed)
+            return {"result": "ok", "kind": "delete",
+                    "cell": list(serial), "existed": existed}
+        if kind_norm not in type_map:
+            raise ValueError(f"unknown cell kind '{kind}'")
+        node = self._nav.set_cell_type(serial, type_map[kind_norm])
+        self._nav.flush()
+        logger.info("mapping: edit set %s -> %s",
+                    serial, node.node_type.name)
+        return {"result": "ok", "kind": kind_norm,
+                "cell": list(serial), "type": node.node_type.name}
+
+    # ------------------------------------------------------------------
     # world management (list / delete saved maps)
     # ------------------------------------------------------------------
     def update_settings(self, *, tick_hz: float | None = None,

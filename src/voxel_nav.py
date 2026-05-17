@@ -410,6 +410,35 @@ class VoxelNavManager:
                 node.node_type = NodeType.UNREACHABLE
             self._dirty = True
 
+    def set_cell_type(self, serial: Serial, node_type: NodeType) -> Node:
+        """Manual override for the WebUI editor. Creates the node if it
+        doesnt exist, otherwise just flips its type."""
+        with self._lock:
+            node = self.graph.get(serial)
+            if node is None:
+                node = Node(serial=serial, node_type=node_type)
+                self.graph.add_node(node)
+            else:
+                node.node_type = node_type
+            self._dirty = True
+            return node
+
+    def delete_cell(self, serial: Serial) -> bool:
+        """Manual delete from the WebUI editor. Returns True if a cell was
+        actually removed."""
+        with self._lock:
+            existed = serial in self.graph
+            if existed:
+                self.graph.remove_node(serial)
+                # if we just nuked the cell we thought we were standing in,
+                # clear the cached current so the next observe rebuilds it.
+                if self._current is not None and self._current.serial == serial:
+                    self._current = None
+                if self._previous is not None and self._previous.serial == serial:
+                    self._previous = None
+                self._dirty = True
+            return existed
+
     # --- reference-style discovery helpers ------------------------------------
     def check_vertical(self, serial: Serial) -> bool:
         """reference CheckVertical: a candidate cell counts as 'already known' if

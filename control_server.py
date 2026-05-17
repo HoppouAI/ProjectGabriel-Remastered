@@ -1032,6 +1032,23 @@ async def mapping_cancel_goto():
     return await asyncio.to_thread(ms.cancel_goto)
 
 
+class CellEditIn(BaseModel):
+    sx: int
+    sy: int
+    sz: int
+    kind: str  # reach | wall | iffy | delete
+
+
+@app.post("/api/mapping/cell")
+async def mapping_cell_edit(payload: CellEditIn):
+    ms = _get_mapping()
+    try:
+        return await asyncio.to_thread(
+            ms.edit_cell, payload.sx, payload.sy, payload.sz, payload.kind)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.delete("/api/mapping/world")
 async def mapping_delete_world(world: str | None = None):
     """Delete a saved world map. Omit ?world= to delete the current one."""
