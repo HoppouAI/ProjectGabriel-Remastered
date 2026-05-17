@@ -874,6 +874,176 @@ async def vrchat_unmoderate(body: ModerationInput):
             return {"result": "ok", "type": body.type}
 
 
+# --- Mapping + Waypoints ---
+
+class MappingStartInput(BaseModel):
+    explore: bool = False
+
+
+class MappingExploreInput(BaseModel):
+    enabled: bool
+
+
+class MappingManualInput(BaseModel):
+    enabled: bool
+
+
+class PathfindInput(BaseModel):
+    x: float
+    y: float = 0.0
+    z: float
+    # alternatively: a waypoint name
+    waypoint: str | None = None
+
+
+class WaypointCreateInput(BaseModel):
+    name: str
+    note: str = ""
+
+
+def _get_mapping():
+    ms = shared_state.get("mapping_service")
+    if ms is None:
+        raise HTTPException(status_code=503, detail="mapping service not available")
+    return ms
+
+
+@app.get("/api/mapping/state")
+async def mapping_state():
+    ms = _get_mapping()
+    return ms.get_state()
+
+
+@app.get("/api/mapping/world")
+async def mapping_world():
+    """Heavy endpoint -- returns every known cell. Poll slowly."""
+    ms = _get_mapping()
+    return ms.get_world_cells()
+
+
+@app.post("/api/mapping/start")
+async def mapping_start(body: MappingStartInput):
+    ms = _get_mapping()
+    state = await asyncio.to_thread(ms.start, explore=body.explore)
+    if not state.get("running") and state.get("last_error"):
+        raise HTTPException(status_code=400, detail=state["last_error"])
+    return state
+
+
+@app.post("/api/mapping/stop")
+async def mapping_stop():
+    ms = _get_mapping()
+    return await asyncio.to_thread(ms.stop)
+
+
+@app.post("/api/mapping/explore")
+async def mapping_explore(body: MappingExploreInput):
+    ms = _get_mapping()
+    return ms.set_explore(body.enabled)
+
+
+@app.post("/api/mapping/manual")
+async def mapping_manual(body: MappingManualInput):
+    ms = _get_mapping()
+    return ms.set_manual_mapping(body.enabled)
+
+
+@app.post("/api/mapping/pathfind")
+async def mapping_pathfind(body: PathfindInput):
+    ms = _get_mapping()
+    if body.waypoint:
+        return ms.pathfind_to_waypoint(body.waypoint)
+    return ms.pathfind_to(body.x, body.y, body.z)
+
+
+@app.get("/api/waypoints")
+async def waypoints_list():
+    ms = _get_mapping()
+    return {"waypoints": ms.list_waypoints(), "world": ms.get_state().get("world")}
+
+
+@app.post("/api/waypoints")
+async def waypoints_create(body: WaypointCreateInput):
+    ms = _get_mapping()
+    try:
+        return ms.add_waypoint(body.name, body.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.delete("/api/waypoints/{name}")
+async def waypoints_delete(name: str):
+    ms = _get_mapping()
+    ok = ms.remove_waypoint(name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="waypoint not found")
+    return {"result": "ok"}
+
+
+@app.get("/api/mapping/worlds")
+async def mapping_worlds():
+    ms = _get_mapping()
+    return {"worlds": ms.list_worlds()}
+
+
+class MappingSettingsIn(BaseModel):
+    tick_hz: float | None = None
+    force_run: bool | None = None
+    manual_wall_distance: float | None = None
+    manual_wall_ratio: float | None = None
+
+
+@app.post("/api/mapping/settings")
+async def mapping_settings(payload: MappingSettingsIn):
+    ms = _get_mapping()
+    settings = await asyncio.to_thread(
+        ms.update_settings,
+        tick_hz=payload.tick_hz,
+        force_run=payload.force_run,
+        manual_wall_distance=payload.manual_wall_distance,
+        manual_wall_ratio=payload.manual_wall_ratio,
+    )
+    return {"settings": settings, "state": ms.get_state()}
+
+
+class GotoIn(BaseModel):
+    waypoint: str | None = None
+    x: float | None = None
+    y: float | None = None
+    z: float | None = None
+
+
+@app.post("/api/mapping/goto")
+async def mapping_goto(payload: GotoIn):
+    ms = _get_mapping()
+    if payload.waypoint:
+        return await asyncio.to_thread(ms.goto_waypoint, payload.waypoint)
+    if payload.x is None or payload.y is None or payload.z is None:
+        raise HTTPException(status_code=400,
+                            detail="provide 'waypoint' or 'x','y','z'")
+    return await asyncio.to_thread(ms.goto_xyz, payload.x, payload.y, payload.z)
+
+
+@app.post("/api/mapping/cancel_goto")
+async def mapping_cancel_goto():
+    ms = _get_mapping()
+    return await asyncio.to_thread(ms.cancel_goto)
+
+
+@app.delete("/api/mapping/world")
+async def mapping_delete_world(world: str | None = None):
+    """Delete a saved world map. Omit ?world= to delete the current one."""
+    ms = _get_mapping()
+    try:
+        return await asyncio.to_thread(ms.delete_world, world)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- WebSocket ---
 
 @app.websocket("/ws")

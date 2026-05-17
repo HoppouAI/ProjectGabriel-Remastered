@@ -68,6 +68,25 @@ The original was getting messy and hard to maintain. This version is a full rewr
 
 ---
 
+## Raycast and Pathfinding
+
+This branch adds a full spatial awareness + navigation stack so Gabriel can actually understand the geometry of a VRChat world instead of just bumping into things.
+
+- **Raycast sensors** - reads distance/hit/ratio values from a sensor rig on the avatar over OSC (`/avatar/parameters/<Name>_{Hit,Distance,Ratio}`). Forward, side and downward rays are wired up.
+- **Pose decoder** - decodes the avatar's world position and yaw from an encoded HUD strip (PoseExfil shader) so we know exactly where Gabriel is in the world without relying on VRChat to expose it.
+- **Voxel navigation** (`src/voxel_nav.py`) - 0.25m cubic voxel grid with per-cell state (Reachable / UnReachable / Iffy / Unknown), BFS/A-star pathfinding, and per-world persistence.
+- **Voxel explorer** (`src/voxel_explorer.py`) - autonomous trail mapper. Picks discovery targets, walks the avatar there over OSC, marks dead ends as UnReachable, retries Iffy cells.
+- **Pathfinder + waypoints** (`src/pathfinder.py`, `src/waypoints.py`) - save named waypoints per world, path to them through the voxel graph, snap endpoints, align yaw to saved heading on arrival.
+- **Mapping service** (`src/mapping_service.py`) - the orchestrator. Runs the pose reader, voxel nav, explorer, manual mapping mode, and exposes everything to the WebUI.
+- **Manual mapping mode** - walk around yourself to fill the grid in. Hard locks yaw to the nearest cardinal direction and snaps your row, but lets you strafe with A/D to move between rows so you can map fast without fighting the lock.
+- **Spatial map + tools** (`src/spatial_map.py`, `src/tools/mapping.py`) - exposes the world map and navigation to the model as Gemini function tools.
+- **WebUI pages** - new Mapping page (live grid view, settings, manual mapping toggle, wall distance slider) and Waypoints page (list/save/goto).
+- **Unity assets** (`unity_assets/`) - editor scripts to build the sensor rig and pose HUD on a VRChat avatar, plus the shaders that exfil the data.
+
+See `unity_assets/AVATAR_SETUP.md` for the avatar side of the setup.
+
+---
+
 ## Prerequisites
 
 Before setting up, you need the following:

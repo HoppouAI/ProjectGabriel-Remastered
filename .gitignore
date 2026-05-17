@@ -186,12 +186,14 @@ config.yml
 session_handle.txt
 depth_server/keys.txt
 data/conversations/
+conversation.md
 data/avatars.json
 data/vrchat_cookies.json
 data/vrchat_friends.json
 data/social_token.json
 data/vrcx_id.txt
 data/*.wav
+data/voxel_nav/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

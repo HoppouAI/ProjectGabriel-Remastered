@@ -11,6 +11,8 @@ from pythonosc import udp_client
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import ThreadingOSCUDPServer
 
+from src.raycast import RaycastState
+
 logger = logging.getLogger(__name__)
 
 CHATBOX_CHAR_LIMIT = 144
@@ -51,6 +53,10 @@ class VRChatOSC:
         self.avatar_eye_height_max_meters = None
         self.avatar_eye_height_scaling_allowed = None
         self.last_requested_avatar_eye_height_meters = None
+
+        # Raycast state, fed by the catch-all avatar param handler. Strips
+        # VRCFury's VF<id>_ prefix by default so consumers see clean names.
+        self.raycast_state = RaycastState()
 
         # Start OSC listener for avatar parameters
         self._start_osc_listener(config)
@@ -136,6 +142,9 @@ class VRChatOSC:
         dispatcher.map("/avatar/eyeheightmin", self._on_avatar_eye_height_min)
         dispatcher.map("/avatar/eyeheightmax", self._on_avatar_eye_height_max)
         dispatcher.map("/avatar/eyeheightscalingallowed", self._on_avatar_eye_height_scaling_allowed)
+        # catch-all for anything else under /avatar/parameters/, used to feed
+        # the raycast state (and any future param sniffers)
+        dispatcher.set_default_handler(self._on_unmapped_osc, needs_reply_address=False)
 
         try:
             server = ThreadingOSCUDPServer(("127.0.0.1", receive_port), dispatcher)
@@ -173,6 +182,16 @@ class VRChatOSC:
 
     def _on_avatar_eye_height_scaling_allowed(self, address, value):
         self.avatar_eye_height_scaling_allowed = bool(value)
+
+    def _on_unmapped_osc(self, address, *args):
+        """Catch-all for OSC addresses without an explicit handler. Forwards
+        avatar params to the raycast state so VRCRaycast outputs are picked
+        up automatically (the prefix scrubber inside RaycastState handles
+        VRCFury's VF<id>_ namespacing)."""
+        if not args or not address.startswith("/avatar/parameters/"):
+            return
+        param = address[len("/avatar/parameters/"):]
+        self.raycast_state.update(param, args[0])
 
     def _chatbox_worker(self):
         """Background thread that sends chatbox messages respecting VRChat's rate limit."""

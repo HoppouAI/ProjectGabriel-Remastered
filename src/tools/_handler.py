@@ -22,11 +22,13 @@ class ToolHandler:
         self.instance_monitor = None
         self.music_gen = None
         self.social_client = None
+        self.mapping_service = None
 
         # Import all tool modules to trigger @register_tool
         from src.tools import (  # noqa: F401
             avatar_scaling,
             emotions_tools,
+            mapping,
             memory_tools,
             movement,
             music,
