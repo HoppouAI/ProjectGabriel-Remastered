@@ -39,7 +39,9 @@ interface SavedWorld { world: string; size_kb: number; is_current: boolean }
 
 const CELL = 0.25
 const HALF = CELL / 2
-const CAP = 12000
+// starting capacity per InstancedMesh. packCells grows past this on demand
+// (big worlds can easily blow past 12k cells per type).
+const CAP = 16000
 
 interface Props {
   onToast: (msg: string, level?: string) => void
@@ -259,9 +261,10 @@ export default function Mapping({ onToast }: Props) {
       try {
         const w = await api<WorldCells>('/api/mapping/world')
         if (!alive) return
-        packCells(sceneRefs.current.meshReach, w.reach)
-        packCells(sceneRefs.current.meshWall, w.wall)
-        packCells(sceneRefs.current.meshIffy, w.iffy)
+        const refs = sceneRefs.current
+        refs.meshReach = packCells(refs.meshReach, w.reach, refs.scene)
+        refs.meshWall = packCells(refs.meshWall, w.wall, refs.scene)
+        refs.meshIffy = packCells(refs.meshIffy, w.iffy, refs.scene)
       } catch { /* ignore */ }
     }
     tick()
@@ -357,9 +360,10 @@ export default function Mapping({ onToast }: Props) {
   const refreshWorld = useCallback(async () => {
     try {
       const w = await api<WorldCells>('/api/mapping/world')
-      packCells(sceneRefs.current.meshReach, w.reach)
-      packCells(sceneRefs.current.meshWall, w.wall)
-      packCells(sceneRefs.current.meshIffy, w.iffy)
+      const refs = sceneRefs.current
+      refs.meshReach = packCells(refs.meshReach, w.reach, refs.scene)
+      refs.meshWall = packCells(refs.meshWall, w.wall, refs.scene)
+      refs.meshIffy = packCells(refs.meshIffy, w.iffy, refs.scene)
     } catch { /* ignore */ }
   }, [])
 
@@ -840,17 +844,40 @@ function Legend({ color, label }: { color: string; label: string }) {
   )
 }
 
-// pack a cell list into an InstancedMesh
+// pack a cell list into an InstancedMesh, growing the buffer if needed.
+// returns the mesh to use (may be a brand new one if the old buffer was
+// too small) so the caller can update its scene ref.
 const _dummy = new THREE.Object3D()
-function packCells(mesh: THREE.InstancedMesh | undefined, cells: [number, number, number][]) {
-  if (!mesh) return
-  const n = Math.min(cells.length, CAP)
+function packCells(
+  mesh: THREE.InstancedMesh | undefined,
+  cells: [number, number, number][],
+  scene?: THREE.Scene,
+): THREE.InstancedMesh | undefined {
+  if (!mesh) return mesh
+  let target = mesh
+  const capacity = mesh.instanceMatrix.count
+  if (cells.length > capacity) {
+    // grow with headroom so we dont reallocate on every single new cell.
+    // 1.5x + 1024 padding keeps it stable as the map fills in.
+    const newCap = Math.max(cells.length + 1024, Math.ceil(capacity * 1.5))
+    const grown = new THREE.InstancedMesh(mesh.geometry, mesh.material, newCap)
+    grown.frustumCulled = mesh.frustumCulled
+    grown.count = 0
+    if (scene) {
+      scene.add(grown)
+      scene.remove(mesh)
+    }
+    mesh.dispose()
+    target = grown
+  }
+  const n = cells.length
   for (let i = 0; i < n; i++) {
     const [sx, sy, sz] = cells[i]
     _dummy.position.set(sx * CELL + HALF, sy * CELL + HALF, sz * CELL + HALF)
     _dummy.updateMatrix()
-    mesh.setMatrixAt(i, _dummy.matrix)
+    target.setMatrixAt(i, _dummy.matrix)
   }
-  mesh.count = n
-  mesh.instanceMatrix.needsUpdate = true
+  target.count = n
+  target.instanceMatrix.needsUpdate = true
+  return target
 }
