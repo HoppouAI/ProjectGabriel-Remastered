@@ -63,6 +63,18 @@ export default function Mapping({ onToast }: Props) {
   const [editMenu, setEditMenu] = useState<
     { x: number; y: number; serial: [number, number, number]; existed: boolean } | null
   >(null)
+  // drag-rectangle selection state
+  const [dragRect, setDragRect] = useState<
+    { x0: number; y0: number; x1: number; y1: number } | null
+  >(null)
+  const dragStateRef = useRef<{
+    active: boolean
+    started: boolean   // true once the cursor actually moved past the threshold
+    x0: number; y0: number
+  } | null>(null)
+  const [bulkMenu, setBulkMenu] = useState<
+    { x: number; y: number; cells: [number, number, number][] } | null
+  >(null)
 
   // three.js scene refs (kept in refs so React doesnt re-create them)
   const sceneRefs = useRef<{
@@ -380,6 +392,113 @@ export default function Mapping({ onToast }: Props) {
     }
   }, [editMenu, onToast, refreshWorld])
 
+  const applyBulkEdit = useCallback(async (kind: 'reach' | 'wall' | 'iffy' | 'delete') => {
+    if (!bulkMenu || bulkMenu.cells.length === 0) return
+    try {
+      const r = await api<{ applied: number; total: number }>(
+        '/api/mapping/cells/bulk', 'POST', { cells: bulkMenu.cells, kind })
+      onToast(`bulk ${kind}: ${r.applied}/${r.total} cells`, 'success')
+      setBulkMenu(null)
+      refreshWorld()
+    } catch (err) {
+      onToast(`bulk edit failed: ${(err as Error).message}`, 'error')
+    }
+  }, [bulkMenu, onToast, refreshWorld])
+
+  // collect every visible cell (across all 3 instanced meshes) whose
+  // projected screen position lands inside the given rect. used by the
+  // shift+drag selector. returns serials in voxel coords.
+  const collectCellsInRect = useCallback((rect: DOMRect, x0: number, y0: number, x1: number, y1: number): [number, number, number][] => {
+    const refs = sceneRefs.current
+    if (!refs.camera || !refs.renderer) return []
+    const out: [number, number, number][] = []
+    const tmp = new THREE.Matrix4()
+    const pos = new THREE.Vector3()
+    const ndc = new THREE.Vector3()
+    const minX = Math.min(x0, x1)
+    const maxX = Math.max(x0, x1)
+    const minY = Math.min(y0, y1)
+    const maxY = Math.max(y0, y1)
+    const meshes = [refs.meshReach, refs.meshWall, refs.meshIffy].filter(Boolean) as THREE.InstancedMesh[]
+    for (const mesh of meshes) {
+      const n = mesh.count
+      for (let i = 0; i < n; i++) {
+        mesh.getMatrixAt(i, tmp)
+        pos.setFromMatrixPosition(tmp)
+        ndc.copy(pos).project(refs.camera)
+        // behind the camera
+        if (ndc.z < -1 || ndc.z > 1) continue
+        const sx_px = (ndc.x * 0.5 + 0.5) * rect.width
+        const sy_px = (-ndc.y * 0.5 + 0.5) * rect.height
+        if (sx_px < minX || sx_px > maxX || sy_px < minY || sy_px > maxY) continue
+        const cx = Math.floor(pos.x / CELL)
+        const cy = Math.floor(pos.y / CELL)
+        const cz = Math.floor(pos.z / CELL)
+        out.push([cx, cy, cz])
+      }
+    }
+    return out
+  }, [])
+
+  const onCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!editMode) return
+    if (!e.shiftKey) return  // only shift+drag starts a rectangle select
+    const refs = sceneRefs.current
+    if (!refs.renderer || !refs.controls) return
+    e.preventDefault()
+    const rect = refs.renderer.domElement.getBoundingClientRect()
+    dragStateRef.current = {
+      active: true,
+      started: false,
+      x0: e.clientX - rect.left,
+      y0: e.clientY - rect.top,
+    }
+    refs.controls.enabled = false
+    setEditMenu(null)
+    setBulkMenu(null)
+  }, [editMode])
+
+  const onCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+    const drag = dragStateRef.current
+    if (!drag || !drag.active) return
+    const refs = sceneRefs.current
+    if (!refs.renderer) return
+    const rect = refs.renderer.domElement.getBoundingClientRect()
+    const x1 = e.clientX - rect.left
+    const y1 = e.clientY - rect.top
+    if (!drag.started) {
+      // require >4px before we commit to drag mode (lets accidental shift-clicks
+      // still feel like clicks)
+      if (Math.abs(x1 - drag.x0) < 4 && Math.abs(y1 - drag.y0) < 4) return
+      drag.started = true
+    }
+    setDragRect({ x0: drag.x0, y0: drag.y0, x1, y1 })
+  }, [])
+
+  const onCanvasMouseUp = useCallback((e: React.MouseEvent) => {
+    const drag = dragStateRef.current
+    if (!drag || !drag.active) return
+    const refs = sceneRefs.current
+    if (refs.controls) refs.controls.enabled = true
+    dragStateRef.current = null
+    if (!drag.started) {
+      // shift+click without real drag, treat like nothing happened
+      setDragRect(null)
+      return
+    }
+    if (!refs.renderer) { setDragRect(null); return }
+    const rect = refs.renderer.domElement.getBoundingClientRect()
+    const x1 = e.clientX - rect.left
+    const y1 = e.clientY - rect.top
+    const cells = collectCellsInRect(rect, drag.x0, drag.y0, x1, y1)
+    setDragRect(null)
+    if (cells.length === 0) {
+      onToast('selection empty', 'info')
+      return
+    }
+    setBulkMenu({ x: x1, y: y1, cells })
+  }, [collectCellsInRect, onToast])
+
   // -----------------------------------------------------------------
   // controls
   // -----------------------------------------------------------------
@@ -486,9 +605,75 @@ export default function Mapping({ onToast }: Props) {
       <div
         ref={mountRef}
         onClick={onCanvasClick}
+        onMouseDown={onCanvasMouseDown}
+        onMouseMove={onCanvasMouseMove}
+        onMouseUp={onCanvasMouseUp}
         className="absolute inset-0"
         style={{ cursor: (pickEnabled || editMode) ? 'crosshair' : 'grab' }}
       />
+
+      {/* drag selection rectangle overlay */}
+      {editMode && dragRect && (
+        <div
+          className="absolute z-20 pointer-events-none border border-accent/80 bg-accent/15"
+          style={{
+            left: Math.min(dragRect.x0, dragRect.x1),
+            top: Math.min(dragRect.y0, dragRect.y1),
+            width: Math.abs(dragRect.x1 - dragRect.x0),
+            height: Math.abs(dragRect.y1 - dragRect.y0),
+          }}
+        />
+      )}
+
+      {/* bulk action menu (after drag-select) */}
+      {editMode && bulkMenu && (
+        <div
+          className="absolute z-30 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-lg p-2 shadow-xl flex flex-col gap-1 text-[12px] font-mono"
+          style={{
+            left: Math.min(bulkMenu.x + 6, (mountRef.current?.clientWidth ?? 9999) - 200),
+            top: Math.min(bulkMenu.y + 6, (mountRef.current?.clientHeight ?? 9999) - 200),
+            minWidth: 190,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="text-text-muted/80 px-1 pb-1 border-b border-white/5">
+            <span className="text-text">{bulkMenu.cells.length}</span> cells selected
+          </div>
+          <button
+            onClick={() => applyBulkEdit('reach')}
+            className="text-left px-2 py-1 rounded hover:bg-mint/15 text-mint flex items-center gap-2"
+          >
+            <span className="w-3 h-3 rounded-sm" style={{ background: '#4ade80' }} />
+            Set Reachable
+          </button>
+          <button
+            onClick={() => applyBulkEdit('wall')}
+            className="text-left px-2 py-1 rounded hover:bg-rose/15 text-rose flex items-center gap-2"
+          >
+            <span className="w-3 h-3 rounded-sm" style={{ background: '#f87171' }} />
+            Set Wall
+          </button>
+          <button
+            onClick={() => applyBulkEdit('iffy')}
+            className="text-left px-2 py-1 rounded hover:bg-yellow-500/15 text-yellow-300 flex items-center gap-2"
+          >
+            <span className="w-3 h-3 rounded-sm" style={{ background: '#facc15' }} />
+            Set Iffy
+          </button>
+          <button
+            onClick={() => applyBulkEdit('delete')}
+            className="text-left px-2 py-1 rounded hover:bg-white/10 text-text-muted flex items-center gap-2 border-t border-white/5 mt-1 pt-1.5"
+          >
+            <TbTrash size={12} /> Delete All
+          </button>
+          <button
+            onClick={() => setBulkMenu(null)}
+            className="text-left px-2 py-1 rounded text-text-muted/50 hover:text-text text-[11px]"
+          >
+            cancel
+          </button>
+        </div>
+      )}
 
       {/* edit cell context menu */}
       {editMode && editMenu && (
@@ -532,6 +717,15 @@ export default function Mapping({ onToast }: Props) {
               className="text-left px-2 py-1 rounded hover:bg-white/10 text-text-muted flex items-center gap-2 border-t border-white/5 mt-1 pt-1.5"
             >
               <TbTrash size={12} /> Delete
+            </button>
+          )}
+          {!editMenu.existed && (
+            <button
+              onClick={() => applyCellEdit('delete')}
+              className="text-left px-2 py-1 rounded hover:bg-white/10 text-text-muted/60 flex items-center gap-2 border-t border-white/5 mt-1 pt-1.5"
+              title="no cell here, will be a no-op but useful if the raycast was off"
+            >
+              <TbTrash size={12} /> Delete (try anyway)
             </button>
           )}
           <button
@@ -672,8 +866,8 @@ export default function Mapping({ onToast }: Props) {
           <TbCrosshair size={14} /> {pickEnabled ? 'Click to pathfind' : 'Pathfind'}
         </button>
         <button
-          onClick={() => { setEditMode(m => !m); setEditMenu(null); if (!editMode) setPickEnabled(false) }}
-          title="Click cells in the 3D view to change their type or delete them. Click empty floor to drop a new wall/reachable/iffy cell."
+          onClick={() => { setEditMode(m => !m); setEditMenu(null); setBulkMenu(null); if (!editMode) setPickEnabled(false) }}
+          title="Click a cell to change its type or delete it. Click empty floor to drop a new cell. Shift+drag to select many cells at once."
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${
             editMode
               ? 'bg-orange-500/20 text-orange-300 hover:bg-orange-500/30'
@@ -682,6 +876,11 @@ export default function Mapping({ onToast }: Props) {
         >
           <TbEdit size={14} /> {editMode ? 'Editing cells' : 'Edit Cells'}
         </button>
+        {editMode && (
+          <span className="text-[11px] text-text-muted/70 ml-1">
+            click=single, shift+drag=bulk
+          </span>
+        )}
         {path?.found && (
           <span className="text-[11px] text-text-muted ml-1">
             {path.full?.length ?? 0} cells, {path.filtered?.length ?? 0} turns

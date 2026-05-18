@@ -1049,6 +1049,23 @@ async def mapping_cell_edit(payload: CellEditIn):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+class CellsBulkEditIn(BaseModel):
+    cells: list[list[int]]  # each inner list is [sx, sy, sz]
+    kind: str  # reach | wall | iffy | delete
+
+
+@app.post("/api/mapping/cells/bulk")
+async def mapping_cells_bulk_edit(payload: CellsBulkEditIn):
+    ms = _get_mapping()
+    if not payload.cells:
+        return {"result": "ok", "kind": payload.kind, "applied": 0, "total": 0}
+    try:
+        cells = [(int(c[0]), int(c[1]), int(c[2])) for c in payload.cells if len(c) >= 3]
+        return await asyncio.to_thread(ms.edit_cells_bulk, cells, payload.kind)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.delete("/api/mapping/world")
 async def mapping_delete_world(world: str | None = None):
     """Delete a saved world map. Omit ?world= to delete the current one."""

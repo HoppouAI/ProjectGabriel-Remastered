@@ -483,6 +483,36 @@ class MappingService:
         return {"result": "ok", "kind": kind_norm,
                 "cell": list(serial), "type": node.node_type.name}
 
+    def edit_cells_bulk(self, cells: list[tuple[int, int, int]],
+                         kind: str) -> dict:
+        """Apply the same edit to many cells in one shot. Flushes once at
+        the end so a 500-cell drag select doesnt write the json 500 times."""
+        kind_norm = (kind or "").strip().lower()
+        type_map = {
+            "reach": NodeType.REACHABLE,
+            "reachable": NodeType.REACHABLE,
+            "wall": NodeType.UNREACHABLE,
+            "unreachable": NodeType.UNREACHABLE,
+            "iffy": NodeType.IFFY,
+        }
+        applied = 0
+        if kind_norm == "delete":
+            for c in cells:
+                if self._nav.delete_cell((int(c[0]), int(c[1]), int(c[2]))):
+                    applied += 1
+        else:
+            if kind_norm not in type_map:
+                raise ValueError(f"unknown cell kind '{kind}'")
+            nt = type_map[kind_norm]
+            for c in cells:
+                self._nav.set_cell_type((int(c[0]), int(c[1]), int(c[2])), nt)
+                applied += 1
+        self._nav.flush()
+        logger.info("mapping: bulk edit %s applied=%d/%d",
+                    kind_norm, applied, len(cells))
+        return {"result": "ok", "kind": kind_norm, "applied": applied,
+                "total": len(cells)}
+
     # ------------------------------------------------------------------
     # world management (list / delete saved maps)
     # ------------------------------------------------------------------
