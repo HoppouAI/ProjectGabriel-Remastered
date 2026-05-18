@@ -61,7 +61,7 @@ export default function Mapping({ onToast }: Props) {
   const [wallDist, setWallDist] = useState(0.35)
   const [editMode, setEditMode] = useState(false)
   const [editMenu, setEditMenu] = useState<
-    { x: number; y: number; serial: [number, number, number]; existed: boolean } | null
+    { x: number; y: number; serial: [number, number, number] } | null
   >(null)
   // drag-rectangle selection state
   const [dragRect, setDragRect] = useState<
@@ -75,6 +75,8 @@ export default function Mapping({ onToast }: Props) {
   const [bulkMenu, setBulkMenu] = useState<
     { x: number; y: number; cells: [number, number, number][] } | null
   >(null)
+
+  const suppressClickRef = useRef(false)
 
   // three.js scene refs (kept in refs so React doesnt re-create them)
   const sceneRefs = useRef<{
@@ -304,9 +306,16 @@ export default function Mapping({ onToast }: Props) {
   // click pathfinding
   // -----------------------------------------------------------------
   const onCanvasClick = useCallback(async (e: React.MouseEvent) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
     if (editMode) {
-      // edit cells: first try to hit an existing voxel, otherwise drop a
-      // new one on the ground plane.
+      // shift+click belongs to the rectangle selector, never opens a menu
+      if (e.shiftKey) return
+      // only existing voxels are editable. clicks on empty space close any
+      // open menu and otherwise do nothing -- no more accidental stray
+      // cells from clicking the ground plane.
       const refs = sceneRefs.current
       if (!refs.renderer || !refs.camera || !refs.raycaster) return
       const rect = refs.renderer.domElement.getBoundingClientRect()
@@ -329,23 +338,13 @@ export default function Mapping({ onToast }: Props) {
           x: e.clientX - rect.left,
           y: e.clientY - rect.top,
           serial: [sx, sy, sz],
-          existed: true,
         })
+        setBulkMenu(null)
         return
       }
-      // no cell hit, fall back to the ground plane to spawn a new one.
-      if (!refs.plane) return
-      const ground = refs.raycaster.intersectObject(refs.plane)[0]
-      if (!ground) return
-      const sx = Math.floor(ground.point.x / CELL)
-      const sy = Math.floor(ground.point.y / CELL)
-      const sz = Math.floor(ground.point.z / CELL)
-      setEditMenu({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-        serial: [sx, sy, sz],
-        existed: false,
-      })
+      // blank click in edit mode -- dismiss any open menus
+      setEditMenu(null)
+      setBulkMenu(null)
       return
     }
     if (!pickEnabled) return
@@ -420,6 +419,7 @@ export default function Mapping({ onToast }: Props) {
     const minY = Math.min(y0, y1)
     const maxY = Math.max(y0, y1)
     const meshes = [refs.meshReach, refs.meshWall, refs.meshIffy].filter(Boolean) as THREE.InstancedMesh[]
+    const seen = new Set<string>()
     for (const mesh of meshes) {
       const n = mesh.count
       for (let i = 0; i < n; i++) {
@@ -434,6 +434,9 @@ export default function Mapping({ onToast }: Props) {
         const cx = Math.floor(pos.x / CELL)
         const cy = Math.floor(pos.y / CELL)
         const cz = Math.floor(pos.z / CELL)
+        const key = `${cx},${cy},${cz}`
+        if (seen.has(key)) continue
+        seen.add(key)
         out.push([cx, cy, cz])
       }
     }
@@ -486,6 +489,7 @@ export default function Mapping({ onToast }: Props) {
       setDragRect(null)
       return
     }
+    suppressClickRef.current = true
     if (!refs.renderer) { setDragRect(null); return }
     const rect = refs.renderer.domElement.getBoundingClientRect()
     const x1 = e.clientX - rect.left
@@ -496,6 +500,7 @@ export default function Mapping({ onToast }: Props) {
       onToast('selection empty', 'info')
       return
     }
+    setEditMenu(null)
     setBulkMenu({ x: x1, y: y1, cells })
   }, [collectCellsInRect, onToast])
 
@@ -688,7 +693,6 @@ export default function Mapping({ onToast }: Props) {
         >
           <div className="text-text-muted/80 px-1 pb-1 border-b border-white/5">
             cell <span className="text-text">{editMenu.serial.join(', ')}</span>
-            <span className="ml-1 text-text-muted/50">{editMenu.existed ? '' : '(new)'}</span>
           </div>
           <button
             onClick={() => applyCellEdit('reach')}
@@ -711,23 +715,12 @@ export default function Mapping({ onToast }: Props) {
             <span className="w-3 h-3 rounded-sm" style={{ background: '#facc15' }} />
             Iffy
           </button>
-          {editMenu.existed && (
-            <button
-              onClick={() => applyCellEdit('delete')}
-              className="text-left px-2 py-1 rounded hover:bg-white/10 text-text-muted flex items-center gap-2 border-t border-white/5 mt-1 pt-1.5"
-            >
-              <TbTrash size={12} /> Delete
-            </button>
-          )}
-          {!editMenu.existed && (
-            <button
-              onClick={() => applyCellEdit('delete')}
-              className="text-left px-2 py-1 rounded hover:bg-white/10 text-text-muted/60 flex items-center gap-2 border-t border-white/5 mt-1 pt-1.5"
-              title="no cell here, will be a no-op but useful if the raycast was off"
-            >
-              <TbTrash size={12} /> Delete (try anyway)
-            </button>
-          )}
+          <button
+            onClick={() => applyCellEdit('delete')}
+            className="text-left px-2 py-1 rounded hover:bg-white/10 text-text-muted flex items-center gap-2 border-t border-white/5 mt-1 pt-1.5"
+          >
+            <TbTrash size={12} /> Delete
+          </button>
           <button
             onClick={() => setEditMenu(null)}
             className="text-left px-2 py-1 rounded text-text-muted/50 hover:text-text text-[11px]"
@@ -856,7 +849,16 @@ export default function Mapping({ onToast }: Props) {
         )}
         <div className="w-px h-5 bg-white/10 mx-1" />
         <button
-          onClick={() => { setPickEnabled(p => !p); if (pickEnabled) setPath(null) }}
+          onClick={() => {
+            const next = !pickEnabled
+            setPickEnabled(next)
+            if (!next) setPath(null)
+            if (next) {
+              setEditMode(false)
+              setEditMenu(null)
+              setBulkMenu(null)
+            }
+          }}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${
             pickEnabled
               ? 'bg-violet-500/20 text-violet-300 hover:bg-violet-500/30'
@@ -867,7 +869,7 @@ export default function Mapping({ onToast }: Props) {
         </button>
         <button
           onClick={() => { setEditMode(m => !m); setEditMenu(null); setBulkMenu(null); if (!editMode) setPickEnabled(false) }}
-          title="Click a cell to change its type or delete it. Click empty floor to drop a new cell. Shift+drag to select many cells at once."
+          title="Click an existing cell to change its type or delete it. Shift+drag to bulk-select cells. Clicks on empty space are ignored."
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${
             editMode
               ? 'bg-orange-500/20 text-orange-300 hover:bg-orange-500/30'
