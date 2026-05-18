@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from src.voxel_nav import (
-    NodeType, Serial, VoxelNavManager, serial_to_center,
+    NodeType, Serial, VoxelNavManager, find_path_astar, serial_to_center,
 )
 
 logger = logging.getLogger(__name__)
@@ -368,18 +368,53 @@ class VoxelExplorer:
             self._abandoned = {c: t for c, t in self._abandoned.items() if t > now_m}
         stack = self.nav.check_stack(forward_xz,
                                      blacklist=set(self._abandoned.keys()) or None)
-        if stack is not None:
-            s.target, src = stack
-            s.target_source = src.serial
+        if stack is None:
+            logger.info("voxel_explorer: no unexplored cells remain")
+            return
+        cand, src = stack
+        # if the source is current we can just walk
+        if src.serial == current.serial:
+            s.target = cand
+            s.target_source = current.serial
             s.e_count = 0.0
             s.last_distance = math.inf
             s.last_cell = None
             s.last_progress_t = time.time()
             logger.info("voxel_explorer: discover stack target %s via %s",
-                        s.target, src.serial)
+                        cand, src.serial)
             return
-        # nothing left to explore
-        logger.info("voxel_explorer: no unexplored cells remain")
+        # route through the graph instead of walking in a straight line.
+        # without this we tried to head straight toward a target that might
+        # be on a totally different floor and just smashed into walls.
+        # mirrors reference NodeManager.CheckStack which always SetPaths to
+        # the source node before chasing the cardinal.
+        pr = find_path_astar(self.nav.graph, current.serial, src.serial)
+        if not pr.found or not pr.full_serials:
+            logger.info("voxel_explorer: no graph path to %s for target %s, "
+                        "blacklisting", src.serial, cand)
+            self._abandoned[cand] = time.monotonic() + self._abandon_ttl
+            return
+        # queue = every hop after current, then the cardinal unexplored cell
+        # as the final step
+        queue: list[Serial] = list(pr.full_serials[1:]) + [cand]
+        self._path_queue = queue
+        self._follow_active = True
+        self._follow_label = f"explore -> {cand}"
+        if not self._advance_follow_queue(current.serial):
+            # _advance_follow_queue couldnt find a valid next cell (everything
+            # too high to climb maybe). abandon and move on.
+            self._follow_active = False
+            self._path_queue.clear()
+            self._abandoned[cand] = time.monotonic() + self._abandon_ttl
+            logger.info("voxel_explorer: stack route to %s had no climbable "
+                        "step, blacklisting", cand)
+            return
+        s.e_count = 0.0
+        s.last_distance = math.inf
+        s.last_cell = None
+        s.last_progress_t = time.time()
+        logger.info("voxel_explorer: route to stack target %s via %d hops "
+                    "through %s", cand, len(queue), src.serial)
 
     def _advance_follow_queue(self, current_serial: Serial) -> bool:
         """Pop cells off the follow queue until we find one we should actually

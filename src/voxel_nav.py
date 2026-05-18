@@ -518,7 +518,7 @@ class VoxelNavManager:
         target cells the caller has temporarily given up on."""
         if self._current is None:
             return None
-        cur_cx, _, cur_cz = serial_to_center(self._current.serial)
+        cur_cx, cur_cy, cur_cz = serial_to_center(self._current.serial)
         best: Optional[tuple[Serial, Node]] = None
         best_d = math.inf
         with self.graph._lock:  # noqa: SLF001
@@ -531,9 +531,14 @@ class VoxelNavManager:
                 continue
             if blacklist is not None and cand in blacklist:
                 continue
-            cx, _, cz = serial_to_center(cand)
-            dx = cx - cur_cx; dz = cz - cur_cz
-            d = dx * dx + dz * dz
+            cx, cy, cz = serial_to_center(cand)
+            dx = cx - cur_cx
+            dy = cy - cur_cy
+            dz = cz - cur_cz
+            # full 3d distance so floors above/below dont look closer than a
+            # cell that's actually walkable to from where we are. matches the
+            # reference NodeManager.CheckStack scoring.
+            d = dx * dx + dy * dy + dz * dz
             if d < best_d:
                 best_d = d
                 best = (cand, src)
