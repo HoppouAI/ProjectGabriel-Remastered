@@ -313,6 +313,15 @@ class VoxelNavManager:
         self._previous: Optional[Node] = None
         self._dirty = False
         self._lock = threading.RLock()
+        # jump filter: if a single observe lands a huge distance from where
+        # we just were, treat it as a pose glitch and require one repeat
+        # before we trust it. otherwise transient bad reads paint stray
+        # floating cells out in the void.
+        self._pending_cell: Optional[Serial] = None
+        self._pending_count: int = 0
+        # cells past this many voxels from current count as a teleport
+        # and need confirmation. ~2m at the 0.25m grid.
+        self._jump_threshold: int = 8
 
     # --- world lifecycle ---------------------------------------------------
     def load_world(self, world_id: str) -> None:
@@ -358,6 +367,25 @@ class VoxelNavManager:
         """
         serial = world_to_serial(x, y, z)
         with self._lock:
+            # teleport / glitch guard: if we jumped way too far in one tick,
+            # demand the same cell show up again before we commit it. this
+            # kills the random floating green cubes from pose decoder hiccups.
+            if self._current is not None:
+                dx = abs(serial[0] - self._current.serial[0])
+                dy = abs(serial[1] - self._current.serial[1])
+                dz = abs(serial[2] - self._current.serial[2])
+                if max(dx, dy, dz) > self._jump_threshold:
+                    if self._pending_cell == serial:
+                        self._pending_count += 1
+                        if self._pending_count < 2:
+                            return self._current
+                    else:
+                        self._pending_cell = serial
+                        self._pending_count = 1
+                        return self._current
+            self._pending_cell = None
+            self._pending_count = 0
+
             if interpolate and self._current is not None \
                     and self._current.serial != serial \
                     and self.learning_mode and grounded:
@@ -389,6 +417,12 @@ class VoxelNavManager:
         dx = b[0] - a[0]; dy = b[1] - a[1]; dz = b[2] - a[2]
         steps = max(abs(dx), abs(dy), abs(dz))
         if steps <= 1 or steps > 32:
+            return
+        # if Y motion dominates the segment its almost always a glitch
+        # (pose decoder noise on a step, brief fall, jump-in-place). dont
+        # paint vertical green columns through the ceiling.
+        horiz = max(abs(dx), abs(dz))
+        if abs(dy) > horiz + 1:
             return
         for i in range(1, steps):
             t = i / steps
@@ -475,11 +509,13 @@ class VoxelNavManager:
             offset = (-offset[2], 0, offset[0])
         return None
 
-    def check_stack(self, forward_xz: tuple[float, float]
+    def check_stack(self, forward_xz: tuple[float, float],
+                    blacklist: Optional[set[Serial]] = None,
                     ) -> Optional[tuple[Serial, Node]]:
         """reference CheckStack: scan all Reachable nodes, find the one with the
         closest-to-current unexplored cardinal neighbor. Returns
-        (target_serial, source_node) or None."""
+        (target_serial, source_node) or None. `blacklist` skips candidate
+        target cells the caller has temporarily given up on."""
         if self._current is None:
             return None
         cur_cx, _, cur_cz = serial_to_center(self._current.serial)
@@ -492,6 +528,8 @@ class VoxelNavManager:
                 continue
             cand = self.choose_discovery_target(src, forward_xz)
             if cand is None:
+                continue
+            if blacklist is not None and cand in blacklist:
                 continue
             cx, _, cz = serial_to_center(cand)
             dx = cx - cur_cx; dz = cz - cur_cz

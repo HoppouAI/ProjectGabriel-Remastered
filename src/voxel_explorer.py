@@ -90,6 +90,11 @@ class VoxelExplorer:
         self._ec_multiplier = 1.0
         self._last_pose = None  # (x, z, fx, fz) for CheckImpeded
         self._lock = threading.RLock()
+        # short-lived blacklist of distant targets we recently abandoned
+        # without marking them as walls. keeps check_stack from immediately
+        # re-picking the same dead-end cell every tick. cell -> expiry mono.
+        self._abandoned: dict[Serial, float] = {}
+        self._abandon_ttl = 30.0
 
     # ----------------------------------------------------------------------
     # lifecycle
@@ -357,7 +362,12 @@ class VoxelExplorer:
             logger.info("voxel_explorer: discover cardinal %s from %s",
                         cand, current.serial)
             return
-        stack = self.nav.check_stack(forward_xz)
+        # prune expired abandons before asking the nav for a stack pick
+        now_m = time.monotonic()
+        if self._abandoned:
+            self._abandoned = {c: t for c, t in self._abandoned.items() if t > now_m}
+        stack = self.nav.check_stack(forward_xz,
+                                     blacklist=set(self._abandoned.keys()) or None)
         if stack is not None:
             s.target, src = stack
             s.target_source = src.serial
@@ -401,17 +411,22 @@ class VoxelExplorer:
     def _give_up_target(self, why: str) -> None:
         s = self.state
         if s.target is not None and self.learning_mode:
-            # reference only marks UnReachable if target was a direct neighbor,
-            # because they pathfind to discovery targets so a non-neighbor
-            # giveup means "lost the trail mid-path". we steer dead-reckoning
-            # to discovery cells, so a non-neighbor giveup means we couldnt
-            # navigate there at all. either way, drop the cell into the graph
-            # as UnReachable so check_vertical filters it out of future
-            # discovery picks. otherwise check_stack happily picks the same
-            # unreachable cell forever.
-            logger.info("voxel_explorer: marking %s UnReachable (%s)",
-                        s.target, why)
-            self.nav.mark_unreachable(s.target)
+            # only mark a cell UnReachable if its actually adjacent to where
+            # the agent is right now. that way a "couldnt get there" on a
+            # distant check_stack pick doesnt drop a phantom wall across the
+            # map. for non-neighbor giveups we just abandon the target and
+            # let the next discovery pass try something else.
+            cur = self.nav.current
+            is_neighbor = (cur is not None
+                           and self.nav.is_pathable_neighbor(cur.serial, s.target))
+            if is_neighbor:
+                logger.info("voxel_explorer: marking %s UnReachable (%s)",
+                            s.target, why)
+                self.nav.mark_unreachable(s.target)
+            else:
+                logger.info("voxel_explorer: abandon distant target %s (%s) "
+                            "without wall mark", s.target, why)
+                self._abandoned[s.target] = time.monotonic() + self._abandon_ttl
         s.target = None
         s.target_source = None
         s.e_count = 0.0
