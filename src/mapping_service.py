@@ -677,21 +677,21 @@ class MappingService:
     # drive-to-waypoint (active path follow)
     # ------------------------------------------------------------------
     def _ensure_explorer_for_follow(self) -> None:
-        """Make sure an explorer exists and is started, but DO NOT flip the
-        public explore_enabled flag, so frontier-exploration stays off."""
+        """Make sure an explorer exists for follow mode, but DO NOT flip
+        the public explore_enabled flag, so frontier-exploration stays off.
+        We deliberately leave the explorer un-started here so the tick loop
+        cant pick a discovery target in the window between construction
+        and the follow_path call. follow_path will start() it atomically
+        together with seeding the queue. The follow_only flag is set by
+        the caller AFTER follow_path has been called so the auto-teardown
+        check cant fire in the window between create and seed."""
         if not self._running:
             raise RuntimeError("mapping not running")
         if self._explorer is None:
             self._explorer = VoxelExplorer(self._nav, self._osc,
                                             learning_mode=True)
             self._explorer.force_run = self._force_run
-            self._explorer.start()
-            # mark this explorer as follow-only ONLY if the user hasnt
-            # explicitly enabled frontier exploration. otherwise leave it
-            # alone so explore-mode stays alive after the goto finishes.
-            if not self._explore_enabled:
-                self._explorer_follow_only = True
-            logger.info("mapping: explorer spun up for path-follow")
+            logger.info("mapping: explorer created for path-follow")
 
     def _autostart_for_nav(self, timeout: float = 4.0) -> str:
         """Auto-start the mapping service if its not running yet, so the AI
@@ -735,6 +735,11 @@ class MappingService:
             except Exception as exc:
                 logger.exception("mapping: follow_path failed")
                 return {"found": False, "reason": f"follow failed: {exc}"}
+            # only flag follow-only AFTER the queue is seeded, otherwise
+            # the tick loop teardown could fire in the gap between create
+            # and seed (follow_status.active is False until follow_path).
+            if not self._explore_enabled:
+                self._explorer_follow_only = True
             preview["driving"] = True
             preview["label"] = label or "goto"
             return preview
