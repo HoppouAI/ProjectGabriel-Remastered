@@ -241,15 +241,6 @@ export default function Mapping({ onToast }: Props) {
           refs.player.visible = true
           refs.player.position.set(s.pose.x, s.pose.y + 0.5, s.pose.z)
           refs.player.rotation.y = -s.pose.yaw * Math.PI / 180
-          // keep the floor grid centered on the player so it stays a
-          // useful reference when the map is far from world origin.
-          if (refs.grid) {
-            refs.grid.position.set(
-              Math.round(s.pose.x),
-              s.pose.y - 0.01,
-              Math.round(s.pose.z),
-            )
-          }
           if (!refs.firstPose && refs.camera && refs.controls) {
             refs.firstPose = true
             refs.controls.target.set(s.pose.x, s.pose.y, s.pose.z)
@@ -289,6 +280,60 @@ export default function Mapping({ onToast }: Props) {
         refs.meshReach = packCells(refs.meshReach, w.reach, refs.scene)
         refs.meshWall = packCells(refs.meshWall, w.wall, refs.scene)
         refs.meshIffy = packCells(refs.meshIffy, w.iffy, refs.scene)
+        // resize / recenter the floor grid to fit the actual map extent.
+        // recreated only when the new size differs by >15% or the center
+        // moved more than 4m, otherwise we'd churn buffers every poll.
+        if (refs.scene) {
+          let minX = Infinity, maxX = -Infinity
+          let minY = Infinity
+          let minZ = Infinity, maxZ = -Infinity
+          const scan = (arr: [number, number, number][]) => {
+            for (let i = 0; i < arr.length; i++) {
+              const c = arr[i]
+              if (c[0] < minX) minX = c[0]
+              if (c[0] > maxX) maxX = c[0]
+              if (c[1] < minY) minY = c[1]
+              if (c[2] < minZ) minZ = c[2]
+              if (c[2] > maxZ) maxZ = c[2]
+            }
+          }
+          scan(w.reach); scan(w.wall); scan(w.iffy)
+          if (isFinite(minX)) {
+            const wx = (maxX - minX + 1) * CELL
+            const wz = (maxZ - minZ + 1) * CELL
+            const cx = (minX + maxX + 1) * 0.5 * CELL
+            const cz = (minZ + maxZ + 1) * 0.5 * CELL
+            const gy = minY * CELL - 0.02
+            // round size up to nearest 4m + 8m padding on each side. clamp.
+            const raw = Math.max(wx, wz) + 16
+            const size = Math.min(800, Math.max(20, Math.ceil(raw / 4) * 4))
+            const divisions = Math.min(400, Math.max(20, Math.round(size / 0.5)))
+            const cur = refs.grid
+            const sizeChanged = !cur || Math.abs((cur.userData.size ?? 0) - size) > 0.15 * size
+            const moved = !cur
+              || Math.abs((cur.userData.cx ?? 0) - cx) > 4
+              || Math.abs((cur.userData.cz ?? 0) - cz) > 4
+              || Math.abs(cur.position.y - gy) > 1
+            if (sizeChanged) {
+              if (cur) {
+                refs.scene.remove(cur)
+                ;(cur.material as THREE.Material).dispose()
+                cur.geometry.dispose()
+              }
+              const g = new THREE.GridHelper(size, divisions, 0x223344, 0x152128)
+              ;(g.material as THREE.Material).transparent = true
+              ;(g.material as THREE.Material).opacity = 0.55
+              g.position.set(cx, gy, cz)
+              g.userData = { size, cx, cz }
+              refs.scene.add(g)
+              refs.grid = g
+            } else if (moved && cur) {
+              cur.position.set(cx, gy, cz)
+              cur.userData.cx = cx
+              cur.userData.cz = cz
+            }
+          }
+        }
       } catch { /* ignore */ }
     }
     tick()
