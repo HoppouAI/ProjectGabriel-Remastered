@@ -717,8 +717,11 @@ class MappingService:
         return "no pose yet, is VRChat focused with the shader on?"
 
     def goto_xyz(self, gx: float, gy: float, gz: float,
-                 *, label: str = "") -> dict:
-        """A* from current pose to (gx,gy,gz), then drive there via OSC."""
+                 *, label: str = "",
+                 final_yaw_deg: Optional[float] = None) -> dict:
+        """A* from current pose to (gx,gy,gz), then drive there via OSC.
+        If final_yaw_deg is given, the explorer rotates to that heading
+        after arrival before going inactive."""
         err = self._autostart_for_nav()
         if err:
             return {"found": False, "reason": err}
@@ -731,7 +734,8 @@ class MappingService:
             full = preview.get("full") or []
             cells: list[tuple[int, int, int]] = [tuple(s) for s in full]  # type: ignore
             try:
-                self._explorer.follow_path(cells, label=label or "goto")
+                self._explorer.follow_path(cells, label=label or "goto",
+                                           final_yaw_deg=final_yaw_deg)
             except Exception as exc:
                 logger.exception("mapping: follow_path failed")
                 return {"found": False, "reason": f"follow failed: {exc}"}
@@ -754,11 +758,11 @@ class MappingService:
         wp = self._waypoints.get(name)
         if wp is None:
             return {"found": False, "reason": f"waypoint '{name}' not found"}
-        # remember the saved facing so we can rotate to it once we arrive.
-        # cleared again on cancel/stop or when alignment completes.
-        with self._lock:
-            self._pending_align_yaw = float(wp.yaw)
-        return self.goto_xyz(wp.x, wp.y, wp.z, label=f"wp:{name}")
+        # the saved facing rides through to the explorer so it can rotate
+        # to the heading once it arrives, in the same control loop as the
+        # walking (no race with explorer teardown).
+        return self.goto_xyz(wp.x, wp.y, wp.z, label=f"wp:{name}",
+                             final_yaw_deg=float(wp.yaw))
 
     def cancel_goto(self) -> dict:
         with self._lock:

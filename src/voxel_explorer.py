@@ -88,6 +88,10 @@ class VoxelExplorer:
         self._follow_goal: Optional[Serial] = None
         self._follow_replans: int = 0
         self._follow_replan_limit: int = 4
+        # when the queue empties we optionally rotate to a saved facing
+        # before going inactive (mirrors waypoint-mode in the ref impl).
+        self._final_yaw_deg: Optional[float] = None
+        self._aligning: bool = False
         self.state = ExplorerState()
         self._active = False
         self._last_send_forward = 0.0
@@ -125,15 +129,20 @@ class VoxelExplorer:
     # ----------------------------------------------------------------------
     # path-follow mode (drive-to-waypoint)
     # ----------------------------------------------------------------------
-    def follow_path(self, serials: list[Serial], *, label: str = "") -> None:
+    def follow_path(self, serials: list[Serial], *, label: str = "",
+                    final_yaw_deg: Optional[float] = None) -> None:
         """Drive along the given cell sequence. Replaces any current target.
-        The explorer must be active; if not, start() is called first."""
+        The explorer must be active; if not, start() is called first.
+        If final_yaw_deg is given, the explorer rotates to that heading
+        once the queue is empty before going inactive."""
         with self._lock:
             if not self._active:
                 self.start()
             self._path_queue = list(serials)
             self._follow_active = True
             self._follow_label = label or ""
+            self._final_yaw_deg = final_yaw_deg
+            self._aligning = False
             # last cell of the queue is treated as the goal for replans
             self._follow_goal = serials[-1] if serials else None
             self._follow_replans = 0
@@ -145,14 +154,17 @@ class VoxelExplorer:
             s.last_cell = None
             s.last_progress_t = time.time()
             self._ec_multiplier = 1.0
-            logger.info("voxel_explorer: follow path label=%r len=%d",
-                        self._follow_label, len(self._path_queue))
+            logger.info("voxel_explorer: follow path label=%r len=%d final_yaw=%s",
+                        self._follow_label, len(self._path_queue),
+                        f"{final_yaw_deg:.1f}" if final_yaw_deg is not None else "none")
 
     def cancel_follow(self) -> None:
         with self._lock:
-            if not self._follow_active:
+            if not self._follow_active and not self._aligning:
                 return
             self._follow_active = False
+            self._aligning = False
+            self._final_yaw_deg = None
             self._path_queue.clear()
             self._follow_goal = None
             self._follow_replans = 0
@@ -164,9 +176,10 @@ class VoxelExplorer:
     @property
     def follow_status(self) -> dict:
         return {
-            "active": self._follow_active,
+            "active": self._follow_active or self._aligning,
             "remaining": len(self._path_queue),
             "label": self._follow_label,
+            "aligning": self._aligning,
         }
 
     # ----------------------------------------------------------------------
@@ -177,6 +190,17 @@ class VoxelExplorer:
         if not self._active:
             return
         s = self.state
+
+        # aligning to a final facing after the path completed. runs before
+        # everything else so we dont accidentally pick a new target while
+        # we still have a heading to settle on.
+        if self._aligning:
+            if self._drive_final_yaw(pose_yaw_deg):
+                self._aligning = False
+                self._final_yaw_deg = None
+                s.action = "aligned"
+                self._send_osc(0.0, 0.0, run=False)
+            return
 
         # forward XZ vector from yaw (decoder convention: 0deg=+Z, 90deg=+X)
         yaw_rad = math.radians(pose_yaw_deg)
@@ -219,9 +243,15 @@ class VoxelExplorer:
                         self._follow_active = False
                         self._follow_goal = None
                         self._follow_replans = 0
-                        s.action = "follow_done"
-                        logger.info("voxel_explorer: follow path complete (%s)",
-                                    self._follow_label)
+                        if self._final_yaw_deg is not None:
+                            self._aligning = True
+                            s.action = "aligning"
+                            logger.info("voxel_explorer: follow done, aligning to %.1fdeg",
+                                        self._final_yaw_deg)
+                        else:
+                            s.action = "follow_done"
+                            logger.info("voxel_explorer: follow path complete (%s)",
+                                        self._follow_label)
                         self._send_osc(0.0, 0.0, run=False)
                         self._last_pose = (pose_x, pose_z, fx, fz)
                         return
@@ -241,8 +271,14 @@ class VoxelExplorer:
                     self._follow_active = False
                     self._follow_goal = None
                     self._follow_replans = 0
+                    if self._final_yaw_deg is not None:
+                        self._aligning = True
+                        s.action = "aligning"
+                        logger.info("voxel_explorer: follow done, aligning to %.1fdeg",
+                                    self._final_yaw_deg)
+                    else:
+                        s.action = "follow_done"
                     self._send_osc(0.0, 0.0, run=False)
-                    s.action = "follow_done"
                     self._last_pose = (pose_x, pose_z, fx, fz)
                     return
             if s.target is None:
@@ -523,6 +559,22 @@ class VoxelExplorer:
                     self._follow_goal = None
                     self._follow_replans = 0
         self._send_osc(0.0, 0.0, run=False)
+
+    def _drive_final_yaw(self, pose_yaw_deg: float) -> bool:
+        """Rotate toward `_final_yaw_deg` via LookHorizontal. Returns True
+        once we're inside the deadband (caller should release)."""
+        target = self._final_yaw_deg
+        if target is None:
+            return True
+        delta = (target - pose_yaw_deg + 540.0) % 360.0 - 180.0
+        if abs(delta) <= 3.0:
+            return True
+        sign = 1.0 if delta > 0 else -1.0
+        # bigger floor than the old mapping-side aligner so vrchat actually
+        # registers the turn at small angles. ramps up to 0.6 by ~45deg.
+        mag = min(0.6, max(0.18, abs(delta) / 45.0))
+        self._send_osc(0.0, sign * mag, run=False)
+        return False
 
     def _send_osc(self, forward: float, turn: float, run: bool) -> None:
         # reference SendOSC: dedupe each channel against last value
