@@ -99,6 +99,9 @@ class MappingService:
         # tunables exposed via the UI / api
         self._tick_hz: float = 20.0          # pose sample rate
         self._force_run: bool = False        # always sprint while exploring
+        # default move speed for follow + explore. proxies through to the
+        # explorer's speed_mode any time we (re)create one.
+        self._speed_mode: str = "fast"
 
         # ensure waypoint store at least exists for the default world so the
         # UI can list/add even when mapping hasnt been started yet.
@@ -191,6 +194,7 @@ class MappingService:
                 self._explorer = VoxelExplorer(self._nav, self._osc,
                                                 learning_mode=True)
                 self._explorer.force_run = self._force_run
+                self._explorer.speed_mode = self._speed_mode
                 self._explorer.start()
                 self._explore_enabled = True
             else:
@@ -260,6 +264,7 @@ class MappingService:
             self._explorer = VoxelExplorer(self._nav, self._osc,
                                             learning_mode=True)
             self._explorer.force_run = self._force_run
+            self._explorer.speed_mode = self._speed_mode
             self._explorer.start()
             self._explore_enabled = True
             self._explorer_follow_only = False
@@ -527,7 +532,8 @@ class MappingService:
     def update_settings(self, *, tick_hz: float | None = None,
                         force_run: bool | None = None,
                         manual_wall_distance: float | None = None,
-                        manual_wall_ratio: float | None = None) -> dict:
+                        manual_wall_ratio: float | None = None,
+                        speed_mode: str | None = None) -> dict:
         """Live-tune mapping speed knobs. Returns the new settings dict."""
         with self._lock:
             if tick_hz is not None:
@@ -539,6 +545,17 @@ class MappingService:
                         self._explorer.force_run = self._force_run
                     except Exception:
                         pass
+            if speed_mode is not None:
+                mode = str(speed_mode).strip().lower()
+                if mode not in ("walk", "fast", "run"):
+                    raise ValueError(
+                        f"speed_mode must be walk/fast/run, got {speed_mode!r}")
+                self._speed_mode = mode
+                if self._explorer is not None:
+                    try:
+                        self._explorer.speed_mode = mode
+                    except Exception:
+                        pass
             if manual_wall_distance is not None:
                 self.manual_wall_distance = max(
                     0.02, min(float(manual_wall_distance), 2.0))
@@ -548,6 +565,7 @@ class MappingService:
             return {
                 "tick_hz": self._tick_hz,
                 "force_run": self._force_run,
+                "speed_mode": self._speed_mode,
                 "manual_wall_distance": self.manual_wall_distance,
                 "manual_wall_ratio": self.manual_wall_ratio,
             }
@@ -691,6 +709,7 @@ class MappingService:
             self._explorer = VoxelExplorer(self._nav, self._osc,
                                             learning_mode=True)
             self._explorer.force_run = self._force_run
+            self._explorer.speed_mode = self._speed_mode
             logger.info("mapping: explorer created for path-follow")
 
     def _autostart_for_nav(self, timeout: float = 4.0) -> str:

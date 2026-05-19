@@ -76,6 +76,11 @@ class VoxelExplorer:
         self.osc = osc
         self.learning_mode = learning_mode
         self.force_run = False
+        # movement speed mode: "walk" (half speed, no sprint),
+        # "fast" (full vertical, no sprint, default normal walk),
+        # "run" (full vertical + sprint). default fast so the AI moves
+        # at normal walk speed instead of the old proportional crawl.
+        self.speed_mode: str = "fast"
         # path-follow mode (used by drive-to-waypoint).
         # when active we step through _path_queue instead of asking the
         # nav manager for new exploration targets.
@@ -345,7 +350,20 @@ class VoxelExplorer:
         else:
             forward = 0.0
 
-        run = mag >= 2.0 or bool(getattr(self, "force_run", False))
+        # apply the speed mode. walk caps forward, fast/run dont.
+        mode = (self.speed_mode or "fast").lower()
+        if mode == "walk":
+            forward = min(forward, 0.5)
+            run = False
+        elif mode == "run":
+            # boost forward to full so were actually sprinting
+            if forward > 0.0:
+                forward = max(forward, 1.0)
+            run = True
+        else:  # "fast" (default)
+            if forward > 0.0:
+                forward = max(forward, 0.9)
+            run = mag >= 2.0 or bool(getattr(self, "force_run", False))
         self._send_osc(forward, turn, run=run)
 
         # --- eCount bookkeeping (reference WalkToTarget tail) ----------------

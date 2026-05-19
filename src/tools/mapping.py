@@ -98,6 +98,28 @@ class MappingTools(BaseTool):
                 ),
                 parameters={"type": "OBJECT", "properties": {}},
             ),
+            types.FunctionDeclaration(
+                name="setMoveSpeed",
+                description=(
+                    "Change how fast you walk along pathfinding routes. "
+                    "Choose 'walk' for half speed (sneaking around), "
+                    "'fast' for normal full walk speed (default), or "
+                    "'run' to sprint everywhere. Persists until changed.\n"
+                    "**Invocation Condition:** Call when asked to walk "
+                    "slower, faster, run, sprint, or sneak."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "mode": {
+                            "type": "STRING",
+                            "description": "One of: walk, fast, run.",
+                            "enum": ["walk", "fast", "run"],
+                        },
+                    },
+                    "required": ["mode"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -155,5 +177,16 @@ class MappingTools(BaseTool):
         if name == "cancelWalk":
             ms.cancel_goto()
             return {"result": "ok"}
+
+        if name == "setMoveSpeed":
+            mode = (args.get("mode") or "").strip().lower()
+            if mode not in ("walk", "fast", "run"):
+                return {"result": "error",
+                        "message": "mode must be walk, fast, or run"}
+            try:
+                st = ms.update_settings(speed_mode=mode)
+            except Exception as e:
+                return {"result": "error", "message": str(e)}
+            return {"result": "ok", "speed_mode": st.get("speed_mode", mode)}
 
         return None
