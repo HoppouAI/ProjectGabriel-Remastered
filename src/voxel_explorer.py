@@ -350,19 +350,16 @@ class VoxelExplorer:
         else:
             forward = 0.0
 
-        # apply the speed mode. walk caps forward, fast/run dont.
+        # speed mode controls Run (sprint) + walk-mode dampener. we keep
+        # the proportional forward scaling so the avatar doesnt overshoot
+        # short single-cell hops and spin around to recover.
         mode = (self.speed_mode or "fast").lower()
         if mode == "walk":
-            forward = min(forward, 0.5)
+            forward = forward * 0.5
             run = False
         elif mode == "run":
-            # boost forward to full so were actually sprinting
-            if forward > 0.0:
-                forward = max(forward, 1.0)
             run = True
         else:  # "fast" (default)
-            if forward > 0.0:
-                forward = max(forward, 0.9)
             run = mag >= 2.0 or bool(getattr(self, "force_run", False))
         self._send_osc(forward, turn, run=run)
 
