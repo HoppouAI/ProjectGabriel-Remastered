@@ -496,23 +496,19 @@ class VoxelExplorer:
 
     def _advance_follow_queue(self, current_serial: Serial) -> bool:
         """Pop cells off the follow queue until we find one we should actually
-        drive toward. Skips cells we're already in (same XZ column), and
-        cells that are too high above us to climb (likely a wall, not a
-        step). Sets state.target and returns True on success, False if the
-        queue is exhausted."""
+        drive toward. Skips cells we're already in (same XZ column).
+        Sets state.target and returns True on success, False if the queue
+        is exhausted.
+
+        We used to also skip cells more than FOLLOW_MAX_CLIMB above us, but
+        that ate entire upstairs/elevator paths. now if a cell is bogus
+        we let _give_up_target catch it via eCount and replan instead."""
         s = self.state
         while self._path_queue:
             nxt = self._path_queue.pop(0)
             same_col = (current_serial[0] == nxt[0]
                         and current_serial[2] == nxt[2])
             if same_col or self.nav.bar_check(current_serial, nxt):
-                continue
-            # too high to climb? skip it. dont skip downward steps because
-            # falling is fine.
-            if nxt[1] - current_serial[1] > self.FOLLOW_MAX_CLIMB:
-                logger.info("voxel_explorer: skipping follow cell %s "
-                            "(too high above current %s)",
-                            nxt, current_serial)
                 continue
             s.target = nxt
             s.target_source = current_serial
