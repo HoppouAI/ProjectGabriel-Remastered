@@ -826,18 +826,20 @@ class MappingService:
         """A* preview from current pose to goal world coords. Snaps both
         endpoints onto the nearest Reachable cell, but only if one is
         actually within snap range -- otherwise we'd silently pick some
-        random cell across the map and 'pathfind' to there."""
+        random cell across the map and 'pathfind' to there.
+        If the closest start cell cant reach the goal (player standing on
+        an isolated little island of reachable cells, or technically off
+        the green grid), we fall back to the next-nearest reachable cells
+        within 8m and try those too."""
         if self._last_pose is None:
             return {"found": False, "reason": "no current pose"}
-        # snap radius: 4m for start (we're standing IN the cell so it
-        # should be very close), tight 2.5m for goal -- a wider radius can
-        # snap to a cell on the other side of a wall when the saved
-        # waypoint sits near a doorway, which makes A* path through walls.
-        start_node = self._nav.graph.find_closest(
+        # gather up to 12 candidate start cells within 8m so we have some
+        # backups if the literal closest one is stranded.
+        starts = self._nav.graph.find_nearest_reachable(
             self._last_pose.x, self._last_pose.y, self._last_pose.z,
-            max_distance=4.0,
+            max_distance=8.0, k=12,
         )
-        if start_node is None:
+        if not starts:
             return {"found": False,
                     "reason": "your current position isnt on the map yet, "
                               "walk around to map this area first"}
@@ -847,19 +849,31 @@ class MappingService:
             return {"found": False,
                     "reason": "no mapped reachable cell near the goal -- "
                               "the waypoint is in an unmapped area"}
-        result: VoxelPathResult = find_path_astar(
-            self._nav.graph, start_node.serial, goal_node.serial,
-        )
-        if not result.found:
+        # try each start in order. first one that yields a path wins. this
+        # is cheap because A* short-circuits on the empty open set when
+        # the start cant reach the goal.
+        chosen_start = None
+        result: VoxelPathResult | None = None
+        for cand in starts:
+            r = find_path_astar(self._nav.graph, cand.serial, goal_node.serial)
+            if r.found:
+                chosen_start = cand
+                result = r
+                break
+        if result is None or chosen_start is None:
             return {"found": False, "reason": "no path"}
         return {
             "found": True,
-            "start": list(start_node.serial),
+            "start": list(chosen_start.serial),
             "goal": list(goal_node.serial),
             "full": [list(s) for s in result.full_serials],
             "filtered": [list(s) for s in result.serials],
             "cost": result.cost,
             "expanded": result.nodes_expanded,
+            "start_snap_distance": math.sqrt(
+                (serial_to_center(chosen_start.serial)[0] - self._last_pose.x) ** 2
+                + (serial_to_center(chosen_start.serial)[2] - self._last_pose.z) ** 2
+            ),
         }
 
     def pathfind_to_waypoint(self, name: str) -> dict:

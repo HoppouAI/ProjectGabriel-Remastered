@@ -133,6 +133,27 @@ class Graph:
                     best = node
         return best
 
+    def find_nearest_reachable(self, x: float, y: float, z: float,
+                                max_distance: float, k: int = 12,
+                                ) -> list[Node]:
+        """Return up to k nearest REACHABLE nodes within max_distance,
+        sorted by distance. Used as fallback start candidates when the
+        closest cell to the player turns out to be in an isolated little
+        island that cant reach the actual goal."""
+        limit_sq = max_distance * max_distance
+        cands: list[tuple[float, Node]] = []
+        with self._lock:
+            for node in self._nodes.values():
+                if node.node_type != NodeType.REACHABLE:
+                    continue
+                cx, cy, cz = serial_to_center(node.serial)
+                dx = cx - x; dy = cy - y; dz = cz - z
+                d = dx*dx + dy*dy + dz*dz
+                if d <= limit_sq:
+                    cands.append((d, node))
+        cands.sort(key=lambda t: t[0])
+        return [n for _, n in cands[:k]]
+
     def to_dict(self) -> dict:
         with self._lock:
             return {
