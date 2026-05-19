@@ -435,6 +435,9 @@ class MappingService:
     def add_waypoint(self, name: str, note: str = "") -> dict:
         if not name or not name.strip():
             raise ValueError("waypoint name required")
+        err = self._autostart_for_nav()
+        if err:
+            raise RuntimeError(err)
         if self._last_pose is None:
             raise RuntimeError("no current pose -- start mapping first")
         self._ensure_waypoints(self._world_id)
@@ -685,9 +688,35 @@ class MappingService:
                 self._explorer_follow_only = True
             logger.info("mapping: explorer spun up for path-follow")
 
+    def _autostart_for_nav(self, timeout: float = 4.0) -> str:
+        """Auto-start the mapping service if its not running yet, so the AI
+        can call gotoWaypoint / saveWaypoint without anyone having to click
+        Start Mapping in the WebUI first. Returns empty string on success,
+        or an error message describing what blew up."""
+        if self._running and self._last_pose is not None:
+            return ""
+        if not self._running:
+            logger.info("mapping: auto-starting for nav request")
+            state = self.start(explore=False)
+            if not state.get("running"):
+                err = state.get("error") or self._last_error \
+                    or "could not auto-start mapping"
+                return err
+        # tick thread populates _last_pose at ~20Hz once the reader has a
+        # frame. wait briefly so callers dont get a stale "no current pose".
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._last_pose is not None:
+                return ""
+            time.sleep(0.05)
+        return "no pose yet, is VRChat focused with the shader on?"
+
     def goto_xyz(self, gx: float, gy: float, gz: float,
                  *, label: str = "") -> dict:
         """A* from current pose to (gx,gy,gz), then drive there via OSC."""
+        err = self._autostart_for_nav()
+        if err:
+            return {"found": False, "reason": err}
         with self._lock:
             preview = self.pathfind_to(gx, gy, gz)
             if not preview.get("found"):
