@@ -322,6 +322,11 @@ class VoxelNavManager:
         # cells past this many voxels from current count as a teleport
         # and need confirmation. ~2m at the 0.25m grid.
         self._jump_threshold: int = 8
+        # track last grounded state so a jump (false -> true transition)
+        # forces us to drop _current/_previous before processing the
+        # landing pose. otherwise interpolate would paint a trail from
+        # takeoff to landing through wherever the jump arc went.
+        self._last_grounded: bool = True
 
     # --- world lifecycle ---------------------------------------------------
     def load_world(self, world_id: str) -> None:
@@ -332,6 +337,7 @@ class VoxelNavManager:
             self._world_id = world_id
             self._current = None
             self._previous = None
+            self._last_grounded = True
             path = self._data_dir / f"{world_id}.json"
             if path.exists():
                 try:
@@ -367,6 +373,16 @@ class VoxelNavManager:
         """
         serial = world_to_serial(x, y, z)
         with self._lock:
+            # if we just landed (was airborne, now grounded), wipe the trail
+            # tracker so the landing cell becomes a fresh anchor instead of
+            # getting connected back to the takeoff cell with a fake walk
+            # segment.
+            if grounded and not self._last_grounded:
+                self._current = None
+                self._previous = None
+                self._pending_cell = None
+                self._pending_count = 0
+            self._last_grounded = grounded
             # teleport / glitch guard: if we jumped way too far in one tick,
             # demand the same cell show up again before we commit it. this
             # kills the random floating green cubes from pose decoder hiccups.
