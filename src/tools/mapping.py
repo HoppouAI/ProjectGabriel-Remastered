@@ -114,8 +114,13 @@ class MappingTools(BaseTool):
                 wp = ms.add_waypoint(wp_name, note=note)
             except Exception as e:
                 return {"result": "error", "message": str(e)}
+            # ms.add_waypoint returns a dict (already serialized)
             return {"result": "ok", "waypoint": {
-                "name": wp.name, "x": wp.x, "y": wp.y, "z": wp.z, "note": wp.note,
+                "name": wp.get("name"),
+                "x": wp.get("x"),
+                "y": wp.get("y"),
+                "z": wp.get("z"),
+                "note": wp.get("note", ""),
             }}
 
         if name == "gotoWaypoint":
