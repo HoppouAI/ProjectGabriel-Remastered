@@ -91,6 +91,7 @@ export default function Mapping({ onToast }: Props) {
     player?: THREE.Mesh
     target?: THREE.Mesh
     plane?: THREE.Mesh
+    grid?: THREE.GridHelper
     raycaster?: THREE.Raycaster
     firstPose?: boolean
     dispose?: () => void
@@ -200,7 +201,7 @@ export default function Mapping({ onToast }: Props) {
     sceneRefs.current = {
       renderer, scene, camera, controls,
       meshReach, meshWall, meshIffy, pathLine,
-      player, target, plane,
+      player, target, plane, grid,
       raycaster: new THREE.Raycaster(),
       firstPose: false,
     }
@@ -240,6 +241,15 @@ export default function Mapping({ onToast }: Props) {
           refs.player.visible = true
           refs.player.position.set(s.pose.x, s.pose.y + 0.5, s.pose.z)
           refs.player.rotation.y = -s.pose.yaw * Math.PI / 180
+          // keep the floor grid centered on the player so it stays a
+          // useful reference when the map is far from world origin.
+          if (refs.grid) {
+            refs.grid.position.set(
+              Math.round(s.pose.x),
+              s.pose.y - 0.01,
+              Math.round(s.pose.z),
+            )
+          }
           if (!refs.firstPose && refs.camera && refs.controls) {
             refs.firstPose = true
             refs.controls.target.set(s.pose.x, s.pose.y, s.pose.z)
@@ -823,6 +833,30 @@ export default function Mapping({ onToast }: Props) {
         <Legend color="#a78bfa" label="path" />
       </div>
 
+      {/* contextual chips, float above the bar so they dont resize it */}
+      <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+        {editMode && (
+          <span className="pointer-events-auto px-2.5 py-1 rounded-md bg-surface/85 backdrop-blur-xl border border-white/10 text-[11px] text-text-muted whitespace-nowrap">
+            click=single, shift+drag=bulk
+          </span>
+        )}
+        {path?.found && (
+          <span className="pointer-events-auto px-2.5 py-1 rounded-md bg-surface/85 backdrop-blur-xl border border-white/10 text-[11px] text-text-muted whitespace-nowrap">
+            {path.full?.length ?? 0} cells, {path.filtered?.length ?? 0} turns
+          </span>
+        )}
+        {state?.follow?.active && (
+          <button
+            onClick={cancelGoto}
+            className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-rose/15 text-rose hover:bg-rose/25 border border-rose/20 transition whitespace-nowrap"
+            title="Cancel walk"
+          >
+            <TbPlayerStop size={14} /> Cancel Walk
+            <span className="text-[11px] opacity-70">({state.follow.remaining})</span>
+          </button>
+        )}
+      </div>
+
       {/* bottom control bar */}
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-surface/85 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-lg">
         {!state?.running ? (
@@ -830,14 +864,14 @@ export default function Mapping({ onToast }: Props) {
             <button
               disabled={busy}
               onClick={() => start(false)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-mint/10 text-mint hover:bg-mint/20 disabled:opacity-40 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-mint/10 text-mint hover:bg-mint/20 disabled:opacity-40 transition whitespace-nowrap"
             >
               <TbPlayerPlay size={14} /> Start Mapping
             </button>
             <button
               disabled={busy}
               onClick={() => start(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-40 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-40 transition whitespace-nowrap"
             >
               <TbRobot size={14} /> Start + Explore
             </button>
@@ -847,14 +881,14 @@ export default function Mapping({ onToast }: Props) {
             <button
               disabled={busy}
               onClick={stop}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-rose/10 text-rose hover:bg-rose/20 disabled:opacity-40 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-rose/10 text-rose hover:bg-rose/20 disabled:opacity-40 transition whitespace-nowrap"
             >
               <TbPlayerStop size={14} /> Stop
             </button>
             <button
               disabled={busy}
               onClick={toggleExplore}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition whitespace-nowrap ${
                 state.explore
                   ? 'bg-accent/20 text-accent hover:bg-accent/30'
                   : 'bg-white/5 text-text-muted hover:bg-white/10'
@@ -866,7 +900,7 @@ export default function Mapping({ onToast }: Props) {
               disabled={busy}
               onClick={toggleManual}
               title="You drive, we listen to the forward raycast and tag walls in front of you."
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition whitespace-nowrap ${
                 state.manual
                   ? 'bg-mint/20 text-mint hover:bg-mint/30'
                   : 'bg-white/5 text-text-muted hover:bg-white/10'
@@ -888,46 +922,37 @@ export default function Mapping({ onToast }: Props) {
               setBulkMenu(null)
             }
           }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${
+          title={pickEnabled ? 'Click a cell to pathfind to it' : 'Toggle pathfind picker'}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition whitespace-nowrap ${
             pickEnabled
               ? 'bg-violet-500/20 text-violet-300 hover:bg-violet-500/30'
               : 'bg-white/5 text-text-muted hover:bg-white/10'
           }`}
         >
-          <TbCrosshair size={14} /> {pickEnabled ? 'Click to pathfind' : 'Pathfind'}
+          <TbCrosshair size={14} /> Pathfind
         </button>
         <button
           onClick={() => { setEditMode(m => !m); setEditMenu(null); setBulkMenu(null); if (!editMode) setPickEnabled(false) }}
           title="Click an existing cell to change its type or delete it. Shift+drag to bulk-select cells. Clicks on empty space are ignored."
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition whitespace-nowrap ${
             editMode
               ? 'bg-orange-500/20 text-orange-300 hover:bg-orange-500/30'
               : 'bg-white/5 text-text-muted hover:bg-white/10'
           }`}
         >
-          <TbEdit size={14} /> {editMode ? 'Editing cells' : 'Edit Cells'}
+          <TbEdit size={14} /> Edit
         </button>
-        {editMode && (
-          <span className="text-[11px] text-text-muted/70 ml-1">
-            click=single, shift+drag=bulk
-          </span>
-        )}
-        {path?.found && (
-          <span className="text-[11px] text-text-muted ml-1">
-            {path.full?.length ?? 0} cells, {path.filtered?.length ?? 0} turns
-          </span>
-        )}
         <div className="w-px h-5 bg-white/10 mx-1" />
         <button
           onClick={() => setShowSettings(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition ${showSettings ? 'bg-accent/20 text-accent' : 'bg-white/5 text-text-muted hover:bg-white/10'}`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition whitespace-nowrap ${showSettings ? 'bg-accent/20 text-accent' : 'bg-white/5 text-text-muted hover:bg-white/10'}`}
           title="Mapping settings"
         >
           <TbSettings size={14} /> Settings
         </button>
         <button
           onClick={openWorlds}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-white/5 text-text-muted hover:bg-white/10 transition"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-white/5 text-text-muted hover:bg-white/10 transition whitespace-nowrap"
           title="Saved maps"
         >
           <TbDatabase size={14} /> Saved Maps
@@ -935,21 +960,11 @@ export default function Mapping({ onToast }: Props) {
         <button
           onClick={cleanupStrays}
           disabled={busy}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-white/5 text-text-muted hover:bg-white/10 transition disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-white/5 text-text-muted hover:bg-white/10 transition disabled:opacity-50 whitespace-nowrap"
           title="Delete tiny floating voxel islands (keeps main map + waypoints + your cell)"
         >
           <TbSparkles size={14} /> Clean Strays
         </button>
-        {state?.follow?.active && (
-          <button
-            onClick={cancelGoto}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-rose/15 text-rose hover:bg-rose/25 transition"
-            title="Cancel walk"
-          >
-            <TbPlayerStop size={14} /> Cancel Walk
-            <span className="text-[11px] opacity-70">({state.follow.remaining})</span>
-          </button>
-        )}
       </div>
 
       {/* settings panel (expandable) */}
