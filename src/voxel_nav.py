@@ -444,6 +444,20 @@ class VoxelNavManager:
                 node.node_type = NodeType.UNREACHABLE
             self._dirty = True
 
+    def mark_iffy(self, serial: Serial) -> None:
+        """reference NodeManager.MarkIffy: demote a cell to Iffy so future
+        A* runs route around it, without commiting to a full wall mark.
+        Used when the explorer gets stuck mid-follow but the cell might
+        still be reachable from a different angle."""
+        with self._lock:
+            node = self.graph.get(serial)
+            if node is None:
+                node = Node(serial=serial, node_type=NodeType.IFFY)
+                self.graph.add_node(node)
+            elif node.node_type == NodeType.REACHABLE:
+                node.node_type = NodeType.IFFY
+            self._dirty = True
+
     def set_cell_type(self, serial: Serial, node_type: NodeType) -> Node:
         """Manual override for the WebUI editor. Creates the node if it
         doesnt exist, otherwise just flips its type."""

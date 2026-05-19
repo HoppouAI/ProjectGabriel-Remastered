@@ -1,9 +1,9 @@
 ﻿"""reference-style trail explorer.
 
-This is the python port of VRCAI's Wander.WalkToTarget + NodeManager
-discovery target loop, swapping the reference depth camera for our pose strip
-and using direct OSC inputs (`/input/Vertical`, `/input/LookHorizontal`)
-to drive the avatar.
+Python port of the reference walk-to-target + discovery target loop,
+swapping the reference depth camera for our pose strip and using direct
+OSC inputs (`/input/Vertical`, `/input/LookHorizontal`) to drive the
+avatar.
 
 Behavior (matches exactly):
     1. If no target: pick the cardinal cell in front of current Reachable
@@ -82,6 +82,12 @@ class VoxelExplorer:
         self._path_queue: list[Serial] = []
         self._follow_active: bool = False
         self._follow_label: str = ""
+        # original goal cell for the active follow. used to replan when
+        # we get stuck mid-route, demoting the failed cell to Iffy and
+        # re-routing around it.
+        self._follow_goal: Optional[Serial] = None
+        self._follow_replans: int = 0
+        self._follow_replan_limit: int = 4
         self.state = ExplorerState()
         self._active = False
         self._last_send_forward = 0.0
@@ -128,6 +134,9 @@ class VoxelExplorer:
             self._path_queue = list(serials)
             self._follow_active = True
             self._follow_label = label or ""
+            # last cell of the queue is treated as the goal for replans
+            self._follow_goal = serials[-1] if serials else None
+            self._follow_replans = 0
             s = self.state
             s.target = None
             s.target_source = None
@@ -145,6 +154,8 @@ class VoxelExplorer:
                 return
             self._follow_active = False
             self._path_queue.clear()
+            self._follow_goal = None
+            self._follow_replans = 0
             self.state.target = None
             self._send_osc(0.0, 0.0, run=False)
             self.state.action = "follow_cancel"
@@ -206,6 +217,8 @@ class VoxelExplorer:
                         s.action = f"follow next ({len(self._path_queue)} left)"
                     else:
                         self._follow_active = False
+                        self._follow_goal = None
+                        self._follow_replans = 0
                         s.action = "follow_done"
                         logger.info("voxel_explorer: follow path complete (%s)",
                                     self._follow_label)
@@ -226,6 +239,8 @@ class VoxelExplorer:
                     s.action = f"follow next ({len(self._path_queue)} left)"
                 else:
                     self._follow_active = False
+                    self._follow_goal = None
+                    self._follow_replans = 0
                     self._send_osc(0.0, 0.0, run=False)
                     s.action = "follow_done"
                     self._last_pose = (pose_x, pose_z, fx, fz)
@@ -445,28 +460,68 @@ class VoxelExplorer:
 
     def _give_up_target(self, why: str) -> None:
         s = self.state
-        if s.target is not None and self.learning_mode:
-            # only mark a cell UnReachable if its actually adjacent to where
-            # the agent is right now. that way a "couldnt get there" on a
-            # distant check_stack pick doesnt drop a phantom wall across the
-            # map. for non-neighbor giveups we just abandon the target and
-            # let the next discovery pass try something else.
-            cur = self.nav.current
+        failed = s.target
+        cur = self.nav.current
+        if failed is not None and self.learning_mode:
             is_neighbor = (cur is not None
-                           and self.nav.is_pathable_neighbor(cur.serial, s.target))
-            if is_neighbor:
+                           and self.nav.is_pathable_neighbor(cur.serial, failed))
+            # follow mode + still have a goal to reach: just demote the
+            # blocked cell to Iffy so the replanner avoids it. dont commit
+            # to a full wall since it might be reachable from another angle.
+            if self._follow_active and self._follow_goal is not None:
+                if is_neighbor:
+                    logger.info("voxel_explorer: marking %s Iffy mid-follow "
+                                "(%s)", failed, why)
+                    self.nav.mark_iffy(failed)
+                else:
+                    logger.info("voxel_explorer: abandon distant follow cell "
+                                "%s (%s), no wall mark", failed, why)
+                    self._abandoned[failed] = time.monotonic() + self._abandon_ttl
+            elif is_neighbor:
                 logger.info("voxel_explorer: marking %s UnReachable (%s)",
-                            s.target, why)
-                self.nav.mark_unreachable(s.target)
+                            failed, why)
+                self.nav.mark_unreachable(failed)
             else:
                 logger.info("voxel_explorer: abandon distant target %s (%s) "
-                            "without wall mark", s.target, why)
-                self._abandoned[s.target] = time.monotonic() + self._abandon_ttl
+                            "without wall mark", failed, why)
+                self._abandoned[failed] = time.monotonic() + self._abandon_ttl
         s.target = None
         s.target_source = None
         s.e_count = 0.0
         s.last_distance = math.inf
         s.last_cell = None
+        # try to replan in follow mode rather than just blindly walking into
+        # the next queued cell (which is probably behind the same obstacle).
+        if (self._follow_active and self._follow_goal is not None
+                and cur is not None):
+            if self._follow_replans >= self._follow_replan_limit:
+                logger.warning("voxel_explorer: follow replan limit hit (%d), "
+                               "cancelling follow %r",
+                               self._follow_replan_limit, self._follow_label)
+                self._follow_active = False
+                self._path_queue.clear()
+                self._follow_goal = None
+                self._follow_replans = 0
+            else:
+                self._follow_replans += 1
+                pr = find_path_astar(self.nav.graph, cur.serial,
+                                     self._follow_goal)
+                if pr.found and len(pr.full_serials) > 1:
+                    self._path_queue = list(pr.full_serials[1:])
+                    s.last_progress_t = time.time()
+                    logger.info("voxel_explorer: follow replan #%d ok, "
+                                "%d cells to goal %s",
+                                self._follow_replans,
+                                len(self._path_queue), self._follow_goal)
+                else:
+                    logger.warning("voxel_explorer: follow replan #%d failed, "
+                                   "no path from %s to %s, cancelling",
+                                   self._follow_replans, cur.serial,
+                                   self._follow_goal)
+                    self._follow_active = False
+                    self._path_queue.clear()
+                    self._follow_goal = None
+                    self._follow_replans = 0
         self._send_osc(0.0, 0.0, run=False)
 
     def _send_osc(self, forward: float, turn: float, run: bool) -> None:

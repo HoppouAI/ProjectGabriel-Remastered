@@ -626,8 +626,9 @@ class MappingService:
         if self._last_pose is None:
             return {"found": False, "reason": "no current pose"}
         # snap radius: 4m for start (we're standing IN the cell so it
-        # should be very close), wider 6m for goal so a waypoint dropped
-        # a bit off a mapped corridor still snaps in.
+        # should be very close), tight 2.5m for goal -- a wider radius can
+        # snap to a cell on the other side of a wall when the saved
+        # waypoint sits near a doorway, which makes A* path through walls.
         start_node = self._nav.graph.find_closest(
             self._last_pose.x, self._last_pose.y, self._last_pose.z,
             max_distance=4.0,
@@ -637,7 +638,7 @@ class MappingService:
                     "reason": "your current position isnt on the map yet, "
                               "walk around to map this area first"}
         goal_node = self._nav.graph.find_closest(gx, gy, gz,
-                                                  max_distance=6.0)
+                                                  max_distance=2.5)
         if goal_node is None:
             return {"found": False,
                     "reason": "no mapped reachable cell near the goal -- "
