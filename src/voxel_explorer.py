@@ -92,6 +92,8 @@ class VoxelExplorer:
         # before going inactive (mirrors waypoint-mode in the ref impl).
         self._final_yaw_deg: Optional[float] = None
         self._aligning: bool = False
+        self._align_start_t: float = 0.0
+        self._align_timeout_s: float = 6.0
         self.state = ExplorerState()
         self._active = False
         self._last_send_forward = 0.0
@@ -195,10 +197,15 @@ class VoxelExplorer:
         # everything else so we dont accidentally pick a new target while
         # we still have a heading to settle on.
         if self._aligning:
-            if self._drive_final_yaw(pose_yaw_deg):
+            timed_out = (time.time() - self._align_start_t) > self._align_timeout_s
+            if timed_out:
+                logger.warning("voxel_explorer: align timeout, giving up at yaw=%.1f target=%.1f",
+                                pose_yaw_deg,
+                                self._final_yaw_deg if self._final_yaw_deg is not None else 0.0)
+            if timed_out or self._drive_final_yaw(pose_yaw_deg):
                 self._aligning = False
                 self._final_yaw_deg = None
-                s.action = "aligned"
+                s.action = "aligned" if not timed_out else "align_timeout"
                 self._send_osc(0.0, 0.0, run=False)
             return
 
@@ -245,6 +252,7 @@ class VoxelExplorer:
                         self._follow_replans = 0
                         if self._final_yaw_deg is not None:
                             self._aligning = True
+                            self._align_start_t = time.time()
                             s.action = "aligning"
                             logger.info("voxel_explorer: follow done, aligning to %.1fdeg",
                                         self._final_yaw_deg)
@@ -273,6 +281,7 @@ class VoxelExplorer:
                     self._follow_replans = 0
                     if self._final_yaw_deg is not None:
                         self._aligning = True
+                        self._align_start_t = time.time()
                         s.action = "aligning"
                         logger.info("voxel_explorer: follow done, aligning to %.1fdeg",
                                     self._final_yaw_deg)
@@ -573,7 +582,18 @@ class VoxelExplorer:
         # bigger floor than the old mapping-side aligner so vrchat actually
         # registers the turn at small angles. ramps up to 0.6 by ~45deg.
         mag = min(0.6, max(0.18, abs(delta) / 45.0))
-        self._send_osc(0.0, sign * mag, run=False)
+        # push lookhorizontal every tick (not just on change) so face tracker
+        # or other systems writing 0 to lookhorizontal cant strand us.
+        try:
+            c = self.osc.client
+            c.send_message("/input/Vertical", 0.0)
+            c.send_message("/input/LookHorizontal", float(sign * mag))
+            c.send_message("/input/Run", 0)
+            self._last_send_forward = 0.0
+            self._last_send_turn = sign * mag
+            self._last_send_run = False
+        except Exception:
+            logger.exception("voxel_explorer: align OSC send failed")
         return False
 
     def _send_osc(self, forward: float, turn: float, run: bool) -> None:
