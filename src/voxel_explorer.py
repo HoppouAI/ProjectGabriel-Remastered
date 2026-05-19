@@ -98,7 +98,7 @@ class VoxelExplorer:
         self._final_yaw_deg: Optional[float] = None
         self._aligning: bool = False
         self._align_start_t: float = 0.0
-        self._align_timeout_s: float = 6.0
+        self._align_timeout_s: float = 10.0
         self.state = ExplorerState()
         self._active = False
         self._last_send_forward = 0.0
