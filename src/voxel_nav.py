@@ -399,11 +399,13 @@ class VoxelNavManager:
                     self._dirty = True
             else:
                 node = existing
-                # reference impl: if we re-walk an UnReachable cell, demote to Iffy
-                if self.learning_mode and grounded \
-                        and node.node_type == NodeType.UNREACHABLE:
-                    node.node_type = NodeType.IFFY
-                    self._dirty = True
+                # NOTE: the reference impl demotes an UnReachable cell to Iffy
+                # whenever we walk through it. our pose decoder is noisier
+                # than theirs (single-frame Y blips on stairs/teleports
+                # can land "inside" a wall) so we leave walls alone here.
+                # if a wall really should not be a wall, the user can flip
+                # it in the editor or mark_iffy gets called explicitly by
+                # the explorer when it gives up on a target.
             if self._current is None or self._current.serial != serial:
                 self._previous = self._current
                 self._current = node

@@ -287,13 +287,68 @@ class MappingService:
     # ------------------------------------------------------------------
     # tick loop -- reads pose, feeds nav + explorer, persists periodically
     # ------------------------------------------------------------------
+    def _handle_world_change(self, new_world: str) -> None:
+        """Detected that VRChat moved us to a different world. Flush the
+        old map, swap in the new one, and reset all per-world state so we
+        dont observe the new pose into the old map (which creates a stray
+        voxel out in the void of the new map at the old coords)."""
+        with self._lock:
+            old = self._world_id
+            logger.info("mapping: world change %s -> %s, hot swapping",
+                        old, new_world)
+            # stop the explorer cold so it cant drive on a stale follow
+            # queue thats indexed against the old map.
+            if self._explorer is not None:
+                try:
+                    self._explorer.stop()
+                except Exception:
+                    logger.exception("mapping: explorer stop on world swap failed")
+                self._explorer = None
+            self._explore_enabled = False
+            self._explorer_follow_only = False
+            self._pending_align_yaw = None
+            # flush + load. load_world also clears nav._current/_previous.
+            try:
+                self._nav.load_world(new_world)
+            except Exception:
+                logger.exception("mapping: load_world failed during swap")
+            self._world_id = new_world
+            self._world_name = self._resolve_world_name()
+            self._ensure_waypoints(new_world)
+            # forget the last pose so the next tick doesnt paint the old
+            # coords into the new map.
+            self._last_pose = None
+            self._last_pose_t = 0.0
+            self._manual_wall_throttle.clear()
+            # zero movement just in case the avatar was mid-input.
+            try:
+                self._osc.client.send_message("/input/Vertical", 0.0)
+                self._osc.client.send_message("/input/Horizontal", 0.0)
+                self._osc.client.send_message("/input/LookHorizontal", 0.0)
+                self._osc.client.send_message("/input/Run", 0)
+            except Exception:
+                pass
+
     def _run(self) -> None:
         last_flush = time.time()
+        last_world_check = 0.0
         while not self._stop_evt.is_set():
             reader = self._reader
             if reader is None:
                 break
             try:
+                # check for VRChat world change ~every 2s. cheap, just a
+                # string compare against the instance monitor.
+                now_pre = time.time()
+                if now_pre - last_world_check >= 2.0:
+                    last_world_check = now_pre
+                    try:
+                        new_world = self._resolve_world_id()
+                        if new_world and new_world != self._world_id:
+                            self._handle_world_change(new_world)
+                            continue  # skip this tick, dont use stale pose
+                    except Exception:
+                        logger.exception("mapping: world change probe failed")
                 pose = reader.get()
                 if pose is not None and pose.timestamp != self._last_pose_t:
                     self._last_pose_t = pose.timestamp
