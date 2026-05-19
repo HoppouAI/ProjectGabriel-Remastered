@@ -149,6 +149,23 @@ class MappingTools(BaseTool):
             wp_name = (args.get("name") or "").strip()
             if not wp_name:
                 return {"result": "error", "message": "name required"}
+            # disengage anything else thats driving the avatar first --
+            # follower + wanderer both grab OSC inputs and would fight the
+            # path follower. they get reactivated only on explicit ask.
+            disengaged: list[str] = []
+            try:
+                if self.tracker is not None and self.tracker.active:
+                    self.tracker.stopfollow()
+                    disengaged.append("follow")
+            except Exception:
+                logger.exception("gotoWaypoint: stopfollow failed")
+            try:
+                wanderer = self.wanderer
+                if wanderer is not None and getattr(wanderer, "_active", False):
+                    wanderer.stop()
+                    disengaged.append("wander")
+            except Exception:
+                logger.exception("gotoWaypoint: wanderer stop failed")
             try:
                 r = ms.goto_waypoint(wp_name)
             except RuntimeError as e:
@@ -157,7 +174,8 @@ class MappingTools(BaseTool):
                 return {"result": "error", "message": r.get("reason", "no path")}
             return {"result": "ok", "driving": True,
                     "cells": len(r.get("full") or []),
-                    "turns": len(r.get("filtered") or [])}
+                    "turns": len(r.get("filtered") or []),
+                    "disengaged": disengaged}
 
         if name == "listWaypoints":
             try:
