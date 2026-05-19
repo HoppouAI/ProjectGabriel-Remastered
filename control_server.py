@@ -1078,6 +1078,24 @@ async def mapping_delete_world(world: str | None = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class CleanupStraysIn(BaseModel):
+    min_component_size: int = 8
+    dry_run: bool = False
+
+
+@app.post("/api/mapping/cleanup_strays")
+async def mapping_cleanup_strays(payload: CleanupStraysIn):
+    """Nuke tiny floating voxel islands (pose noise / teleport artifacts).
+    Always keeps the largest component plus any with a waypoint or the
+    avatars current cell. Set dry_run=true to preview."""
+    ms = _get_mapping()
+    return await asyncio.to_thread(
+        ms.cleanup_strays,
+        min_component_size=int(payload.min_component_size),
+        dry_run=bool(payload.dry_run),
+    )
+
+
 # --- WebSocket ---
 
 @app.websocket("/ws")

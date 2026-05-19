@@ -527,6 +527,129 @@ class MappingService:
                 "total": len(cells)}
 
     # ------------------------------------------------------------------
+    # stray voxel cleanup
+    # ------------------------------------------------------------------
+    def cleanup_strays(self, *, min_component_size: int = 8,
+                        dry_run: bool = False) -> dict:
+        """Find connected components in the voxel graph and delete the tiny
+        floating ones. Uses 26-connectivity so cells diagonally touching
+        each other (eg stairs) count as connected.
+
+        The biggest component is always kept (thats your main map). Any
+        component with a waypoint or the avatars current cell is also
+        kept regardless of size. Everything else gets nuked if its
+        smaller than min_component_size.
+        """
+        with self._lock:
+            # snapshot serials so we dont hold the graph lock while BFSing
+            with self._nav.graph._lock:  # noqa: SLF001
+                serials = set(self._nav.graph.nodes.keys())
+            total_cells = len(serials)
+            if total_cells == 0:
+                return {"result": "ok", "components_total": 0,
+                        "components_removed": 0, "cells_removed": 0,
+                        "cells_kept": 0, "kept_due_to_waypoint": 0,
+                        "kept_due_to_avatar": 0, "largest_component": 0,
+                        "dry_run": bool(dry_run),
+                        "min_component_size": int(min_component_size)}
+
+            # 26-neighborhood (all dx,dy,dz in -1..1 except origin)
+            neighbor_offsets = [
+                (dx, dy, dz)
+                for dx in (-1, 0, 1)
+                for dy in (-1, 0, 1)
+                for dz in (-1, 0, 1)
+                if not (dx == 0 and dy == 0 and dz == 0)
+            ]
+
+            # BFS connected components
+            unseen = set(serials)
+            components: list[set[tuple[int, int, int]]] = []
+            while unseen:
+                start = next(iter(unseen))
+                comp: set[tuple[int, int, int]] = set()
+                stack = [start]
+                while stack:
+                    s = stack.pop()
+                    if s in comp:
+                        continue
+                    comp.add(s)
+                    unseen.discard(s)
+                    sx, sy, sz = s
+                    for dx, dy, dz in neighbor_offsets:
+                        n = (sx + dx, sy + dy, sz + dz)
+                        if n in unseen:
+                            stack.append(n)
+                components.append(comp)
+
+            largest_size = max(len(c) for c in components) if components else 0
+
+            # protected cells: waypoints + avatar
+            protected_serials: set[tuple[int, int, int]] = set()
+            wp_serials: set[tuple[int, int, int]] = set()
+            if self._waypoints is not None:
+                for wp in self._waypoints.list():
+                    try:
+                        from src.voxel_nav import world_to_serial as _w2s
+                        wp_serials.add(_w2s(wp.x, wp.y, wp.z))
+                    except Exception:
+                        pass
+            protected_serials.update(wp_serials)
+            avatar_serial: Optional[tuple[int, int, int]] = None
+            if self._last_pose is not None:
+                try:
+                    from src.voxel_nav import world_to_serial as _w2s
+                    avatar_serial = _w2s(self._last_pose.x,
+                                          self._last_pose.y,
+                                          self._last_pose.z)
+                    protected_serials.add(avatar_serial)
+                except Exception:
+                    pass
+
+            to_remove: list[tuple[int, int, int]] = []
+            removed_components = 0
+            kept_due_to_waypoint = 0
+            kept_due_to_avatar = 0
+            for comp in components:
+                if len(comp) >= max(1, int(min_component_size)):
+                    continue
+                if len(comp) == largest_size:
+                    continue  # always keep the main map
+                # protection checks
+                if avatar_serial is not None and avatar_serial in comp:
+                    kept_due_to_avatar += 1
+                    continue
+                if comp & wp_serials:
+                    kept_due_to_waypoint += 1
+                    continue
+                to_remove.extend(comp)
+                removed_components += 1
+
+            if not dry_run and to_remove:
+                for s in to_remove:
+                    self._nav.delete_cell(s)
+                self._nav.flush()
+
+            logger.info("mapping: cleanup_strays components=%d removed=%d cells_removed=%d "
+                        "kept_wp=%d kept_avatar=%d largest=%d min_size=%d dry_run=%s",
+                        len(components), removed_components, len(to_remove),
+                        kept_due_to_waypoint, kept_due_to_avatar,
+                        largest_size, min_component_size, dry_run)
+
+            return {
+                "result": "ok",
+                "components_total": len(components),
+                "components_removed": removed_components,
+                "cells_removed": len(to_remove),
+                "cells_kept": total_cells - (0 if dry_run else len(to_remove)),
+                "kept_due_to_waypoint": kept_due_to_waypoint,
+                "kept_due_to_avatar": kept_due_to_avatar,
+                "largest_component": largest_size,
+                "min_component_size": int(min_component_size),
+                "dry_run": bool(dry_run),
+            }
+
+    # ------------------------------------------------------------------
     # world management (list / delete saved maps)
     # ------------------------------------------------------------------
     def update_settings(self, *, tick_hz: float | None = None,

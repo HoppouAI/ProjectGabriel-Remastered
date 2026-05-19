@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { TbPlayerPlay, TbPlayerStop, TbRobot, TbCrosshair, TbAlertTriangle, TbTrash, TbDatabase, TbSettings, TbRun, TbEdit } from 'react-icons/tb'
+import { TbPlayerPlay, TbPlayerStop, TbRobot, TbCrosshair, TbAlertTriangle, TbTrash, TbDatabase, TbSettings, TbRun, TbEdit, TbSparkles } from 'react-icons/tb'
 import { api } from '../lib/api'
 
 interface Pose { x: number; y: number; z: number; yaw: number }
@@ -581,8 +581,37 @@ export default function Mapping({ onToast }: Props) {
     }
   }
 
-  const deleteWorld = async (worldId: string, isCurrent: boolean) => {
-    const label = isCurrent ? 'CURRENT' : worldId
+  const cleanupStrays = async () => {
+    // dry run first so we can tell the user what would happen
+    let preview: any
+    try {
+      preview = await api('/api/mapping/cleanup_strays', 'POST', { min_component_size: 8, dry_run: true })
+    } catch (err) {
+      onToast(`cleanup preview: ${(err as Error).message}`, 'error')
+      return
+    }
+    const wouldRemove = preview?.cells_removed ?? 0
+    const comps = preview?.components_removed ?? 0
+    if (wouldRemove <= 0) {
+      onToast('no stray voxels found', 'success')
+      return
+    }
+    const msg = `Found ${wouldRemove} stray voxels across ${comps} floating islands.\n\n` +
+                `Keeping the main map (${preview?.largest_component ?? 0} cells) + anything near a waypoint or your current cell.\n\n` +
+                `Delete them?`
+    if (!confirm(msg)) return
+    setBusy(true)
+    try {
+      const r: any = await api('/api/mapping/cleanup_strays', 'POST', { min_component_size: 8, dry_run: false })
+      onToast(`removed ${r?.cells_removed ?? 0} stray voxels`, 'success')
+      // refresh the world cells so the viewer drops them
+      refreshWorld()
+    } catch (err) {
+      onToast((err as Error).message, 'error')
+    } finally { setBusy(false) }
+  }
+
+  const deleteWorld = async (worldId: string, isCurrent: boolean) => {    const label = isCurrent ? 'CURRENT' : worldId
     if (!confirm(`Delete saved map for "${label}"?\n\nThis cant be undone.`)) return
     setBusy(true)
     try {
@@ -902,6 +931,14 @@ export default function Mapping({ onToast }: Props) {
           title="Saved maps"
         >
           <TbDatabase size={14} /> Saved Maps
+        </button>
+        <button
+          onClick={cleanupStrays}
+          disabled={busy}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-white/5 text-text-muted hover:bg-white/10 transition disabled:opacity-50"
+          title="Delete tiny floating voxel islands (keeps main map + waypoints + your cell)"
+        >
+          <TbSparkles size={14} /> Clean Strays
         </button>
         {state?.follow?.active && (
           <button
