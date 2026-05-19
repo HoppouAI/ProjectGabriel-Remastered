@@ -428,6 +428,11 @@ class MappingService:
     # waypoints
     # ------------------------------------------------------------------
     def list_waypoints(self) -> list[dict]:
+        # auto-start so we resolve the actual current world id, otherwise
+        # we'd list waypoints from whatever world was last loaded (or the
+        # default) which gives the AI an empty list and it tells the user
+        # there are no saved spots even when there are.
+        self._autostart_for_nav()
         self._ensure_waypoints(self._world_id)
         with self._lock:
             return [w.to_dict() for w in self._waypoints.list()]
@@ -735,6 +740,11 @@ class MappingService:
             return preview
 
     def goto_waypoint(self, name: str) -> dict:
+        # autostart up front so the world id (and thus the waypoint store)
+        # points at the real world, not the default placeholder.
+        err = self._autostart_for_nav()
+        if err:
+            return {"found": False, "reason": err}
         self._ensure_waypoints(self._world_id)
         wp = self._waypoints.get(name)
         if wp is None:
