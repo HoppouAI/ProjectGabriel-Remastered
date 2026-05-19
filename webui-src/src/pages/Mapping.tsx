@@ -240,7 +240,11 @@ export default function Mapping({ onToast }: Props) {
         if (refs.player && s.pose) {
           refs.player.visible = true
           refs.player.position.set(s.pose.x, s.pose.y + 0.5, s.pose.z)
-          refs.player.rotation.y = -s.pose.yaw * Math.PI / 180
+          // unity yaw is atan2(forward.x, forward.z) in a left handed space.
+          // we plug unity x/z straight into three.js (right handed), so the
+          // Y rotation reads positive, not negated. cone geometry was
+          // pre-rotated so its tip points along +Z at yaw=0.
+          refs.player.rotation.y = s.pose.yaw * Math.PI / 180
           if (!refs.firstPose && refs.camera && refs.controls) {
             refs.firstPose = true
             refs.controls.target.set(s.pose.x, s.pose.y, s.pose.z)
