@@ -194,6 +194,7 @@ data/social_token.json
 data/vrcx_id.txt
 data/*.wav
 data/voxel_nav/
+data/waypoints/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
