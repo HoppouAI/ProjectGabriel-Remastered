@@ -1,19 +1,40 @@
 # Unity Editor Scripts
 
-Two editor-only one-click builders under **Tools > ProjectGabriel** in
-the menu bar:
+Three editor-only entry points under **Tools > ProjectGabriel** in the
+menu bar:
 
-| Menu item                  | Script                          | What it builds                                    |
-|----------------------------|---------------------------------|---------------------------------------------------|
-| Build Pose HUD             | `GabrielPoseHudBuilder.cs`      | Screen-space pose strip prefab (bottom-left)      |
-| Build Sensor Rig           | `GabrielSensorRigBuilder.cs`    | VRCRaycast sensor rig prefab + params asset       |
+| Menu item                       | Script                              | What it does                                                          |
+|---------------------------------|-------------------------------------|-----------------------------------------------------------------------|
+| Avatar Setup (Installer)        | `GabrielAvatarSetupWindow.cs`       | EditorWindow. Drag avatar, tick what to install, click button.        |
+| Build Pose HUD                  | `GabrielPoseHudBuilder.cs`          | Builds just the pose strip prefab (manual workflow).                  |
+| Build Sensor Rig                | `GabrielSensorRigBuilder.cs`        | Builds just the VRCRaycast sensor rig prefab (manual workflow).       |
 
-Both scripts write their output to
-`Assets/ProjectGabriel/Generated/`.
+All prefabs land in `Assets/ProjectGabriel/Generated/`.
 
 For the full step-by-step avatar setup (which is what you actually want
 to read), see `unity_assets/AVATAR_SETUP.md`. The notes below are just
 for understanding what each script is doing under the hood.
+
+---
+
+## Avatar Setup (Installer)
+
+EditorWindow that ties the two builders together. Workflow:
+
+1. Drag your avatar's GameObject into the window's avatar slot. The
+   window walks up parents to find the first ancestor with a
+   `VRCAvatarDescriptor`, so dragging any child of the avatar works.
+2. Tick **Pose HUD** and/or **Sensor Rig**.
+3. (Optional) tick **Replace existing instances** so old copies get
+   nuked first. Leave off if you've hand-edited the existing prefab
+   instances on the avatar.
+4. Click **Install on '<avatar>'**.
+
+The window calls `GabrielPoseHudBuilder.BuildPrefab()` and
+`GabrielSensorRigBuilder.BuildPrefab()` to refresh the prefabs on disk,
+then `PrefabUtility.InstantiatePrefab` to parent fresh instances onto
+the avatar at identity transforms. Everything is wrapped in a single
+Undo group so Ctrl+Z reverts the whole install.
 
 ---
 
@@ -50,9 +71,10 @@ present. You just get a warning + no output in that case.
 
 ### What it deliberately skips
 
-- VRCFury setup -- VRCFury's internal types change between releases, so
-  the script leaves the Armature Link and Full Controller wiring as
-  manual steps (two clicks each, see `AVATAR_SETUP.md`).
+- VRCFury setup -- the Armature Link components on the anchors and the
+  optional local-only Toggle on the pose HUD are still manual. VRCFury's
+  internal types change between releases, so reflection-based wiring
+  proved too brittle. Two clicks per component, see `AVATAR_SETUP.md`.
 - Animator wiring -- VRCRaycast publishes to OSC directly, no animator
   parameters needed for the python side to read the rays.
 

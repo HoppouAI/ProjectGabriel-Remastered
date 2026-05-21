@@ -23,8 +23,8 @@ namespace ProjectGabriel.Editor
     /// </summary>
     public static class GabrielSensorRigBuilder
     {
-        private const string OUTPUT_DIR = "Assets/ProjectGabriel/Generated";
-        private const string PREFAB_NAME = "GabrielSensorRig.prefab";
+        internal const string OUTPUT_DIR = "Assets/ProjectGabriel/Generated";
+        internal const string PREFAB_NAME = "GabrielSensorRig.prefab";
         private const string PARAMS_NAME = "GabrielSensorParameters.asset";
 
         // ray definition table - mirrors unity_assets/AVATAR_SETUP.md
@@ -63,6 +63,19 @@ namespace ProjectGabriel.Editor
 
         [MenuItem("Tools/ProjectGabriel/Build Sensor Rig")]
         public static void Build()
+        {
+            var path = BuildPrefab(verbose: true);
+            if (string.IsNullOrEmpty(path)) return;
+            Selection.activeObject = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            EditorGUIUtility.PingObject(Selection.activeObject);
+        }
+
+        /// <summary>
+        /// Rebuilds the prefab on disk and returns its asset path. The
+        /// installer window calls this directly so it can drop the prefab
+        /// onto an avatar in one click.
+        /// </summary>
+        public static string BuildPrefab(bool verbose)
         {
             EnsureFolder(OUTPUT_DIR);
 
@@ -121,14 +134,15 @@ namespace ProjectGabriel.Editor
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
 
-                Debug.Log(
-                    "Built sensor rig: " + prefabPath + ". Drag it into your avatar root, " +
-                    "then add a VRCFury Armature Link to each *Anchor child (Head -> Head bone, " +
-                    "Hips -> Hips bone)."
-                );
-
-                Selection.activeObject = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-                EditorGUIUtility.PingObject(Selection.activeObject);
+                if (verbose)
+                {
+                    Debug.Log(
+                        "Built sensor rig: " + prefabPath + ". Drag it into your avatar root, " +
+                        "then add a VRCFury Armature Link to each *Anchor child (Head -> Head bone, " +
+                        "Hips -> Hips bone)."
+                    );
+                }
+                return prefabPath;
             }
             finally
             {

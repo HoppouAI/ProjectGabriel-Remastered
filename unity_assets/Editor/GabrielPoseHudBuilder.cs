@@ -31,8 +31,8 @@ namespace ProjectGabriel.Editor
     /// </summary>
     public static class GabrielPoseHudBuilder
     {
-        private const string OUTPUT_DIR = "Assets/ProjectGabriel/Generated";
-        private const string PREFAB_NAME = "GabrielPoseHUD.prefab";
+        internal const string OUTPUT_DIR = "Assets/ProjectGabriel/Generated";
+        internal const string PREFAB_NAME = "GabrielPoseHUD.prefab";
         private const string MAT_NAME = "GabrielPoseHUD.mat";
         private const string MESH_NAME = "GabrielPoseHUDQuad.asset";
         private const string SHADER_NAME = "ProjectGabriel/PoseExfilScreen";
@@ -53,18 +53,39 @@ namespace ProjectGabriel.Editor
         [MenuItem("Tools/ProjectGabriel/Build Pose HUD")]
         public static void Build()
         {
+            var path = BuildPrefab(verbose: true);
+            if (string.IsNullOrEmpty(path)) return;
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            Selection.activeObject = prefab;
+            EditorGUIUtility.PingObject(prefab);
+        }
+
+        /// <summary>
+        /// Rebuilds the prefab on disk and returns its asset path. Safe to
+        /// call from other editor scripts (the installer window uses this).
+        /// Returns null if the shader couldn't be found.
+        /// </summary>
+        public static string BuildPrefab(bool verbose)
+        {
             EnsureFolder(OUTPUT_DIR);
 
             var shader = Shader.Find(SHADER_NAME);
             if (shader == null)
             {
-                EditorUtility.DisplayDialog(
-                    "Pose HUD",
-                    "Could not find shader '" + SHADER_NAME + "'. Make sure " +
-                    "unity_assets/shaders/PoseExfilScreen.shader is imported " +
-                    "into the Unity project first.",
-                    "OK");
-                return;
+                if (verbose)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Pose HUD",
+                        "Could not find shader '" + SHADER_NAME + "'. Make sure " +
+                        "unity_assets/shaders/PoseExfilScreen.shader is imported " +
+                        "into the Unity project first.",
+                        "OK");
+                }
+                else
+                {
+                    Debug.LogError("[GabrielPoseHudBuilder] shader not found: " + SHADER_NAME);
+                }
+                return null;
             }
 
             var matPath = OUTPUT_DIR + "/" + MAT_NAME;
@@ -127,16 +148,18 @@ namespace ProjectGabriel.Editor
                 renderer.allowOcclusionWhenDynamic = false;
 
                 var prefabPath = OUTPUT_DIR + "/" + PREFAB_NAME;
-                var prefab = PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+                PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
                 AssetDatabase.SaveAssets();
-                Selection.activeObject = prefab;
-                EditorGUIUtility.PingObject(prefab);
-                Debug.Log("[GabrielPoseHudBuilder] built " + prefabPath +
-                          ". Drop it on your avatar ROOT (NOT under the " +
-                          "Head bone - VRChat hides head children in first " +
-                          "person) and upload. A 34x2 pixel strip will " +
-                          "appear in the bottom-left corner encoding world " +
-                          "XYZ + yaw.");
+                if (verbose)
+                {
+                    Debug.Log("[GabrielPoseHudBuilder] built " + prefabPath +
+                              ". Drop it on your avatar ROOT (NOT under the " +
+                              "Head bone - VRChat hides head children in first " +
+                              "person) and upload. A 34x2 pixel strip will " +
+                              "appear in the bottom-left corner encoding world " +
+                              "XYZ + yaw.");
+                }
+                return prefabPath;
             }
             finally
             {

@@ -10,11 +10,15 @@ where it is.
   avatar's world XYZ + forward vector. Python screen-captures it and
   decodes back to a `WorldPose`. See `src/pose_decoder.py` for the
   bit-packing format.
-- `Editor/GabrielPoseHudBuilder.cs` -- one-click builder for the pose
-  strip prefab. Menu: **Tools > ProjectGabriel > Build Pose HUD**.
-- `Editor/GabrielSensorRigBuilder.cs` -- one-click builder for the
-  VRCRaycast sensor rig prefab. Menu: **Tools > ProjectGabriel > Build
-  Sensor Rig**.
+- `Editor/GabrielAvatarSetupWindow.cs` -- one-click installer window.
+  Menu: **Tools > ProjectGabriel > Avatar Setup (Installer)**. Drag
+  your avatar in, tick what to install, click the button.
+- `Editor/GabrielPoseHudBuilder.cs` -- builds just the pose strip
+  prefab. Menu: **Tools > ProjectGabriel > Build Pose HUD**. Used by
+  the installer window, also usable on its own.
+- `Editor/GabrielSensorRigBuilder.cs` -- builds just the VRCRaycast
+  sensor rig prefab. Menu: **Tools > ProjectGabriel > Build Sensor
+  Rig**.
 - `AVATAR_SETUP.md` -- end-to-end avatar setup guide using the editor
   tools above.
 
@@ -22,10 +26,12 @@ where it is.
 
 1. Copy `unity_assets/` into your VRChat avatar project as
    `Assets/ProjectGabriel/`.
-2. Make sure VRChat Avatar SDK3 is in the project (VRCFury optional, used
-   for the sensor rig step).
+2. Make sure VRChat Avatar SDK3 is in the project (VRCFury optional,
+   used for the sensor rig armature link + optional pose HUD toggle).
 3. Wait for Unity to compile.
-4. Follow `AVATAR_SETUP.md`.
+4. Open **Tools > ProjectGabriel > Avatar Setup (Installer)**, drag
+   your avatar in, click install. Or follow `AVATAR_SETUP.md` for the
+   full manual walkthrough including the VRCFury wiring.
 
 ## Python side that reads this stuff
 

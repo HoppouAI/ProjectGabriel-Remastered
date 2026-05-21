@@ -4,8 +4,11 @@ End to end setup for getting ProjectGabriel's sensing layer onto your
 avatar. Two pieces: the **Pose HUD** (screen-space coord strip) and the
 **Sensor Rig** (VRCRaycast nav rays).
 
-You'll do both through the **Tools > ProjectGabriel** menu in Unity. No
-manual prefab building required.
+Easy path: open **Tools > ProjectGabriel > Avatar Setup (Installer)**,
+drag your avatar in, click install. That's the whole technical part.
+The rest of this guide is the manual workflow + the optional VRCFury
+bits (local-only toggle, armature link), which the installer does NOT
+do for you.
 
 > Unity version tested: **2022.3.22f1** (desktop / flatscreen VRChat).
 > VR works too but the strip placement was tuned on flatscreen.
@@ -36,18 +39,53 @@ and ray data the moment you upload and put the avatar on.
    as `Assets/ProjectGabriel/`. Any folder path works, the editor scripts
    write their output under `Assets/ProjectGabriel/Generated/`.
 2. Confirm you have the **VRChat Avatar SDK3** in the project (the rig
-   builder needs `VRCRaycast` and `VRCExpressionParameters`).
-3. **Optional but recommended:** install **VRCFury**. It's used to merge
-   the sensor rig anchors and params into your avatar without touching
-   the avatar hierarchy manually.
-4. Wait for Unity to finish compiling. You should see two new menu items
-   appear under **Tools > ProjectGabriel**:
-   - Build Pose HUD
-   - Build Sensor Rig
+   builder needs `VRCRaycast` for the sensor rays).
+3. **Optional but recommended:** install **VRCFury**. Used for the
+   armature link on the sensor rig anchors and for the optional
+   local-only toggle on the pose HUD.
+4. Wait for Unity to finish compiling. You should see three new menu
+   items appear under **Tools > ProjectGabriel**:
+   - **Avatar Setup (Installer)** -- one-click installer window
+   - Build Pose HUD -- builds just the prefab (manual workflow)
+   - Build Sensor Rig -- builds just the prefab (manual workflow)
 
 ---
 
-## Step 1 -- Pose HUD
+## Step 1 -- run the installer (easy path)
+
+1. Menu: **Tools > ProjectGabriel > Avatar Setup (Installer)**.
+2. Drag your avatar from the Hierarchy into the **Avatar** field at the
+   top of the window. (Or click **Find avatar in scene** to auto-detect
+   the first `VRCAvatarDescriptor` in the open scene.) The window walks
+   up parents to find the avatar root automatically, so dragging any
+   child of the avatar also works.
+3. Tick what you want to install:
+   - **Pose HUD** -- the bottom-left coord strip
+   - **Sensor Rig** -- the 11 raycast empties grouped under HeadAnchor /
+     HipsAnchor
+   - **Replace existing instances** -- delete any old `GabrielPoseHUD` /
+     `GabrielSensorRig` children before installing the fresh ones.
+     Leave checked unless you've hand-edited the existing copies.
+4. Click **Install on 'YourAvatar'**.
+
+The window builds the prefabs (or rebuilds if you'd already used the
+old menu items), parents fresh instances onto your avatar at identity
+transforms, and registers an Undo entry so Ctrl+Z reverts the whole
+thing if you don't like it.
+
+After that, jump to **Step 2** for the VRCFury wiring (armature link
+on the sensor rig anchors, optional local-only toggle on the pose
+HUD). The installer doesn't add VRCFury components because their
+internal types shift across releases and reflection-based wiring was
+flaky enough that doing two clicks per anchor by hand is faster than
+fighting it.
+
+If you'd rather do the install by hand (e.g. for an unusual avatar
+hierarchy), skip the installer and follow the manual sections below.
+
+---
+
+## Step 1b (manual) -- Pose HUD
 
 This is the little color strip that encodes your world position. The
 python side screen-captures it to know where you are.
@@ -130,6 +168,9 @@ ID (not a hard secret, but not something you blast publicly).
 ---
 
 ## Step 2 -- Sensor Rig (raycasts)
+
+> If you ran the installer in Step 1 with **Sensor Rig** ticked, the
+> prefab is already on your avatar. Skip to the VRCFury wiring below.
 
 The python side uses VRCRaycast components for forward collision checks,
 ledge detection, ceiling height, "what am I looking at", etc.
