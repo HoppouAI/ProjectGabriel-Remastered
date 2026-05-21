@@ -99,8 +99,11 @@ namespace ProjectGabriel.Editor
                     var boneName = kv.Key;
                     var anchor = new GameObject(boneName + "Anchor");
                     anchor.transform.SetParent(root.transform, false);
-                    // user adds a VRCFury Armature Link to this anchor in the
-                    // inspector after dropping the prefab into the avatar
+
+                    // try to attach the Armature Link now so the user doesnt
+                    // have to. if VRCFury isnt installed we fall back to the
+                    // manual instructions in AVATAR_SETUP.md.
+                    TryAddVRCFuryArmatureLink(anchor, boneName);
 
                     foreach (var ray in kv.Value)
                     {
@@ -199,6 +202,108 @@ namespace ProjectGabriel.Editor
             resultGo.transform.localRotation = Quaternion.identity;
             SetField(component, "resultTransform", resultGo.transform);
 
+            return true;
+        }
+
+        // --- VRCFury Armature Link wiring (reflection, optional) ---------------
+
+        // Uses VRCFury's public API to drop an Armature Link onto the anchor
+        // pointed at the matching humanoid bone, with Align Position/Rotation/Scale
+        // turned on. without alignment the anchor stays at world 0 after the
+        // reparent and the rays fire from nowhere useful.
+        private static bool TryAddVRCFuryArmatureLink(GameObject anchor, string boneName)
+        {
+            if (!Enum.IsDefined(typeof(HumanBodyBones), boneName))
+            {
+                Debug.LogWarning("No HumanBodyBones value matches anchor '" + boneName + "', skipping Armature Link.");
+                return false;
+            }
+            var humanoidBone = (HumanBodyBones)Enum.Parse(typeof(HumanBodyBones), boneName);
+
+            var furyComponents = FindType("com.vrcfury.api.FuryComponents");
+            if (furyComponents == null) return false;
+
+            var create = furyComponents.GetMethod(
+                "CreateArmatureLink",
+                BindingFlags.Public | BindingFlags.Static,
+                null,
+                new[] { typeof(GameObject) },
+                null
+            );
+            if (create == null) return false;
+
+            object fal;
+            try { fal = create.Invoke(null, new object[] { anchor }); }
+            catch (Exception e) { Debug.LogWarning("VRCFury CreateArmatureLink threw: " + e.Message); return false; }
+            if (fal == null) return false;
+
+            var linkTo = fal.GetType().GetMethod("LinkTo", new[] { typeof(HumanBodyBones), typeof(string) });
+            var setAlign = fal.GetType().GetMethod("SetAlign", new[] { typeof(bool) });
+            if (linkTo == null || setAlign == null) return false;
+
+            try
+            {
+                linkTo.Invoke(fal, new object[] { humanoidBone, "" });
+                setAlign.Invoke(fal, new object[] { true });
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("VRCFury Armature Link config threw: " + e.Message);
+                return false;
+            }
+
+            Debug.Log("Attached VRCFury Armature Link on " + anchor.name + " -> " + boneName + " (aligned).");
+            return true;
+        }
+
+        // --- VRCFury Armature Link wiring (reflection, optional) ---------------
+
+        // Uses VRCFury's public API to drop an Armature Link onto the anchor
+        // pointed at the matching humanoid bone, with Align Position/Rotation/Scale
+        // turned on. without alignment the anchor stays at world 0 after the
+        // reparent and the rays fire from nowhere useful.
+        private static bool TryAddVRCFuryArmatureLink(GameObject anchor, string boneName)
+        {
+            if (!Enum.IsDefined(typeof(HumanBodyBones), boneName))
+            {
+                Debug.LogWarning("No HumanBodyBones value matches anchor '" + boneName + "', skipping Armature Link.");
+                return false;
+            }
+            var humanoidBone = (HumanBodyBones)Enum.Parse(typeof(HumanBodyBones), boneName);
+
+            var furyComponents = FindType("com.vrcfury.api.FuryComponents");
+            if (furyComponents == null) return false;
+
+            var create = furyComponents.GetMethod(
+                "CreateArmatureLink",
+                BindingFlags.Public | BindingFlags.Static,
+                null,
+                new[] { typeof(GameObject) },
+                null
+            );
+            if (create == null) return false;
+
+            object fal;
+            try { fal = create.Invoke(null, new object[] { anchor }); }
+            catch (Exception e) { Debug.LogWarning("VRCFury CreateArmatureLink threw: " + e.Message); return false; }
+            if (fal == null) return false;
+
+            var linkTo = fal.GetType().GetMethod("LinkTo", new[] { typeof(HumanBodyBones), typeof(string) });
+            var setAlign = fal.GetType().GetMethod("SetAlign", new[] { typeof(bool) });
+            if (linkTo == null || setAlign == null) return false;
+
+            try
+            {
+                linkTo.Invoke(fal, new object[] { humanoidBone, "" });
+                setAlign.Invoke(fal, new object[] { true });
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("VRCFury Armature Link config threw: " + e.Message);
+                return false;
+            }
+
+            Debug.Log("Attached VRCFury Armature Link on " + anchor.name + " -> " + boneName + " (aligned).");
             return true;
         }
 

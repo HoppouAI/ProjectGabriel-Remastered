@@ -199,9 +199,18 @@ builder adds 11. Plenty of headroom.
    two children: `HeadAnchor` and `HipsAnchor`, each containing several
    `Ray_*` empties.
 
-2. **Anchor the bones** (two ways, pick one):
+2. **Anchor the bones.** If VRCFury was installed when the prefab was
+   built, each `*Anchor` already has a **VRC Fury > Armature Link**
+   component pointing at the matching humanoid bone (`HeadAnchor` ->
+   Head, `HipsAnchor` -> Hips) with Align Position/Rotation/Scale
+   already turned on. You don't have to do anything, just confirm the
+   components are there after dragging the prefab in. Skip to step 3.
 
-   **A) With VRCFury (recommended)**
+   If VRCFury wasn't installed at build time, the components won't be
+   there. Install VRCFury and rebuild the prefab, OR add them manually
+   using one of these methods:
+
+   **A) With VRCFury (manual fallback)**
    - Select the `HeadAnchor` GameObject
    - Add Component -> **VRC Fury** -> **Armature Link**
    - **Link From (Prop / Clothing):** auto-fills with `HeadAnchor`
@@ -215,10 +224,6 @@ builder adds 11. Plenty of headroom.
      these manually.
    - Repeat on `HipsAnchor` with **Hips** as the target (same
      Align Position + Align Rotation tick).
-
-   That's it -- no Link Mode field, just the From/To pair plus the two
-   alignment checkboxes. VRCFury moves each anchor onto its bone on
-   upload and the child `Ray_*` empties go with it.
 
    *Optional:* with `HeadAnchor` selected you can bump its local Y up a
    little so the head rays originate near the visual center of your
@@ -302,12 +307,12 @@ If the rays are publishing but values look wrong:
 
 ## What the builders do NOT do
 
-- **VRCFury Armature Link wiring** -- the per-anchor Armature Link
-  components are manual. VRCFury's internal types shift across releases
-  so reflection-based wiring was too flaky to ship for those. Two clicks
-  each, not a big deal. (The Sensor Rig DOES auto-attach a VRCFury
-  Full Controller with the params asset though, since that one uses
-  VRCFury's stable public API.)
+- **VRCFury wiring** -- mostly automated. The sensor rig prefab ships
+  with a Full Controller (params merge) and Armature Links on each
+  anchor (pointed at Head / Hips, with alignment on). The pose HUD
+  toggle is still manual since VRCFury's public API doesn't expose
+  `separateLocal`/`localState` yet. Those bits use VRCFury's stable
+  public API so it's safe across releases.
 - **Avatar uploads** -- you still need to use the VRChat SDK Control
   Panel to build and upload.
 - **Animator setup** -- not needed at all. OSC publishes ray data
