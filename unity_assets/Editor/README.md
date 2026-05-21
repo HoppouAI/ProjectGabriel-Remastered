@@ -1,55 +1,69 @@
-# Sensor Rig Builder (Unity editor script)
+# Unity Editor Scripts
 
-`Editor/GabrielSensorRigBuilder.cs` is an editor-only script that builds a
-drag-and-drop sensor rig prefab for the avatar in one click.
+Two editor-only one-click builders under **Tools > ProjectGabriel** in
+the menu bar:
 
-## Install
+| Menu item                  | Script                          | What it builds                                    |
+|----------------------------|---------------------------------|---------------------------------------------------|
+| Build Pose HUD             | `GabrielPoseHudBuilder.cs`      | Screen-space pose strip prefab (bottom-left)      |
+| Build Sensor Rig           | `GabrielSensorRigBuilder.cs`    | VRCRaycast sensor rig prefab + params asset       |
 
-1. Copy `unity_assets/` into your VRChat avatar Unity project as
-   `Assets/ProjectGabriel/` (any path is fine, the script puts its output
-   under `Assets/ProjectGabriel/Generated/`).
-2. Make sure your project has the **VRChat Avatar SDK3** (for `VRCRaycast`
-   and `VRCExpressionParameters`). VRCFury is optional, it's only used
-   when you add Armature Link components by hand to the anchors.
-3. Wait for Unity to compile the script.
+Both scripts write their output to
+`Assets/ProjectGabriel/Generated/`.
 
-## Use
+For the full step-by-step avatar setup (which is what you actually want
+to read), see `unity_assets/AVATAR_SETUP.md`. The notes below are just
+for understanding what each script is doing under the hood.
 
-1. Menu bar: **Tools > ProjectGabriel > Build Sensor Rig**
-2. Watch the Console for `Built sensor rig: ...`. The selected prefab
-   appears in `Assets/ProjectGabriel/Generated/GabrielSensorRig.prefab`.
-3. Drag that prefab into your avatar's root.
-4. On the `HeadAnchor` child, add a VRCFury component, pick **Armature
-   Link**, set the link target bone to **Head**. Repeat on `HipsAnchor`
-   with **Hips**.
-5. On the `GabrielSensorRig` root, add a **VRCFury > Full Controller**
-   component. Leave Controller and Menu empty, then drag
-   `GabrielSensorParameters.asset` into the **Parameters** list. Without
-   this step VRChat never publishes the `<Ray>_*` params over OSC.
-6. Upload. VRCFury reparents each anchor under its bone and merges the
-   params into your avatar's expression parameters at build time.
+---
 
-## What it generates
+## Build Pose HUD
 
-- `GabrielSensorRig.prefab` -- root with `HeadAnchor` + `HipsAnchor`
-  children, each containing the `Ray_*` empties pre-rotated and with
-  `VRCRaycast` components set up per `AVATAR_SETUP.md`. Each ray also
-  has a `Result` child transform that VRC writes the hit point into.
-- `GabrielSensorParameters.asset` -- a `VRCExpressionParameters` asset
-  with all `<Ray>_Hit`/`_Distance`/`_Ratio` parameters declared as
-  unsynced so they only fire local OSC.
+Creates `GabrielPoseHUD.prefab` containing a single quad with the
+`ProjectGabriel/PoseExfilScreen` material.
 
-## What it does NOT do
+Key details:
+- Quad mesh is `+-0.5` in object space, but its `Bounds` are forced to
+  cover roughly the entire avatar (feet to above head, ~3m wide) so the
+  camera is always inside the renderer AABB and Unity never frustum-culls
+  the strip.
+- The shader's vert pass snaps every vertex to NDC corners via
+  `sign(vertex.xy)`, so the actual quad transform doesn't affect what
+  gets drawn. You can parent / move / rotate the prefab freely.
+- Material exposes three floats: `_CellSize`, `_OffsetX`, `_OffsetY`.
 
-- Wire up VRCFury for you. Steps 4 and 5 above are manual because the
-  internal VRCFury types change shape between releases and reflection
-  was unreliable.
-- Add the `PoseExfil` shader quad to your avatar. That's a separate
-  manual setup (see `AVATAR_SETUP.md` "Pose strip placement").
+---
 
-## If the script complains
+## Build Sensor Rig
 
-- "VRCRaycast type not found" -- update the VRChat SDK, raycasts shipped
-  in recent 3.x.
-- "VRCExpressionParameters type not found" -- VRChat SDK missing. Install
-  the Avatars SDK.
+Creates two assets:
+- `GabrielSensorRig.prefab` -- root with `HeadAnchor` and `HipsAnchor`
+  children, each containing pre-rotated `Ray_*` empties. Each ray empty
+  has a `VRCRaycast` component plus a `Result` child transform (VRChat
+  silently refuses to publish raycast data without a `Result`).
+- `GabrielSensorParameters.asset` -- a `VRCExpressionParameters` with
+  every `<Ray>_Hit` / `_Distance` / `_Ratio` declared as unsynced.
+
+The script uses **reflection** to talk to `VRCRaycast` and
+`VRCExpressionParameters` so it compiles even when the SDK isn't
+present. You just get a warning + no output in that case.
+
+### What it deliberately skips
+
+- VRCFury setup -- VRCFury's internal types change between releases, so
+  the script leaves the Armature Link and Full Controller wiring as
+  manual steps (two clicks each, see `AVATAR_SETUP.md`).
+- Animator wiring -- VRCRaycast publishes to OSC directly, no animator
+  parameters needed for the python side to read the rays.
+
+---
+
+## Troubleshooting compile errors
+
+Both scripts wrap themselves in `#if UNITY_EDITOR ... #endif` so they
+will not ship in player builds. If you see compile errors:
+
+- **"VRCRaycast type not found"** -- Avatar SDK3 missing or outdated.
+- **"VRCExpressionParameters type not found"** -- same fix.
+- Any other error usually means a stale .meta file. Close Unity, delete
+  `Library/`, reopen.

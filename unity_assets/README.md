@@ -1,33 +1,36 @@
 # Unity Assets for ProjectGabriel
 
-Avatar-side bits that let the python side sense the VRChat world.
+Avatar side bits that let the python AI sense the VRChat world and know
+where it is.
 
 ## What's in here
 
-- `shaders/PoseExfil.shader` -- renders an 8x1 pixel strip encoding the
-  avatar's world XYZ + yaw. Python screen-captures it and decodes back to
-  a `WorldPose`. See `src/pose_decoder.py` for the format.
-- `AVATAR_SETUP.md` -- which VRCRaycast components to add and how to wire
-  the pose shader onto a canvas.
+- `shaders/PoseExfilScreen.shader` -- screen-space pose strip. Renders a
+  34x2 cell grid in the **bottom-left corner of the screen** encoding the
+  avatar's world XYZ + forward vector. Python screen-captures it and
+  decodes back to a `WorldPose`. See `src/pose_decoder.py` for the
+  bit-packing format.
+- `Editor/GabrielPoseHudBuilder.cs` -- one-click builder for the pose
+  strip prefab. Menu: **Tools > ProjectGabriel > Build Pose HUD**.
+- `Editor/GabrielSensorRigBuilder.cs` -- one-click builder for the
+  VRCRaycast sensor rig prefab. Menu: **Tools > ProjectGabriel > Build
+  Sensor Rig**.
+- `AVATAR_SETUP.md` -- end-to-end avatar setup guide using the editor
+  tools above.
 
-## Status
+## Quick start
 
-Experimental. Branch `raycast-experiment`. Not on main, not pushed.
+1. Copy `unity_assets/` into your VRChat avatar project as
+   `Assets/ProjectGabriel/`.
+2. Make sure VRChat Avatar SDK3 is in the project (VRCFury optional, used
+   for the sensor rig step).
+3. Wait for Unity to compile.
+4. Follow `AVATAR_SETUP.md`.
 
-Python side already in tree and tested:
-- `src/raycast.py` -- OSC listener state for VRCRaycast params
-- `src/pose_decoder.py` -- pixel strip decoder + screen capture loop
-- `src/spatial_map.py` -- occupancy grid + ray->world projection
-- `tests/test_raycast_and_mapping.py` -- 33 tests, all green
+## Python side that reads this stuff
 
-## Order of operations to actually use this
-
-1. Wire `RaycastState` into `VRChatClient`'s OSC dispatcher (TODO)
-2. Add a few raycasts to a test avatar per `AVATAR_SETUP.md`
-3. Add the pose shader quad to that avatar
-4. Run, watch `RaycastState.get_all()` and `PoseExfilReader.get()` populate
-5. Start `SpatialMapper` and confirm the grid fills out as you walk around
-6. Build wanderer integration + AI tools
-
-If any of the above flops, `git checkout main` and the whole experiment is
-gone.
+- `src/raycast.py` -- VRCRaycast OSC state, auto-discovers ray names
+- `src/pose_decoder.py` -- pose strip screen capture + decoder
+- `src/spatial_map.py` -- occupancy grid, ray-to-world projection
+- `src/pathfinder.py` -- A* on the occupancy grid
+- `src/wanderer.py` -- autonomous map exploration using the above

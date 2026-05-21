@@ -1,81 +1,239 @@
-# Avatar Raycast Layout
+# Avatar Setup Guide
 
-This is the suggested set of `VRCRaycast` components to add to the avatar
-so the python side can do navigation, pathfinding, and spatial awareness.
+End to end setup for getting ProjectGabriel's sensing layer onto your
+avatar. Two pieces: the **Pose HUD** (screen-space coord strip) and the
+**Sensor Rig** (VRCRaycast nav rays).
 
-VRChat caps raycasts at 80 per avatar (shared with FinalIK), so we use
-about a dozen. Plenty of headroom.
+You'll do both through the **Tools > ProjectGabriel** menu in Unity. No
+manual prefab building required.
 
-## Naming convention
+> Unity version tested: **2022.3.22f1** (desktop / flatscreen VRChat).
+> VR works too but the strip placement was tuned on flatscreen.
 
-Parameter prefix for each raycast goes into Animator + Expression
-Parameters. VRChat appends `_Hit`, `_Distance`, `_Ratio` automatically.
+---
 
-In the Expression Parameters list set them all to **synced = false** to
-save bandwidth (we only need them locally for OSC).
+## Step 0 -- one-time install
 
-## Rays
+1. Copy `unity_assets/` from this repo into your VRChat avatar project
+   as `Assets/ProjectGabriel/`. Any folder path works, the editor scripts
+   write their output under `Assets/ProjectGabriel/Generated/`.
+2. Confirm you have the **VRChat Avatar SDK3** in the project (the rig
+   builder needs `VRCRaycast` and `VRCExpressionParameters`).
+3. **Optional but recommended:** install **VRCFury**. It's used to merge
+   the sensor rig anchors and params into your avatar without touching
+   the avatar hierarchy manually.
+4. Wait for Unity to finish compiling. You should see two new menu items
+   appear under **Tools > ProjectGabriel**:
+   - Build Pose HUD
+   - Build Sensor Rig
 
-| Name        | Origin           | Direction              | Length | Purpose                                  |
-|-------------|------------------|------------------------|--------|------------------------------------------|
-| `Fwd`       | head             | forward                | 5m     | front collision check, follow safety     |
-| `FwdNear`   | hip              | forward                | 1.5m   | tight obstacle avoidance while walking   |
-| `Left`      | head             | left (-90 yaw)         | 4m     | side clearance for wanderer              |
-| `Right`     | head             | right (+90 yaw)        | 4m     | side clearance                            |
-| `LeftFwd`   | head             | forward-left (-45 yaw) | 5m     | diagonal pathfinding samples              |
-| `RightFwd`  | head             | forward-right (+45 yaw)| 5m     | diagonal pathfinding samples              |
-| `Back`      | head             | back (180 yaw)         | 3m     | know when something's behind you          |
-| `DropFwd`   | hip              | forward + down 45 deg  | 3m     | ledge/stair detector ahead                |
-| `Down`      | hip              | straight down          | 2m     | floor distance, prone detection           |
-| `Up`        | head             | straight up            | 3m     | ceiling height, awareness of overhead     |
-| `Gaze`      | head             | camera forward         | 30m    | "what is Gabriel looking at"              |
+---
 
-The Gaze ray is the long one. The rest are short for navigation.
+## Step 1 -- Pose HUD
 
-Add a "ReachRight" ray if you want grab/use targeting feedback later.
+This is the little color strip that encodes your world position. The
+python side screen-captures it to know where you are.
 
-## Setup steps in Unity
+### Build the prefab
 
-1. On each VRCRaycast component:
-   - **Collision Mode**: `Hit Worlds` for nav rays, `Hit Both` for `Gaze`
-   - **Origin**: a small empty transform parented under the named body part
-   - **Direction**: relative to its parent (use the transform's forward)
-   - **Parameter**: matches the Name column above
-   - **Behavior on Miss**: `Snap To End`
-   - **Result Transform**: a child empty named `Result` (REQUIRED, the
-     component throws a red warning and does nothing without one)
-2. Add matching params to the Animator (`<Name>_Hit` Bool,
-   `<Name>_Distance` Float, `<Name>_Ratio` Float)
-3. Add matching params to Expression Parameters with `synced = false`.
-   If you used the editor script you get a `GabrielSensorParameters`
-   asset, the easiest way to merge it into the avatar is a **VRCFury >
-   Full Controller** component on the rig root with that asset dropped
-   into the **Parameters** list. Without this step VRChat never publishes
-   the params over OSC even though they exist on the raycast components.
-4. Enable OSC in VRChat, default port 9000 in / 9001 out, listener will pick
-   them up.
+1. Menu: **Tools > ProjectGabriel > Build Pose HUD**
+2. The console prints `[GabrielPoseHudBuilder] built ...`.
+3. Unity pings the new prefab in the Project window:
+   `Assets/ProjectGabriel/Generated/GabrielPoseHUD.prefab`
 
-## How the python side reads them
+### Drop it on your avatar
 
-`src/raycast.py :: RaycastState` is wired into the existing OSC dispatcher
-in `src/vrchat.py`. It auto-discovers ray names from the incoming OSC
-addresses, no per-ray code needed.
+1. Drag `GabrielPoseHUD.prefab` onto your **avatar root** in the scene
+   hierarchy. **Not** under the `Head` bone, **not** under `Hips`,
+   **not** under `Armature`. Just the root GameObject that has your
+   `VRCAvatarDescriptor` on it.
 
-For mapping, `src/spatial_map.py :: RayConfig` per ray tells the mapper the
-heading + max range so it can project hits into world coordinates using
-the avatar pose decoded from the `PoseExfil` shader strip.
+   > Why: VRChat scales the head bone to zero in first person to hide
+   > head-mounted props. Anything parented under Head becomes invisible
+   > to yourself. The avatar root stays visible. The vertex shader snaps
+   > to NDC corners so the actual prefab transform doesn't matter, only
+   > visibility does.
 
-## Pose strip placement
+2. Leave its transform at `0, 0, 0` with identity rotation and scale
+   `1, 1, 1`.
 
-The `unity_assets/shaders/PoseExfil.shader` quad needs to be on screen at
-a known location. The python decoder defaults to top-left, 8x1 pixels.
+### Upload
 
-Cleanest setup:
-- Add a Canvas in `Screen Space - Camera` mode under the main camera
-- Add a RawImage child, size = 8x1 px, anchor top-left, position (0, 0)
-- Assign a material using `ProjectGabriel/PoseExfil`
-- Set the canvas layer to one only the local camera sees (NOT the mirror
-  / NOT other players) so you don't broadcast your coords to the lobby
+That's it. Upload the avatar normally. When you wear it the strip will
+appear in the **bottom-left corner** of your screen, ~272x16 px, using
+pure red/green/blue/black pixels.
 
-For streaming, crop the 8x1 strip out of OBS or move it behind a UI panel
-the cropping mask covers.
+### Customizing position
+
+If something in your HUD covers the bottom-left, you can shift the strip:
+
+1. Select the `GabrielPoseHUD.prefab` asset
+2. Find the `MeshRenderer` -> material slot, click it
+3. The material exposes:
+   - **Cell Size (px per logical pixel)** -- default 8
+   - **Offset X (px from left)** -- default 0
+   - **Offset Y (px from bottom)** -- default 0
+4. Bump `Offset Y` up to ~50 to lift it above the VRChat HUD bar, etc.
+5. **Important:** mirror your change in `src/pose_decoder.py`
+   (the python side needs to know where to capture from).
+
+### Privacy
+
+Anyone whose camera renders your avatar also sees the strip. A
+determined attacker who screen-captures their own view could decode
+your world coords. Keep the cell size at the default 8 and turn off the
+mesh renderer when you don't need the nav layer (Animator parameter
+toggle works fine).
+
+---
+
+## Step 2 -- Sensor Rig (raycasts)
+
+The python side uses VRCRaycast components for forward collision checks,
+ledge detection, ceiling height, "what am I looking at", etc.
+
+VRChat caps avatars at 80 raycasts total (shared with FinalIK). The
+builder adds 11. Plenty of headroom.
+
+### Build the prefab
+
+1. Menu: **Tools > ProjectGabriel > Build Sensor Rig**
+2. Console prints `Built sensor rig: ...`.
+3. Two assets get created:
+   - `Assets/ProjectGabriel/Generated/GabrielSensorRig.prefab`
+   - `Assets/ProjectGabriel/Generated/GabrielSensorParameters.asset`
+
+### Wire it onto your avatar
+
+1. Drag `GabrielSensorRig.prefab` onto your **avatar root**. You'll see
+   two children: `HeadAnchor` and `HipsAnchor`, each containing several
+   `Ray_*` empties.
+
+2. **Anchor the bones** (two ways, pick one):
+
+   **A) With VRCFury (recommended)**
+   - Select the `HeadAnchor` GameObject
+   - Add Component -> **VRC Fury** -> Armature Link
+   - Set **Link Mode** = Reparent
+   - Drag your avatar's **Head** bone into the link target
+   - Repeat on `HipsAnchor` with **Hips** as the target
+
+   **B) Manual parenting**
+   - Drag the `Ray_*` empties out of `HeadAnchor` and into your Head
+     bone directly. Same for `Hips`. Then delete the now-empty anchor
+     GameObjects.
+
+3. **Merge the expression parameters** (this is what makes OSC actually
+   publish the ray values):
+
+   **A) With VRCFury (recommended)**
+   - Select the `GabrielSensorRig` root
+   - Add Component -> **VRC Fury** -> Full Controller
+   - Leave Controller and Menu empty
+   - Drag `GabrielSensorParameters.asset` into the **Parameters** list
+
+   **B) Manual**
+   - Open your avatar's Expression Parameters asset
+   - Paste in each `<Ray>_Hit` (Bool), `<Ray>_Distance` (Float),
+     `<Ray>_Ratio` (Float). All with **Synced = false**.
+   - Avoids burning network bandwidth, the rays are local-only data.
+
+4. **Animator params:** you do **not** need to add anything to the
+   animator unless you want to drive animations from raycast hits.
+   VRCRaycast publishes to OSC directly without animator wiring.
+
+### Ray names + purposes
+
+| Name        | Bone | Direction               | Length | Purpose                       |
+|-------------|------|-------------------------|--------|-------------------------------|
+| `Fwd`       | Head | forward                 | 5m     | front collision check         |
+| `FwdNear`   | Hips | forward                 | 1.5m   | tight nav obstacle check      |
+| `Left`      | Head | -90 yaw                 | 4m     | side clearance                |
+| `Right`     | Head | +90 yaw                 | 4m     | side clearance                |
+| `LeftFwd`   | Head | -45 yaw                 | 5m     | diagonal samples              |
+| `RightFwd`  | Head | +45 yaw                 | 5m     | diagonal samples              |
+| `Back`      | Head | 180 yaw                 | 3m     | rear awareness                |
+| `DropFwd`   | Hips | forward + down 45 deg   | 3m     | ledge / stair detector        |
+| `Down`      | Hips | straight down           | 2m     | floor distance                |
+| `Up`        | Head | straight up             | 3m     | ceiling height                |
+| `Gaze`      | Head | camera forward          | 30m    | "what is the AI looking at"   |
+
+`Gaze` is configured with `Collision Mode = Hit Both` (worlds + players),
+the rest are `Hit Worlds`. The builder sets this for you.
+
+### Upload
+
+Upload the avatar. Make sure **OSC** is enabled on the radial menu when
+you wear it (Options -> OSC -> Enabled). Default ports 9000/9001 match
+the python config.
+
+---
+
+## Step 3 -- verify it works
+
+1. Run `python main.py` with your AI config pointed at VRChat
+2. Wear the avatar in any VRChat world
+3. Check the console:
+   - `RaycastState` should log auto-discovered ray names like
+     `Fwd`, `Left`, etc.
+   - `PoseExfilReader` should log a non-zero pose `(x, y, z, yaw)`
+4. Open the WebUI Mapping tab -- you should see the occupancy grid fill
+   in around your avatar as you walk
+
+If `PoseExfilReader` returns zero pose:
+- The strip isn't on screen, or it's covered. Check the bottom-left
+  corner. Heavy HUDs or world-side UI can cover it.
+- Re-upload after confirming the prefab is on the avatar root, not the
+  Head bone.
+
+If the rays are publishing but values look wrong:
+- Confirm each ray's empty GameObject has its **forward** axis pointing
+  the right way (Unity gizmo, blue arrow). The builder pre-rotates them
+  but custom edits can break this.
+- Confirm the `Result` child transform exists under each ray. VRChat
+  raycasts silently no-op without one. The builder adds them.
+
+---
+
+## What the builders do NOT do
+
+- **VRCFury wiring** -- step 2 / step 3 of the sensor rig setup are
+  manual because VRCFury's internal types shift across releases and
+  reflection-based wiring was flaky. Two clicks each, not a big deal.
+- **Avatar uploads** -- you still need to use the VRChat SDK Control
+  Panel to build and upload.
+- **Animator setup** -- not needed for OSC nav, only needed if you want
+  to drive animations from raycast hits.
+- **PoseHUD layer masks** -- the strip renders to every camera that sees
+  your avatar (other players, mirrors). If you stream and want to hide
+  it from your own OBS capture, crop it out in OBS rather than at the
+  shader level. Coords are nav data, not secrets, but treat them like
+  location data.
+
+---
+
+## Troubleshooting
+
+**"Could not find shader 'ProjectGabriel/PoseExfilScreen'"**
+The shader file didn't get imported. Confirm
+`Assets/ProjectGabriel/shaders/PoseExfilScreen.shader` exists in the
+Project window, then re-run the menu command.
+
+**"VRCRaycast type not found"**
+Avatar SDK3 isn't installed or is out of date. Install / update the
+VRChat Creator Companion package "VRChat Avatars".
+
+**Strip is at the top-left, not bottom-left**
+You're on an older build. Re-import the shader. The fixed version checks
+`_ProjectionParams.x` and uses `_ScreenParams.y - vertex.y` on the
+desktop forward path.
+
+**Strip flickers / changes color when other players walk by**
+Confirm queue is `Overlay+5000` and `Blend Off` is on the SubShader.
+Re-import the shader if not.
+
+**OSC isn't publishing the ray params**
+Skipped step 3 of the sensor rig setup. The params must be merged into
+the avatar's Expression Parameters with `Synced = false`. Use VRCFury
+Full Controller -> Parameters list, or paste them manually into the
+avatar's `VRCExpressionParameters` asset.
