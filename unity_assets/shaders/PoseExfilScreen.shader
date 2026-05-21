@@ -103,15 +103,15 @@ Shader "ProjectGabriel/PoseExfilScreen"
                 // strip ends up at the bottom of the FINAL image regardless.
                 float cell = max(1.0, _CellSize);
                 float px = i.vertex.x - _OffsetX;
-                // _ProjectionParams.x is -1 when Y is flipped. when its
-                // flipped, SV_POSITION.y already measures from the bottom
-                // of the RT (which becomes the top of the screen after the
-                // final flip), so we need to mirror it. when its not
-                // flipped, SV_POSITION.y measures from the top and we need
-                // _ScreenParams.y - y to get distance from the bottom.
+                // _ProjectionParams.x is -1 when Y is flipped during render
+                // (intermediate RTs, post effects, etc). when flipped,
+                // SV_POSITION.y already measures from the bottom of the RT,
+                // so we use it directly. when NOT flipped (typical desktop
+                // forward path on D3D11), SV_POSITION.y is from the top
+                // so we mirror with _ScreenParams.y - y.
                 float yFromBottom = (_ProjectionParams.x < 0.0)
-                    ? (_ScreenParams.y - i.vertex.y)
-                    : i.vertex.y;
+                    ? i.vertex.y
+                    : (_ScreenParams.y - i.vertex.y);
                 float py = yFromBottom - _OffsetY;
 
                 int cellX = (int)floor(px / cell);

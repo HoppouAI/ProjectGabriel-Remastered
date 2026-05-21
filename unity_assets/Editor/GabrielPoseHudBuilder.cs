@@ -18,8 +18,8 @@ namespace ProjectGabriel.Editor
     /// regardless of first/third person, leaning, walking, or looking up.
     ///
     /// The vertex shader uses sign(vertex.xy) to snap to NDC corners so the
-    /// mesh size only affects culling, not what gets drawn. The 8x1 strip
-    /// always lands in the top-left of the screen.
+    /// mesh size only affects culling, not what gets drawn. The strip
+    /// always lands in the bottom-left of the screen.
     ///
     /// Menu: Tools > ProjectGabriel > Build Pose HUD
     ///
@@ -134,8 +134,8 @@ namespace ProjectGabriel.Editor
                 Debug.Log("[GabrielPoseHudBuilder] built " + prefabPath +
                           ". Drop it on your avatar ROOT (NOT under the " +
                           "Head bone - VRChat hides head children in first " +
-                          "person) and upload. An 8x1 pixel strip will " +
-                          "appear in the top-left corner encoding world " +
+                          "person) and upload. A 34x2 pixel strip will " +
+                          "appear in the bottom-left corner encoding world " +
                           "XYZ + yaw.");
             }
             finally
