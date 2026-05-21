@@ -114,10 +114,9 @@ python side screen-captures it to know where you are.
    `1, 1, 1`.
 
 > The prefab ships with its root GameObject **disabled by default**.
-> That's intentional. The VRCFury toggle below (Default On + In Local:
-> turn on) wakes it up at world join. If you skip the toggle, just tick
-> the GameObject active in the Inspector before upload (or anytime you
-> want to use it).
+> The VRCFury toggle below (Default On + In Local: turn on) wakes it
+> up at world join. If you skip the toggle, just tick the GameObject
+> active in the Inspector before upload.
 
 ### Optional: local-only toggle with VRCFury
 
@@ -164,12 +163,14 @@ If something in your HUD covers the bottom-left, you can shift the strip:
 
 ### Privacy
 
-With the local-only VRCFury toggle above, the strip is invisible to
-other players entirely. If you skipped that and just dropped the prefab
-on, anyone whose camera renders your avatar will also see the strip and
-could theoretically decode your coords from a screen capture. Either
-use the toggle or treat the coords as you'd treat your VRChat instance
-ID (not a hard secret, but not something you blast publicly).
+With the local-only VRCFury toggle above, the strip only renders on
+your own client. Other players in the lobby never see it. That's the
+whole point of `Separate Local State` + empty `In Remote`.
+
+If you skipped the toggle and just enabled the GameObject directly,
+the strip renders on every camera that sees your avatar (other
+players, mirrors). Treat the coords like instance metadata, not
+sensitive data, but use the toggle if you care.
 
 ---
 

@@ -107,11 +107,9 @@ namespace ProjectGabriel.Editor
 
             var root = new GameObject("GabrielPoseHUD");
             // ship the prefab with the root disabled. the VRCFury toggle
-            // (Default On + In Local: turn on GabrielPoseHUD) is what's
-            // expected to wake it up at world join. if you forgot to add
-            // the toggle, the strip just stays off, which is safer than
-            // accidentally broadcasting your coords to every camera in
-            // the lobby.
+            // (Default On + In Local: turn on GabrielPoseHUD) is what
+            // wakes it up at world join. if you skip the toggle, just
+            // tick the GameObject active in the inspector before upload.
             root.SetActive(false);
             try
             {
