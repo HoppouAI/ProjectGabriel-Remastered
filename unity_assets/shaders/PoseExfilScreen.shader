@@ -28,7 +28,7 @@ Shader "ProjectGabriel/PoseExfilScreen"
 
     Properties
     {
-        _CellSize  ("Cell Size (px per logical pixel)", Float) = 8
+        _CellSize  ("Cell Size (px per logical pixel)", Float) = 4
         _OffsetX   ("Offset X (px from left)",          Float) = 0
         _OffsetY   ("Offset Y (px from bottom)",        Float) = 0
     }

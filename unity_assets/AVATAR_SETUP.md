@@ -154,7 +154,9 @@ If something in your HUD covers the bottom-left, you can shift the strip:
 1. Select the `GabrielPoseHUD.prefab` asset
 2. Find the `MeshRenderer` -> material slot, click it
 3. The material exposes:
-   - **Cell Size (px per logical pixel)** -- default 8
+   - **Cell Size (px per logical pixel)** -- default 4. Only bump this
+     higher (e.g. 6 or 8) if the strip is too small to read reliably on
+     your capture pipeline. Bigger cells = more screen real estate used.
    - **Offset X (px from left)** -- default 0
    - **Offset Y (px from bottom)** -- default 0
 4. Bump `Offset Y` up to ~50 to lift it above the VRChat HUD bar, etc.

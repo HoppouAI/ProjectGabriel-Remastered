@@ -39,7 +39,7 @@ namespace ProjectGabriel.Editor
 
         // grid is GRID_W x GRID_H cells, each CELL_SIZE x CELL_SIZE physical
         // pixels. must match the constants in src/pose_decoder.py.
-        private const float CELL_SIZE = 8f;
+        private const float CELL_SIZE = 4f;
         private const float OFFSET_X  = 0f;    // pixels from left edge
         private const float OFFSET_Y  = 0f;    // pixels from bottom edge
 
