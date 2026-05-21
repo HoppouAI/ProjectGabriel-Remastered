@@ -82,8 +82,9 @@ DEFAULT_CFG = {
     "map_mode_visit_radius_m": 1.5,      # cells within this of pose marked visited
     "map_mode_recency_cap_s": 600.0,     # recency score saturates here
     "map_mode_w_recency": 1.0,           # weights for the score components
-    "map_mode_w_frontier": 1.2,
+    "map_mode_w_frontier": -0.8,         # negative = prefer interior cells, dont push toward unmapped edges
     "map_mode_w_distance": 0.35,
+    "map_mode_max_missing_neighbors": 3, # skip cells with more missing neighbors than this (frontier guard)
     "map_mode_stale_timeout_s": 25.0,    # bail and re-pick if follow stalls
     "map_mode_waypoint_chance": 0.2,     # roll per-pick to visit a saved waypoint instead
     "map_mode_waypoint_min_dist": 2.5,   # skip waypoints closer than this (we're already there)
@@ -602,6 +603,10 @@ class Wanderer:
                     continue
                 if (vx + ddx, vy, vz + ddz) not in nodes:
                     missing += 1
+        # hard frontier guard: dont pick cells right on the edge of the
+        # mapped area, otherwise we look like we're trying to expand the map.
+        if missing > int(cfg["map_mode_max_missing_neighbors"]):
+            return None
         frontier_n = missing / 8.0
         # distance is normalized within band
         span = cfg["map_mode_max_radius"] - cfg["map_mode_min_radius"]
