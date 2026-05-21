@@ -206,10 +206,19 @@ builder adds 11. Plenty of headroom.
    - Add Component -> **VRC Fury** -> **Armature Link**
    - **Link From (Prop / Clothing):** auto-fills with `HeadAnchor`
    - **Link To (Avatar):** pick your **Head** bone from the dropdown
-   - Repeat on `HipsAnchor` with **Hips** as the target
+   - Expand the **Advanced** foldout, find **Transform Alignment**,
+     and tick **Align Position** + **Align Rotation**. Without these
+     the anchor gets reparented under Head but keeps its scene world
+     position, so the rays end up nowhere near your actual head.
+     VRCFury only auto-enables alignment for skinned clothing, not
+     plain empty GameObjects like our anchors, so you have to flip
+     these manually.
+   - Repeat on `HipsAnchor` with **Hips** as the target (same
+     Align Position + Align Rotation tick).
 
-   That's it -- no Link Mode, no advanced options. VRCFury merges the
-   anchor's children into the target bone on upload.
+   That's it -- no Link Mode field, just the From/To pair plus the two
+   alignment checkboxes. VRCFury moves each anchor onto its bone on
+   upload and the child `Ray_*` empties go with it.
 
    *Optional:* with `HeadAnchor` selected you can bump its local Y up a
    little so the head rays originate near the visual center of your
