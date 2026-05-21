@@ -12,6 +12,24 @@ manual prefab building required.
 
 ---
 
+## What "done" looks like
+
+![Avatar with pose strip + raycasts visible in Unity scene view](docs/images/avatar-setup-complete.png)
+
+When everything is wired up and the `GabrielPoseHUD` GameObject is
+enabled, the Unity Scene view should look roughly like this:
+
+- the yellow lines radiating out from the head and hips are the
+  VRCRaycast gizmos (front, sides, diagonals, up, down, drop, gaze)
+- the colored strip in the bottom-left of the Game view is the pose
+  HUD encoding your world position
+- nothing else is parented under the Head bone
+
+If your scene matches that picture, the python side will pick up coords
+and ray data the moment you upload and put the avatar on.
+
+---
+
 ## Step 0 -- one-time install
 
 1. Copy `unity_assets/` from this repo into your VRChat avatar project
