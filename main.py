@@ -226,6 +226,9 @@ async def main(save_audio=False):
                     osc, instance_monitor=instance_monitor,
                 )
                 session.tool_handler.mapping_service = shared_state["mapping_service"]
+                # let the wanderer use the voxel map for curiosity exploration
+                if wanderer:
+                    wanderer._mapping_service_ref = shared_state["mapping_service"]
             except Exception as _e:
                 logger.warning(f"mapping service unavailable: {_e}")
         except ImportError:
