@@ -38,12 +38,19 @@ Shader "ProjectGabriel/PoseExfilScreen"
         // queue is bumped way above VRChat nameplates and other Overlay
         // shaders so the strip cant get covered by UI when people walk in
         // front of the camera. ZTest Always + ZWrite Off also helps.
-        Tags { "Queue"="Overlay+2000" "RenderType"="Overlay" "IgnoreProjector"="True" "DisableBatching"="True" }
+        Tags { "Queue"="Overlay+5000" "RenderType"="Overlay" "IgnoreProjector"="True" "DisableBatching"="True" "PreviewType"="Plane" }
         LOD 100
         ZTest Always
         ZWrite Off
         Cull Off
         Lighting Off
+        // Force opaque replace - we want pure 0/1 in each channel to land
+        // in the framebuffer unchanged. no alpha blend, no nameplate color
+        // bleed through, no premultiply weirdness from fallback paths.
+        Blend Off
+        BlendOp Add
+        ColorMask RGBA
+        Fog { Mode Off }
 
         Pass
         {
