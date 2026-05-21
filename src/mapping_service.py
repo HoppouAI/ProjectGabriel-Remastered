@@ -704,6 +704,84 @@ class MappingService:
                 "dry_run": bool(dry_run),
             }
 
+    def cleanup_jump_artifacts(self, *, dry_run: bool = False) -> dict:
+        """Remove floating single-cell-high voxels left over from old jump
+        landings. The heuristic: a 'jump artifact' is a REACHABLE cell that
+        sits exactly 1 cell above another REACHABLE cell at the same (x,z)
+        AND has zero same-level REACHABLE horizontal neighbors (8-conn at
+        same y). That pattern almost always means a brief mid-jump observe
+        snapped to the floor+1 row.
+
+        Protects waypoint cells and the avatars current cell. The cell
+        directly below the artifact is fine, only the lonely one above is
+        removed."""
+        with self._lock:
+            with self._nav.graph._lock:  # noqa: SLF001
+                serials = set(self._nav.graph.nodes.keys())
+                node_types = {s: self._nav.graph.nodes[s].node_type
+                              for s in serials}
+
+            # protected cells
+            wp_serials: set[tuple[int, int, int]] = set()
+            if self._waypoints is not None:
+                for wp in self._waypoints.list():
+                    try:
+                        from src.voxel_nav import world_to_serial as _w2s
+                        wp_serials.add(_w2s(wp.x, wp.y, wp.z))
+                    except Exception:
+                        pass
+            avatar_serial: Optional[tuple[int, int, int]] = None
+            if self._last_pose is not None:
+                try:
+                    from src.voxel_nav import world_to_serial as _w2s
+                    avatar_serial = _w2s(self._last_pose.x,
+                                          self._last_pose.y,
+                                          self._last_pose.z)
+                except Exception:
+                    pass
+
+            from src.voxel_nav import NodeType
+            to_remove: list[tuple[int, int, int]] = []
+            for s in serials:
+                if node_types.get(s) != NodeType.REACHABLE:
+                    continue
+                if s in wp_serials or s == avatar_serial:
+                    continue
+                sx, sy, sz = s
+                below = (sx, sy - 1, sz)
+                if below not in serials:
+                    continue
+                if node_types.get(below) != NodeType.REACHABLE:
+                    continue
+                # must have zero same-level reachable horizontal neighbors
+                lonely = True
+                for dx in (-1, 0, 1):
+                    for dz in (-1, 0, 1):
+                        if dx == 0 and dz == 0:
+                            continue
+                        n = (sx + dx, sy, sz + dz)
+                        if n in serials and node_types.get(n) == NodeType.REACHABLE:
+                            lonely = False
+                            break
+                    if not lonely:
+                        break
+                if lonely:
+                    to_remove.append(s)
+
+            if not dry_run and to_remove:
+                for s in to_remove:
+                    self._nav.delete_cell(s)
+                self._nav.flush()
+
+            logger.info("mapping: cleanup_jump_artifacts removed=%d dry_run=%s",
+                        len(to_remove), dry_run)
+            return {
+                "result": "ok",
+                "cells_removed": len(to_remove),
+                "cells_kept": len(serials) - (0 if dry_run else len(to_remove)),
+                "dry_run": bool(dry_run),
+            }
+
     # ------------------------------------------------------------------
     # world management (list / delete saved maps)
     # ------------------------------------------------------------------

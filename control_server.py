@@ -1096,6 +1096,22 @@ async def mapping_cleanup_strays(payload: CleanupStraysIn):
     )
 
 
+class CleanupJumpArtifactsIn(BaseModel):
+    dry_run: bool = False
+
+
+@app.post("/api/mapping/cleanup_jump_artifacts")
+async def mapping_cleanup_jump_artifacts(payload: CleanupJumpArtifactsIn):
+    """Delete leftover single-cell-high voxels created by old jump landings.
+    Only touches lonely cells that sit 1 above a mapped floor with zero
+    same-level neighbors. Protects waypoints + current avatar cell."""
+    ms = _get_mapping()
+    return await asyncio.to_thread(
+        ms.cleanup_jump_artifacts,
+        dry_run=bool(payload.dry_run),
+    )
+
+
 # --- WebSocket ---
 
 @app.websocket("/ws")

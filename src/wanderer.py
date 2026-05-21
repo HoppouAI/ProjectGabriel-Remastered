@@ -85,6 +85,8 @@ DEFAULT_CFG = {
     "map_mode_w_frontier": 1.2,
     "map_mode_w_distance": 0.35,
     "map_mode_stale_timeout_s": 25.0,    # bail and re-pick if follow stalls
+    "map_mode_waypoint_chance": 0.2,     # roll per-pick to visit a saved waypoint instead
+    "map_mode_waypoint_min_dist": 2.5,   # skip waypoints closer than this (we're already there)
 }
 
 
@@ -677,6 +679,58 @@ class Wanderer:
             return False
         return True
 
+    def _try_waypoint_visit(self, now):
+        """Pick a random saved waypoint for the current world and head to it.
+        Returns True if a follow was started."""
+        from src.voxel_nav import serial_to_center
+        cfg = self._cfg
+        ms = self._mapping_service_ref
+        wpstore = getattr(ms, "_waypoints", None) if ms else None
+        if wpstore is None:
+            return False
+        try:
+            waypoints = list(wpstore.list())
+        except Exception:
+            return False
+        if not waypoints:
+            return False
+        # filter out ones we're already standing on / way too close
+        nav = ms._nav  # noqa: SLF001
+        cur_world = None
+        if nav.current is not None:
+            try:
+                cur_world = serial_to_center(nav.current.serial)
+            except Exception:
+                cur_world = None
+        if cur_world is not None:
+            cx, _, cz = cur_world
+            min_d = cfg["map_mode_waypoint_min_dist"]
+            waypoints = [w for w in waypoints
+                         if ((w.x - cx) ** 2 + (w.z - cz) ** 2) ** 0.5 >= min_d]
+        if not waypoints:
+            return False
+        wp = random.choice(waypoints)
+        try:
+            if ms._explorer is not None:  # noqa: SLF001
+                ms._explorer.speed_mode = "walk"  # noqa: SLF001
+        except Exception:
+            pass
+        try:
+            res = ms.goto_xyz(wp.x, wp.y, wp.z, label=f"wander:wp:{wp.name}",
+                              final_yaw_deg=float(wp.yaw))
+        except Exception:
+            logger.exception("wanderer: goto_xyz waypoint crashed")
+            return False
+        if not res or not res.get("found"):
+            return False
+        self._map_target_cell = None
+        self._map_follow_start = now
+        self._map_state = "following"
+        self._current_action = "map_wp"
+        logger.info("wanderer: visiting waypoint '%s' at (%.1f, %.1f, %.1f)",
+                    wp.name, wp.x, wp.y, wp.z)
+        return True
+
     def _tick_map_mode(self, now):
         """One iteration of map-aware wandering. Returns True if it drove the
         avatar this tick (so reactive logic should be skipped)."""
@@ -714,6 +768,11 @@ class Wanderer:
             return True
 
         # time to pick
+        # roll for a waypoint visit first if any are saved for this world
+        if random.random() < cfg["map_mode_waypoint_chance"]:
+            if self._try_waypoint_visit(now):
+                return True
+
         pick = self._pick_map_target()
         if pick is None:
             # backoff: don't hammer pick every frame if there's nothing useful

@@ -640,6 +640,30 @@ export default function Mapping({ onToast }: Props) {
     }
   }
 
+  const cleanupJumpArtifacts = async () => {
+    let preview: any
+    try {
+      preview = await api('/api/mapping/cleanup_jump_artifacts', 'POST', { dry_run: true })
+    } catch (err) {
+      onToast(`jump artifacts preview: ${(err as Error).message}`, 'error')
+      return
+    }
+    const wouldRemove = preview?.cells_removed ?? 0
+    if (wouldRemove <= 0) {
+      onToast('no jump artifacts found', 'success')
+      return
+    }
+    if (!confirm(`Found ${wouldRemove} floating 1-cell-high voxels (likely old jump landings).\n\nDelete them?`)) return
+    setBusy(true)
+    try {
+      const r: any = await api('/api/mapping/cleanup_jump_artifacts', 'POST', { dry_run: false })
+      onToast(`removed ${r?.cells_removed ?? 0} jump artifacts`, 'success')
+      refreshWorld()
+    } catch (err) {
+      onToast((err as Error).message, 'error')
+    } finally { setBusy(false) }
+  }
+
   const cleanupStrays = async () => {
     // dry run first so we can tell the user what would happen
     let preview: any
@@ -1013,6 +1037,14 @@ export default function Mapping({ onToast }: Props) {
           title="Delete tiny floating voxel islands (keeps main map + waypoints + your cell)"
         >
           <TbSparkles size={14} /> Clean Strays
+        </button>
+        <button
+          onClick={cleanupJumpArtifacts}
+          disabled={busy}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-white/5 text-text-muted hover:bg-white/10 transition disabled:opacity-50 whitespace-nowrap"
+          title="Delete lonely 1-cell-high voxels left by old jump landings"
+        >
+          <TbSparkles size={14} /> Clean Jumps
         </button>
       </div>
 
