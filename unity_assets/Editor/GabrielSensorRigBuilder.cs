@@ -121,11 +121,26 @@ namespace ProjectGabriel.Editor
 
                 // expression parameters asset
                 var paramsAsset = BuildExpressionParameters();
+                string paramsPath = null;
                 if (paramsAsset != null)
                 {
-                    var paramsPath = Path.Combine(OUTPUT_DIR, PARAMS_NAME).Replace('\\', '/');
+                    paramsPath = Path.Combine(OUTPUT_DIR, PARAMS_NAME).Replace('\\', '/');
                     AssetDatabase.CreateAsset(paramsAsset, paramsPath);
                     Debug.Log("Wrote " + paramsPath);
+
+                    // VRChat only publishes animator params over OSC if they're
+                    // also in the avatar's VRCExpressionParameters. without a
+                    // Full Controller merging our params asset in, the raycast
+                    // values exist on the component but never hit /avatar/parameters.
+                    if (!TryAddVRCFuryFullController(root, paramsAsset))
+                    {
+                        Debug.LogWarning(
+                            "VRCFury not detected, skipping auto Full Controller wiring. " +
+                            "Add a VRC Fury > Full Controller to the GabrielSensorRig root and drop " +
+                            paramsPath + " into the Parameters list yourself, or the ray " +
+                            "params wont publish over OSC."
+                        );
+                    }
                 }
 
                 // save prefab
@@ -184,6 +199,41 @@ namespace ProjectGabriel.Editor
             resultGo.transform.localRotation = Quaternion.identity;
             SetField(component, "resultTransform", resultGo.transform);
 
+            return true;
+        }
+
+        // --- VRCFury Full Controller wiring (reflection, optional) -------------
+
+        // Uses VRCFury's public API (com.vrcfury.api.FuryComponents) to add a
+        // Full Controller component on the rig root with the generated params
+        // asset already plugged into the Parameters list. Without this, the
+        // VRCRaycast components publish values to the animator but never to OSC.
+        private static bool TryAddVRCFuryFullController(GameObject host, ScriptableObject paramsAsset)
+        {
+            var furyComponents = FindType("com.vrcfury.api.FuryComponents");
+            if (furyComponents == null) return false;
+
+            var create = furyComponents.GetMethod(
+                "CreateFullController",
+                BindingFlags.Public | BindingFlags.Static,
+                null,
+                new[] { typeof(GameObject) },
+                null
+            );
+            if (create == null) return false;
+
+            object fc;
+            try { fc = create.Invoke(null, new object[] { host }); }
+            catch (Exception e) { Debug.LogWarning("VRCFury CreateFullController threw: " + e.Message); return false; }
+            if (fc == null) return false;
+
+            var addParams = fc.GetType().GetMethod("AddParams", BindingFlags.Public | BindingFlags.Instance);
+            if (addParams == null) return false;
+
+            try { addParams.Invoke(fc, new object[] { paramsAsset }); }
+            catch (Exception e) { Debug.LogWarning("VRCFury AddParams threw: " + e.Message); return false; }
+
+            Debug.Log("Attached VRCFury Full Controller with GabrielSensorParameters.");
             return true;
         }
 

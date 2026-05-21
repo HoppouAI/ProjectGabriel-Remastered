@@ -230,11 +230,22 @@ builder adds 11. Plenty of headroom.
      bone directly. Same for `Hips`. Then delete the now-empty anchor
      GameObjects.
 
-3. **Animator params:** you do **not** need to add anything to the
-   animator. VRCRaycast publishes directly to OSC and does not require
-   Expression Parameters or animator wiring -- the values land on
-   `/avatar/parameters/<Ray>_Hit` etc. without being declared anywhere.
-   The python side reads them straight off the OSC bus.
+3. **Expression Parameters wiring (REQUIRED for OSC):** VRChat only
+   publishes animator parameters over OSC if they're also registered
+   in the avatar's `VRCExpressionParameters`. The builder generates
+   `GabrielSensorParameters.asset` for exactly this reason.
+
+   - **With VRCFury (auto):** the builder also attaches a **VRC Fury
+     > Full Controller** component to the `GabrielSensorRig` root with
+     the params asset already dropped into its Parameters list. Nothing
+     for you to do, just check the component is there after dragging the
+     prefab in. If VRCFury wasn't installed at build time you'll see a
+     warning in the console and have to add it yourself.
+   - **Without VRCFury:** open your avatar's `VRCAvatarDescriptor`,
+     scroll to Expressions, and either merge `GabrielSensorParameters`
+     into your existing Parameters asset or use a tool like
+     **VRLabs Avatars 3 Manager** to do it. Without this step the OSC
+     side never sees the ray values.
 
 ### Ray names + purposes
 
@@ -291,10 +302,12 @@ If the rays are publishing but values look wrong:
 
 ## What the builders do NOT do
 
-- **VRCFury wiring** -- the Armature Link components and the optional
-  Pose HUD toggle are manual. VRCFury's internal types shift across
-  releases so reflection-based wiring was too flaky to ship. Two clicks
-  each, not a big deal.
+- **VRCFury Armature Link wiring** -- the per-anchor Armature Link
+  components are manual. VRCFury's internal types shift across releases
+  so reflection-based wiring was too flaky to ship for those. Two clicks
+  each, not a big deal. (The Sensor Rig DOES auto-attach a VRCFury
+  Full Controller with the params asset though, since that one uses
+  VRCFury's stable public API.)
 - **Avatar uploads** -- you still need to use the VRChat SDK Control
   Panel to build and upload.
 - **Animator setup** -- not needed at all. OSC publishes ray data
