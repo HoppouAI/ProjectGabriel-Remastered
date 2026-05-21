@@ -113,6 +113,12 @@ python side screen-captures it to know where you are.
 2. Leave its transform at `0, 0, 0` with identity rotation and scale
    `1, 1, 1`.
 
+> The prefab ships with its root GameObject **disabled by default**.
+> That's intentional. The VRCFury toggle below (Default On + In Local:
+> turn on) wakes it up at world join. If you skip the toggle, just tick
+> the GameObject active in the Inspector before upload (or anytime you
+> want to use it).
+
 ### Optional: local-only toggle with VRCFury
 
 If you want a radial-menu toggle to turn the strip on/off (and to keep
