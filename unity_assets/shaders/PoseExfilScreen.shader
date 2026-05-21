@@ -8,10 +8,10 @@ Shader "ProjectGabriel/PoseExfilScreen"
     // pure 1). Pure 0/1 round-trip through sRGB gamma cleanly, so screen
     // capture sees exactly what we wrote, no tonemapping issues.
     //
-    // LAYOUT (34 cells wide x 2 cells tall):
-    //   Row 0 (top):    position bits 0..31 in cells 0..31,
+    // LAYOUT (34 cells wide x 2 cells tall, anchored bottom-left):
+    //   Row 0 (bottom): position bits 0..31 in cells 0..31,
     //                   cell 32 = RED marker, cell 33 = GREEN marker
-    //   Row 1 (bottom): forward bits 0..31 in cells 0..31,
+    //   Row 1 (above):  forward bits 0..31 in cells 0..31,
     //                   cell 32 = GREEN marker, cell 33 = RED marker
     //
     // Each data cell encodes 3 values at the same bit position:
@@ -30,12 +30,15 @@ Shader "ProjectGabriel/PoseExfilScreen"
     {
         _CellSize  ("Cell Size (px per logical pixel)", Float) = 8
         _OffsetX   ("Offset X (px from left)",          Float) = 0
-        _OffsetY   ("Offset Y (px from top)",           Float) = 0
+        _OffsetY   ("Offset Y (px from bottom)",        Float) = 0
     }
 
     SubShader
     {
-        Tags { "Queue"="Overlay+100" "RenderType"="Overlay" "IgnoreProjector"="True" }
+        // queue is bumped way above VRChat nameplates and other Overlay
+        // shaders so the strip cant get covered by UI when people walk in
+        // front of the camera. ZTest Always + ZWrite Off also helps.
+        Tags { "Queue"="Overlay+2000" "RenderType"="Overlay" "IgnoreProjector"="True" "DisableBatching"="True" }
         LOD 100
         ZTest Always
         ZWrite Off
@@ -57,8 +60,8 @@ Shader "ProjectGabriel/PoseExfilScreen"
             struct v2f    { float4 vertex : SV_POSITION; };
 
             // Snap every vertex to a screen corner by the sign of its x/y.
-            // Same trick as the original. Works for any quad whose
-            // four corners straddle zero in object space.
+            // Works for any quad whose four corners straddle zero in object
+            // space. The actual grid placement is done in the frag shader.
             v2f vert(appdata v)
             {
                 v2f o;
@@ -70,7 +73,7 @@ Shader "ProjectGabriel/PoseExfilScreen"
             }
 
             // pack a float to uint, offset by 5000 to handle negatives,
-            // 1cm precision. matches packFloat in the shader.
+            // 1cm precision.
             uint packFloat(float f)
             {
                 f += 5000.0;
@@ -93,14 +96,23 @@ Shader "ProjectGabriel/PoseExfilScreen"
 
             fixed4 frag(v2f i) : SV_Target
             {
-                // SV_POSITION in the frag shader = pixel coord. Unity often
-                // flips Y when rendering to intermediate RTs, so anchor to
-                // the bottom of the framebuffer (which becomes the top of
-                // the screen after the flip). Works in both flipped and
-                // non-flipped paths because we just pick a corner.
+                // SV_POSITION in the frag shader = pixel coord. Anchor the
+                // grid to the bottom-left of the framebuffer. Unity flips Y
+                // when rendering to intermediate RTs on some platforms, but
+                // we account for that by reading the projection sign so the
+                // strip ends up at the bottom of the FINAL image regardless.
                 float cell = max(1.0, _CellSize);
                 float px = i.vertex.x - _OffsetX;
-                float py = (_ScreenParams.y - i.vertex.y) - _OffsetY;
+                // _ProjectionParams.x is -1 when Y is flipped. when its
+                // flipped, SV_POSITION.y already measures from the bottom
+                // of the RT (which becomes the top of the screen after the
+                // final flip), so we need to mirror it. when its not
+                // flipped, SV_POSITION.y measures from the top and we need
+                // _ScreenParams.y - y to get distance from the bottom.
+                float yFromBottom = (_ProjectionParams.x < 0.0)
+                    ? (_ScreenParams.y - i.vertex.y)
+                    : i.vertex.y;
+                float py = yFromBottom - _OffsetY;
 
                 int cellX = (int)floor(px / cell);
                 int cellY = (int)floor(py / cell);

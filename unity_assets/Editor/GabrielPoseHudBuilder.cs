@@ -41,7 +41,7 @@ namespace ProjectGabriel.Editor
         // pixels. must match the constants in src/pose_decoder.py.
         private const float CELL_SIZE = 8f;
         private const float OFFSET_X  = 0f;    // pixels from left edge
-        private const float OFFSET_Y  = 0f;    // pixels from top edge
+        private const float OFFSET_Y  = 0f;    // pixels from bottom edge
 
         // mesh AABB in object space. centered roughly at chest height so
         // the box covers from slightly below the feet (-1) to slightly

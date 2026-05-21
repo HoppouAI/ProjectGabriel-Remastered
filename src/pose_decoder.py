@@ -7,7 +7,7 @@ a known on-screen location. The pixel values encode the avatar's world
 pose. Python screen-captures that grid with mss and decodes it back to
 floats.
 
-This adopts a fullscreen quad / Overlay-queue shader trick to dodge sRGB
+This uses a fullscreen quad / Overlay-queue shader trick to dodge sRGB
 gamma: each data pixel writes pure 0.0 or pure 1.0 per channel (one bit
 per channel per pixel), which round-trips cleanly through any tonemapping.
 

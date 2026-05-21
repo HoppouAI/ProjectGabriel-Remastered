@@ -1,7 +1,7 @@
 ﻿"""reference-style live trail mapping in VRChat.
 
 Combines:
-    * PoseExfilReader  -- world pose (x,y,z,yaw) decoded from screen-space
+    * PoseExfilReader  -- world pose (x,y,z,yaw) decoded from the screen-space
       bit shader strip in the screen corner.
     * VoxelNavManager  -- 0.25m voxel graph, Reachable / UnReachable / Iffy.
     * VoxelExplorer    -- reference Wander.WalkToTarget + discovery target.
