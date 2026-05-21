@@ -57,11 +57,34 @@ python side screen-captures it to know where you are.
 2. Leave its transform at `0, 0, 0` with identity rotation and scale
    `1, 1, 1`.
 
+### Optional: local-only toggle with VRCFury
+
+If you want a radial-menu toggle to turn the strip on/off (and to keep
+it hidden from other players entirely), add a VRCFury Toggle:
+
+1. Select the `GabrielPoseHUD` GameObject on your avatar (the one you
+   just dragged in).
+2. Add Component -> **VRC Fury** -> **Toggle**.
+3. Set:
+   - **Menu Path:** `Toggles/WorldPOSShader` (or whatever you want)
+   - **In Local:** Turn On -> drag `GabrielPoseHUD` into the slot
+   - **In Remote:** leave empty
+   - **Options** (top-right): check **Default On**, **Saved Between
+     Worlds**, **Separate Local State**
+
+   `Separate Local State` + empty `In Remote` is the important bit -- it
+   makes the strip only render for you, not for other players. The
+   python side captures your own screen so this is all it needs.
+
+4. Done, no Full Controller / parameters / animator wiring needed.
+   VRCFury bakes the toggle into your menu on upload.
+
 ### Upload
 
-That's it. Upload the avatar normally. When you wear it the strip will
-appear in the **bottom-left corner** of your screen, ~272x16 px, using
-pure red/green/blue/black pixels.
+Upload the avatar normally. When you wear it the strip will appear in
+the **bottom-left corner** of your screen, ~272x16 px, using pure
+red/green/blue/black pixels. If you set up the toggle above, find it at
+`Expressions -> Toggles -> WorldPOSShader` in the radial menu.
 
 ### Customizing position
 
@@ -79,11 +102,12 @@ If something in your HUD covers the bottom-left, you can shift the strip:
 
 ### Privacy
 
-Anyone whose camera renders your avatar also sees the strip. A
-determined attacker who screen-captures their own view could decode
-your world coords. Keep the cell size at the default 8 and turn off the
-mesh renderer when you don't need the nav layer (Animator parameter
-toggle works fine).
+With the local-only VRCFury toggle above, the strip is invisible to
+other players entirely. If you skipped that and just dropped the prefab
+on, anyone whose camera renders your avatar will also see the strip and
+could theoretically decode your coords from a screen capture. Either
+use the toggle or treat the coords as you'd treat your VRChat instance
+ID (not a hard secret, but not something you blast publicly).
 
 ---
 
@@ -113,34 +137,29 @@ builder adds 11. Plenty of headroom.
 
    **A) With VRCFury (recommended)**
    - Select the `HeadAnchor` GameObject
-   - Add Component -> **VRC Fury** -> Armature Link
-   - Set **Link Mode** = Reparent
-   - Drag your avatar's **Head** bone into the link target
+   - Add Component -> **VRC Fury** -> **Armature Link**
+   - **Link From (Prop / Clothing):** auto-fills with `HeadAnchor`
+   - **Link To (Avatar):** pick your **Head** bone from the dropdown
    - Repeat on `HipsAnchor` with **Hips** as the target
 
-   **B) Manual parenting**
+   That's it -- no Link Mode, no advanced options. VRCFury merges the
+   anchor's children into the target bone on upload.
+
+   *Optional:* with `HeadAnchor` selected you can bump its local Y up a
+   little so the head rays originate near the visual center of your
+   model's head instead of the bone pivot. Doesn't change OSC output,
+   just looks cleaner in the scene gizmos. Personal preference.
+
+   **B) Manual parenting (skip VRCFury entirely)**
    - Drag the `Ray_*` empties out of `HeadAnchor` and into your Head
      bone directly. Same for `Hips`. Then delete the now-empty anchor
      GameObjects.
 
-3. **Merge the expression parameters** (this is what makes OSC actually
-   publish the ray values):
-
-   **A) With VRCFury (recommended)**
-   - Select the `GabrielSensorRig` root
-   - Add Component -> **VRC Fury** -> Full Controller
-   - Leave Controller and Menu empty
-   - Drag `GabrielSensorParameters.asset` into the **Parameters** list
-
-   **B) Manual**
-   - Open your avatar's Expression Parameters asset
-   - Paste in each `<Ray>_Hit` (Bool), `<Ray>_Distance` (Float),
-     `<Ray>_Ratio` (Float). All with **Synced = false**.
-   - Avoids burning network bandwidth, the rays are local-only data.
-
-4. **Animator params:** you do **not** need to add anything to the
-   animator unless you want to drive animations from raycast hits.
-   VRCRaycast publishes to OSC directly without animator wiring.
+3. **Animator params:** you do **not** need to add anything to the
+   animator. VRCRaycast publishes directly to OSC and does not require
+   Expression Parameters or animator wiring -- the values land on
+   `/avatar/parameters/<Ray>_Hit` etc. without being declared anywhere.
+   The python side reads them straight off the OSC bus.
 
 ### Ray names + purposes
 
@@ -197,17 +216,17 @@ If the rays are publishing but values look wrong:
 
 ## What the builders do NOT do
 
-- **VRCFury wiring** -- step 2 / step 3 of the sensor rig setup are
-  manual because VRCFury's internal types shift across releases and
-  reflection-based wiring was flaky. Two clicks each, not a big deal.
+- **VRCFury wiring** -- the Armature Link components and the optional
+  Pose HUD toggle are manual. VRCFury's internal types shift across
+  releases so reflection-based wiring was too flaky to ship. Two clicks
+  each, not a big deal.
 - **Avatar uploads** -- you still need to use the VRChat SDK Control
   Panel to build and upload.
-- **Animator setup** -- not needed for OSC nav, only needed if you want
-  to drive animations from raycast hits.
-- **PoseHUD layer masks** -- the strip renders to every camera that sees
-  your avatar (other players, mirrors). If you stream and want to hide
-  it from your own OBS capture, crop it out in OBS rather than at the
-  shader level. Coords are nav data, not secrets, but treat them like
+- **Animator setup** -- not needed at all. OSC publishes ray data
+  directly without going through the animator.
+- **PoseHUD privacy** -- if you skipped the VRCFury local-only toggle
+  the strip renders to every camera that sees your avatar (other
+  players, mirrors). Either add the toggle or treat the coords like
   location data.
 
 ---
@@ -233,7 +252,10 @@ Confirm queue is `Overlay+5000` and `Blend Off` is on the SubShader.
 Re-import the shader if not.
 
 **OSC isn't publishing the ray params**
-Skipped step 3 of the sensor rig setup. The params must be merged into
-the avatar's Expression Parameters with `Synced = false`. Use VRCFury
-Full Controller -> Parameters list, or paste them manually into the
-avatar's `VRCExpressionParameters` asset.
+VRCRaycast publishes directly to OSC without needing animator or
+Expression Parameter entries, so check the basics: avatar is uploaded
+with the rig as a child of the avatar root, OSC is enabled in the
+radial menu (Options -> OSC -> Enabled), and the `Result` child
+transform exists under each `Ray_*` empty (the builder adds these but a
+stray manual delete can remove them). VRCRaycast silently no-ops
+without `Result`.
