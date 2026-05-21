@@ -177,28 +177,12 @@ namespace ProjectGabriel.Editor
 
         private void DrawFooterLinks()
         {
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Open setup guide (AVATAR_SETUP.md)"))
-            {
-                var guesses = new[]
-                {
-                    "Assets/ProjectGabriel/AVATAR_SETUP.md",
-                    "Assets/ProjectGabriel/unity_assets/AVATAR_SETUP.md"
-                };
-                foreach (var g in guesses)
-                {
-                    var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(g);
-                    if (obj != null) { AssetDatabase.OpenAsset(obj); return; }
-                }
-                Log("AVATAR_SETUP.md not found under Assets/ProjectGabriel. Check the repo's unity_assets/ folder.");
-            }
             if (GUILayout.Button("Rebuild prefabs only (no install)"))
             {
                 GabrielPoseHudBuilder.BuildPrefab(verbose: true);
                 GabrielSensorRigBuilder.BuildPrefab(verbose: true);
                 Log("rebuilt both prefabs under Assets/ProjectGabriel/Generated/.");
             }
-            EditorGUILayout.EndHorizontal();
         }
 
         // --- install pipeline -------------------------------------------------
