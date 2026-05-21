@@ -19,6 +19,13 @@ _LEAVE_PATTERN = re.compile(
 _JOINING_PATTERN = re.compile(
     r"\[Behaviour\] Joining\s+(wrld_[0-9a-f\-]+):(.+)"
 )
+# example line: "[Behaviour] Joining or Creating Room: MyCoolWorld"
+# or:           "[Behaviour] Entering Room: MyCoolWorld"
+# the Entering Room line shows up BEFORE the wrld_ join, the
+# "Joining or Creating Room" line shows up AFTER it.
+_ROOM_NAME_PATTERN = re.compile(
+    r"\[Behaviour\] (?:Entering|Joining or Creating) Room:\s*(.+)$"
+)
 
 
 def _find_latest_log() -> Path | None:
@@ -37,6 +44,7 @@ class InstanceMonitor:
         self._players: dict[str, dict] = {}  # user_id -> {name, id, join_time}
         self._world_id: str = ""
         self._instance_id: str = ""
+        self._world_name: str = ""
         self._log_path: Path | None = None
         self._file_pos: int = 0
         self._running = False
@@ -47,6 +55,14 @@ class InstanceMonitor:
         if self._world_id and self._instance_id:
             return f"{self._world_id}:{self._instance_id}"
         return ""
+
+    @property
+    def world_id(self) -> str:
+        return self._world_id
+
+    @property
+    def world_name(self) -> str:
+        return self._world_name
 
     @property
     def is_in_world(self) -> bool:
@@ -93,14 +109,20 @@ class InstanceMonitor:
                 content = f.read()
                 self._file_pos = len(content.encode("utf-8", errors="replace"))
 
-            last_join_pos = content.rfind("[Behaviour] Joining ")
-            if last_join_pos == -1:
+            # anchor on the wrld_ join itself, then back up ~1KB to also
+            # catch the "Entering Room:" line that comes just before it.
+            anchor = content.rfind("[Behaviour] Joining wrld_")
+            if anchor == -1:
+                anchor = content.rfind("[Behaviour] Joining ")
+            if anchor == -1:
                 return
+            anchor = max(0, anchor - 1024)
 
-            relevant = content[last_join_pos:]
+            relevant = content[anchor:]
             self._players.clear()
             self._world_id = ""
             self._instance_id = ""
+            self._world_name = ""
             self._parse_chunk(relevant)
             logger.info(
                 f"Initial scan: {len(self._players)} players in {self.current_location}"
@@ -110,6 +132,12 @@ class InstanceMonitor:
 
     def _parse_chunk(self, chunk: str):
         for line in chunk.splitlines():
+            m = _ROOM_NAME_PATTERN.search(line)
+            if m:
+                self._world_name = m.group(1).strip()
+                logger.debug(f"World name: {self._world_name}")
+                continue
+
             m = _JOINING_PATTERN.search(line)
             if m:
                 self._world_id = m.group(1)

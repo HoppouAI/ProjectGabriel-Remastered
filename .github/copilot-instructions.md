@@ -7,99 +7,16 @@
 
 ProjectGabriel is a real-time VRChat AI powered by **Gemini Live** (WebSocket audio streaming). It listens to people in VRChat, responds with voice, and controls VRChat via OSC. It includes person-following via YOLOv8 computer vision and face tracking via YOLOv8-face.
 
-## Architecture
+## Development Notes
 
-```
-main.py                  -- Entry point, wires everything together
-supervisor.py            -- Process supervisor, restarts main.py on crash
-control_server.py        -- FastAPI WebUI server (dashboard + memory manager)
-vision_server.py         -- Debug vision WebUI for YOLO detections
-src/
-  cli.py                 -- CLI formatting (colored logging, startup banner/info)
-  config.py              -- YAML config loader + API key rotation
-  gemini_live/           -- Gemini Live session package (split from old monolithic gemini_live.py)
-    __init__.py          -- Public API: re-exports GeminiLiveSession, ConversationLogger, CONVERSATION_DIR
-    session.py           -- GeminiLiveSession main class: __init__, run, reconnect, idle, send_text, session handle persistence, now_playing loop, compression helpers
-    receive.py           -- ReceiveLoopMixin: _receive_loop (event demux), _update_chatbox, _finalize_chatbox
-    audio.py             -- AudioLoopsMixin: mic input, send realtime + Silero VAD, speaker output, TTS audio loop, gate/ungate, switch_tts_provider
-    vision.py            -- VisionLoopMixin: screen capture frame builder + capture loop (mss + PIL JPEG)
-    config_builder.py    -- ConfigBuilderMixin: _build_config, _needs_alpha_api
-    chatbox.py           -- ChatboxFormattersMixin: text/markdown/now-playing formatters for the VRChat chatbox
-    chatbox_orchestrator.py -- ChatboxOrchestrator: per-tick winner pick across builtins (music, music_gen) and plugin sources, dedupe + force refresh + on_clear lifecycle hook
-    conversation_logger.py -- ConversationLogger (privacy-gated, opt-in via config) + CONVERSATION_DIR
-  audio.py               -- PyAudio I/O, voice boost/distortion, pygame music/SFX playback
-  vrchat.py              -- VRChat OSC client (chatbox, voice, movement, grab/drop/use, smooth look)
-  vrchatapi.py           -- VRChat REST API client (auth, avatar switch, friends, status, invites)
-  tracker.py             -- YOLOv8 person detection + OSC movement control (bettercam)
-  face_tracker.py        -- YOLOv8-face face detection + smooth face-tracking via OSC (mss)
-  personalities.py       -- Personality switching system (list/switch/get via tools)
-  avatars.py             -- VRCX avatar search API integration
-  instance_monitor.py    -- VRChat instance join/leave monitoring via API polling
-  wanderer.py            -- Random autonomous wandering behavior via OSC movement
-  idle_chatbox.py        -- Idle chatbox banner display in VRChat chatbox
-  tts.py                 -- TTS providers (Qwen3, Hoppou, Chirp 3 HD, TikTok) for voice synthesis
-  myinstants.py          -- MyInstants.com sound search & download
-  memory.py              -- Persistent memory system (MongoDB Atlas / SQLite)
-  emotions.py            -- Avatar emotion/animation system via OSC
-  tools/                 -- Gemini function tools (modular package)
-    __init__.py          -- Re-exports get_tool_declarations, ToolHandler
-    _base.py             -- BaseTool abstract class + @register_tool decorator
-    _handler.py          -- ToolHandler dispatcher (routes calls to tools)
-    soundboard.py        -- SFX playback tool
-    music.py             -- Music playback tools
-    voice.py             -- Voice/boost controls
-    personalities.py     -- Personality switching
-    movement.py          -- OSC movement tools
-    tracker.py           -- Player tracker tools
-    wanderer.py          -- Wanderer controls
-    vrchat_api.py        -- VRChat API tools (avatar, status, friends, worlds)
-    system.py            -- System info tools
-    memory_tools.py      -- Memory tools (saveMemory, searchMemories, deleteMemory, listMemories, recallMemories)
-    emotions_tools.py    -- Emotion/animation tools
-    discord.py           -- Discord messaging tools for main session
-discord_bot/             -- Discord selfbot module (separate Gemini Live session)
-  __init__.py            -- Package init
-  bot.py                 -- Discord client, message handling, admin commands
-  config.py              -- Bot-specific YAML config loader
-  config.yml             -- Bot config (gitignored, see .example)
-  config.yml.example     -- Template bot config
-  gemini_session.py      -- Gemini Live AUDIO session (transcription captured for text)
-  conversation_store.py  -- Per-channel JSON conversation persistence
-  prompts/               -- Discord-specific prompt files (separate from main AI)
-    prompts.yml          -- Named system prompts (gitignored, see .example)
-    prompts.yml.example  -- Template prompts
-    appends.yml          -- Auto-appended instructions (gitignored, see .example)
-    appends.yml.example  -- Template appends
-    personalities.yml    -- Switchable personalities (gitignored, see .example)
-    personalities.yml.example -- Template personalities
-  tools/                 -- Bot-specific tool modules
-    __init__.py          -- Exports DiscordToolHandler
-    handler.py           -- Tool dispatcher for bot session
-    memory.py            -- Memory tools (shared with main system, discord_ prefix)
-    relay.py             -- Relay messages to main VRChat session
-    discord_actions.py   -- Send messages, reactions, set status
-    personalities.py     -- Personality switching tools
-    system.py            -- System info tools
-  data/                  -- Bot runtime data (gitignored)
-    conversations/       -- Per-channel conversation JSON logs
-    session_handle.txt   -- Gemini session handle for resumption
-config/
-  voices.yml             -- Voice configuration (gitignored, see .example)
-  voices.yml.example     -- Template voice config
-  prompts/
-    prompts.yml          -- Named system prompts (gitignored, see .example)
-    appends.yml          -- Auto-appended context (gitignored, see .example)
-    personalities.yml    -- Switchable personality modes (gitignored, see .example)
-    *.yml.example        -- Template files for new users
-config.yml               -- Main config (gitignored, see config.yml.example)
-config.yml.example       -- Template config with placeholder values
-config/tools.yml         -- Per-tool toggle map, auto-synced on startup (gitignored, see .example)
-config/tools.yml.example -- Template tools.yml -- format guide only, real file is generated
-webui/                   -- Dashboard + memory manager HTML/JS/CSS
-models/yolov8/           -- YOLOv8n model (auto-downloaded) + config.json
-sfx/music/               -- Local music files for playback
-data/conversations/      -- Auto-saved conversation transcripts (JSON)
-```
+- Do not make comments unless they are needed; your code should be self-explanatory. If the logic is complex, write a concise comment. Avoid obvious comments that restate what the code does.
+- Don't use em dashes in the code or commits
+- Config changes go in `config.yml` -- add matching properties to `Config` class
+- All async code uses `asyncio` -- blocking calls wrapped with `asyncio.to_thread()`
+- PyAudio requires system-level dependencies (PortAudio)
+- For VRChat: user needs a virtual audio cable to route AI output to VRChat mic input
+- Sensitive files (config.yml, prompt YMLs) are gitignored -- only .example files tracked
+- Commit every meaningful change as a separate, logical commit -- group related changes per feature, keep commits realistic and focused
 
 ## SDK Rules
 
@@ -266,13 +183,3 @@ class MyTool(BaseTool):
 - Uses `colorama.just_fix_windows_console()` for Windows ANSI support, `stdout.reconfigure(encoding="utf-8")` for Unicode
 - Supervisor sets `PYTHONIOENCODING=utf-8` for subprocess to handle Unicode box-drawing/symbols in piped output
 
-## Development Notes
-
-- Keep comments minimal to save context window
-- Don't use em dashes in the code or commits
-- Config changes go in `config.yml` -- add matching properties to `Config` class
-- All async code uses `asyncio` -- blocking calls wrapped with `asyncio.to_thread()`
-- PyAudio requires system-level dependencies (PortAudio)
-- For VRChat: user needs a virtual audio cable to route AI output to VRChat mic input
-- Sensitive files (config.yml, prompt YMLs) are gitignored -- only .example files tracked
-- Commit every meaningful change as a separate, logical commit -- group related changes per feature, keep commits realistic and focused

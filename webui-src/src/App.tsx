@@ -5,9 +5,11 @@ import Dashboard from './pages/Dashboard'
 import Memories from './pages/Memories'
 import Music from './pages/Music'
 import Players from './pages/Players'
+import Mapping from './pages/Mapping'
+import Waypoints from './pages/Waypoints'
 import Toast, { type ToastItem } from './components/Toast'
 
-type Tab = 'dashboard' | 'memories' | 'music' | 'players'
+type Tab = 'dashboard' | 'memories' | 'music' | 'players' | 'mapping' | 'waypoints'
 
 let toastId = 0
 
@@ -23,6 +25,8 @@ export default function App() {
 
   const { state, logs, clearLogs, addLog } = useWebSocket(addToast)
 
+  const fullWidth = tab === 'dashboard' || tab === 'memories' || tab === 'players' || tab === 'mapping'
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar
@@ -32,13 +36,15 @@ export default function App() {
         activeTab={tab}
         onTabChange={setTab}
       />
-      <main className={tab === 'dashboard' || tab === 'memories' || tab === 'players' ? '' : 'max-w-[1600px] mx-auto px-4 py-4'}>
+      <main className={fullWidth ? '' : 'max-w-[1600px] mx-auto px-4 py-4'}>
         {tab === 'dashboard' && (
           <Dashboard state={state} logs={logs} clearLogs={clearLogs} addLog={addLog} onToast={addToast} />
         )}
         {tab === 'memories' && <Memories onToast={addToast} />}
         {tab === 'music' && <Music onToast={addToast} />}
         {tab === 'players' && <Players state={state} onToast={addToast} />}
+        {tab === 'mapping' && <Mapping onToast={addToast} />}
+        {tab === 'waypoints' && <Waypoints onToast={addToast} />}
       </main>
       <Toast toasts={toasts} />
     </div>

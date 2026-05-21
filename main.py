@@ -219,6 +219,18 @@ async def main(save_audio=False):
         try:
             from control_server import shared_state
             shared_state["instance_monitor"] = instance_monitor
+            # mapping + waypoints service (lazy, nothing runs til UI starts it)
+            try:
+                from src.mapping_service import MappingService
+                shared_state["mapping_service"] = MappingService(
+                    osc, instance_monitor=instance_monitor,
+                )
+                session.tool_handler.mapping_service = shared_state["mapping_service"]
+                # let the wanderer use the voxel map for curiosity exploration
+                if wanderer:
+                    wanderer._mapping_service_ref = shared_state["mapping_service"]
+            except Exception as _e:
+                logger.warning(f"mapping service unavailable: {_e}")
         except ImportError:
             pass
         asyncio.create_task(control_server.serve())
