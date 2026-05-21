@@ -12,6 +12,14 @@ do for you.
 
 > Unity version tested: **2022.3.22f1** (desktop / flatscreen VRChat).
 > VR works too but the strip placement was tuned on flatscreen.
+>
+> **Quest / Android avatars:** don't bother installing any of this on
+> your Quest build. The python side only reads from the PC client
+> (screen capture for the pose HUD, OSC over localhost for the rays),
+> so the Pose HUD shader and the VRCRaycast components do literally
+> nothing on Quest, they just eat into your already tight Android
+> performance budget. Build the sensor rig + pose HUD on your PC-only
+> avatar variant.
 
 ---
 
@@ -33,7 +41,7 @@ and ray data the moment you upload and put the avatar on.
 
 ---
 
-## Step 0 -- one-time install
+## Step 0: one-time install
 
 1. Copy `unity_assets/` from this repo into your VRChat avatar project
    as `Assets/ProjectGabriel/`. Any folder path works, the editor scripts
@@ -45,13 +53,13 @@ and ray data the moment you upload and put the avatar on.
    local-only toggle on the pose HUD.
 4. Wait for Unity to finish compiling. You should see three new menu
    items appear under **Tools > ProjectGabriel**:
-   - **Avatar Setup (Installer)** -- one-click installer window
-   - Build Pose HUD -- builds just the prefab (manual workflow)
-   - Build Sensor Rig -- builds just the prefab (manual workflow)
+   - **Avatar Setup (Installer)**: one-click installer window
+   - Build Pose HUD: builds just the prefab (manual workflow)
+   - Build Sensor Rig: builds just the prefab (manual workflow)
 
 ---
 
-## Step 1 -- run the installer (easy path)
+## Step 1: run the installer (easy path)
 
 1. Menu: **Tools > ProjectGabriel > Avatar Setup (Installer)**.
 2. Drag your avatar from the Hierarchy into the **Avatar** field at the
@@ -60,10 +68,10 @@ and ray data the moment you upload and put the avatar on.
    up parents to find the avatar root automatically, so dragging any
    child of the avatar also works.
 3. Tick what you want to install:
-   - **Pose HUD** -- the bottom-left coord strip
-   - **Sensor Rig** -- the 11 raycast empties grouped under HeadAnchor /
+   - **Pose HUD**: the bottom-left coord strip
+   - **Sensor Rig**: the 11 raycast empties grouped under HeadAnchor /
      HipsAnchor
-   - **Replace existing instances** -- delete any old `GabrielPoseHUD` /
+   - **Replace existing instances**: delete any old `GabrielPoseHUD` /
      `GabrielSensorRig` children before installing the fresh ones.
      Leave checked unless you've hand-edited the existing copies.
 4. Click **Install on 'YourAvatar'**.
@@ -85,7 +93,7 @@ hierarchy), skip the installer and follow the manual sections below.
 
 ---
 
-## Step 1b (manual) -- Pose HUD
+## Step 1b (manual): Pose HUD
 
 This is the little color strip that encodes your world position. The
 python side screen-captures it to know where you are.
@@ -133,7 +141,7 @@ it hidden from other players entirely), add a VRCFury Toggle:
    - **Options** (top-right): check **Default On**, **Saved Between
      Worlds**, **Separate Local State**
 
-   `Separate Local State` + empty `In Remote` is the important bit -- it
+   `Separate Local State` + empty `In Remote` is the important bit, it
    makes the strip only render for you, not for other players. The
    python side captures your own screen so this is all it needs.
 
@@ -154,11 +162,11 @@ If something in your HUD covers the bottom-left, you can shift the strip:
 1. Select the `GabrielPoseHUD.prefab` asset
 2. Find the `MeshRenderer` -> material slot, click it
 3. The material exposes:
-   - **Cell Size (px per logical pixel)** -- default 4. Only bump this
+   - **Cell Size (px per logical pixel)**: default 4. Only bump this
      higher (e.g. 6 or 8) if the strip is too small to read reliably on
      your capture pipeline. Bigger cells = more screen real estate used.
-   - **Offset X (px from left)** -- default 0
-   - **Offset Y (px from bottom)** -- default 0
+   - **Offset X (px from left)**: default 0
+   - **Offset Y (px from bottom)**: default 0
 4. Bump `Offset Y` up to ~50 to lift it above the VRChat HUD bar, etc.
 5. **Important:** mirror your change in `src/pose_decoder.py`
    (the python side needs to know where to capture from).
@@ -176,7 +184,7 @@ sensitive data, but use the toggle if you care.
 
 ---
 
-## Step 2 -- Sensor Rig (raycasts)
+## Step 2: Sensor Rig (raycasts)
 
 > If you ran the installer in Step 1 with **Sensor Rig** ticked, the
 > prefab is already on your avatar. Skip to the VRCFury wiring below.
@@ -281,7 +289,7 @@ the python config.
 
 ---
 
-## Step 3 -- verify it works
+## Step 3: verify it works
 
 1. Run `python main.py` with your AI config pointed at VRChat
 2. Wear the avatar in any VRChat world
@@ -289,7 +297,7 @@ the python config.
    - `RaycastState` should log auto-discovered ray names like
      `Fwd`, `Left`, etc.
    - `PoseExfilReader` should log a non-zero pose `(x, y, z, yaw)`
-4. Open the WebUI Mapping tab -- you should see the occupancy grid fill
+4. Open the WebUI Mapping tab, you should see the occupancy grid fill
    in around your avatar as you walk
 
 If `PoseExfilReader` returns zero pose:
@@ -309,17 +317,17 @@ If the rays are publishing but values look wrong:
 
 ## What the builders do NOT do
 
-- **VRCFury wiring** -- mostly automated. The sensor rig prefab ships
+- **VRCFury wiring**: mostly automated. The sensor rig prefab ships
   with a Full Controller (params merge) and Armature Links on each
   anchor (pointed at Head / Hips, with alignment on). The pose HUD
   toggle is still manual since VRCFury's public API doesn't expose
   `separateLocal`/`localState` yet. Those bits use VRCFury's stable
   public API so it's safe across releases.
-- **Avatar uploads** -- you still need to use the VRChat SDK Control
+- **Avatar uploads**: you still need to use the VRChat SDK Control
   Panel to build and upload.
-- **Animator setup** -- not needed at all. OSC publishes ray data
+- **Animator setup**: not needed at all. OSC publishes ray data
   directly without going through the animator.
-- **PoseHUD privacy** -- if you skipped the VRCFury local-only toggle
+- **PoseHUD privacy**: if you skipped the VRCFury local-only toggle
   the strip renders to every camera that sees your avatar (other
   players, mirrors). Either add the toggle or treat the coords like
   location data.
