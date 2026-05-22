@@ -30,13 +30,18 @@ from src.pose_decoder import (  # noqa: E402
 def sample_grid(arr, left, top, cell):
     """Sample the GRID_W x GRID_H cell centers starting at (left, top).
     Returns bytes ready for decode_strip, or None if out of bounds.
-    arr is HxWx4 BGRA from mss."""
+    arr is HxWx4 BGRA from mss.
+
+    Shader anchors position row at the BOTTOM of the strip and forward row
+    above it, so we sample bottom-up to match decode_strip's expected
+    row 0 = position, row 1 = forward order.
+    """
     h, w = arr.shape[:2]
     if left + GRID_W * cell > w or top + GRID_H * cell > h:
         return None
     pixels = bytearray()
     for row in range(GRID_H):
-        cy = top + row * cell + cell // 2
+        cy = top + (GRID_H - 1 - row) * cell + cell // 2
         for col in range(GRID_W):
             cx = left + col * cell + cell // 2
             px = arr[cy, cx]
@@ -47,11 +52,17 @@ def sample_grid(arr, left, top, cell):
 def find_grid_origin(arr, cell, max_hits=5):
     """Find the grid by locating the marker rectangles at the right edge.
 
-    Markers (each marker is one cell wide / tall, `cell` px square):
-      row 0: RED   then  GREEN
-      row 1: GREEN then  RED
+    Shader marker layout on screen (anchored bottom-left):
+      top row    (forward) : ... GREEN  RED   at cells 32, 33
+      bottom row (position): ... RED    GREEN at cells 32, 33
 
-    Returns list of (left, top) top-left grid origins.
+    So scanning top-to-bottom we look for a 2x2 block:
+        G R
+        R G
+    pivoting on the top-left GREEN cluster (forward row, cell 32).
+
+    Returns list of (left, top, est_cell) where (left, top) is the
+    top-left pixel of the full GRID_W x GRID_H strip.
     """
     try:
         import numpy as np
@@ -68,41 +79,40 @@ def find_grid_origin(arr, cell, max_hits=5):
     h, w = r.shape
     candidates = []
 
-    # find each red rectangle. iterate every red pixel that has no red pixel
-    # immediately to its left or above it (top-left corner of a cluster).
-    red_left_edge = red_mask & ~np.roll(red_mask, 1, axis=1)
-    red_top_edge  = red_mask & ~np.roll(red_mask, 1, axis=0)
-    red_corner    = red_left_edge & red_top_edge
+    # find each green rectangle. iterate every green pixel that has no green
+    # pixel immediately to its left or above it (top-left corner of a cluster).
+    green_left_edge = green_mask & ~np.roll(green_mask, 1, axis=1)
+    green_top_edge  = green_mask & ~np.roll(green_mask, 1, axis=0)
+    green_corner    = green_left_edge & green_top_edge
 
-    ys, xs = np.where(red_corner)
+    ys, xs = np.where(green_corner)
     seen = set()
     for y, x in zip(ys.tolist(), xs.tolist()):
-        # measure this red cluster's width by scanning right
+        # measure this green cluster's width by scanning right
         rw = 0
-        while x + rw < w and red_mask[y, x + rw]:
+        while x + rw < w and green_mask[y, x + rw]:
             rw += 1
         rh = 0
-        while y + rh < h and red_mask[y + rh, x]:
+        while y + rh < h and green_mask[y + rh, x]:
             rh += 1
         if rw < 2 or rh < 2:
-            continue  # too small, probably random red pixel
+            continue  # too small, probably random green pixel
 
         # cell size estimate from the marker
         est_cell = max(rw, rh)
 
-        # this red cluster might be the row 0 cell 32 marker. check the
-        # neighbors: GREEN one cell right, GREEN one cell below, RED diag.
+        # this green cluster might be the forward-row cell 32 marker.
+        # check the neighbors: RED one cell right, RED one cell below, GREEN diag.
         x_right = x + est_cell
         y_down  = y + est_cell
         if x_right + est_cell > w or y_down + est_cell > h:
             continue
-        # sample a pixel a few px into each expected neighbor cell
         probe = est_cell // 2
-        if not green_mask[y + probe,         x_right + probe]: continue
-        if not green_mask[y_down + probe,    x         + probe]: continue
-        if not red_mask  [y_down + probe,    x_right   + probe]: continue
+        if not red_mask  [y + probe,      x_right + probe]: continue
+        if not red_mask  [y_down + probe, x         + probe]: continue
+        if not green_mask[y_down + probe, x_right   + probe]: continue
 
-        # red cluster starts at column 32*cell from grid left
+        # green cluster starts at column 32*cell from grid left, top of strip
         left = x - 32 * est_cell
         top  = y
         if left < 0 or top < 0:

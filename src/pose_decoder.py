@@ -328,10 +328,13 @@ class PoseExfilReader:
                         cell = self._cell_size
                     raw = sct.grab(region)
                     # sample the center pixel of each logical cell so we
-                    # ignore bilinear edge bleed between cells.
+                    # ignore bilinear edge bleed between cells. shader puts
+                    # row 0 (position) at the BOTTOM of the screen and row 1
+                    # (forward) above it, but mss hands us the region top
+                    # down, so flip the row index when sampling.
                     pixels = bytearray()
                     for row in range(GRID_H):
-                        cy = row * cell + cell // 2
+                        cy = (GRID_H - 1 - row) * cell + cell // 2
                         if cy >= raw.height:
                             break
                         for col in range(GRID_W):
