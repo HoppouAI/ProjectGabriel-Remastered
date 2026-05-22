@@ -52,7 +52,7 @@ DATA_CELLS = 32     # data cells per row (32 bits per channel = uint32)
 # each logical cell is CELL_SIZE x CELL_SIZE physical screen pixels so the
 # grid is big enough to see and survives any resolution scaling. must match
 # _CellSize in PoseExfilScreen.shader.
-DEFAULT_CELL_SIZE = 8
+DEFAULT_CELL_SIZE = 4
 
 # float packing (matches packFloat in the shader):
 #   uint = (float + 5000) * 100      -> 1cm precision, +-5000m range
@@ -213,9 +213,10 @@ class PoseExfilReader:
     latest decoded pose. Uses mss so it doesn't fight bettercam (which is
     already owned by `src.tracker`).
 
-    Region defaults to the top-left GRID_W*cell x GRID_H*cell rectangle.
-    Configure to match wherever the avatar shader actually renders the
-    grid on screen.
+    Region defaults to the bottom-left GRID_W*cell x GRID_H*cell rectangle
+    on the chosen monitor, which is where the shipped PoseExfilScreen
+    shader renders. Pass `region` explicitly if your material has nonzero
+    Offset X / Offset Y or you moved the strip elsewhere.
     """
 
     def __init__(
@@ -227,14 +228,11 @@ class PoseExfilReader:
         cell_size: int = DEFAULT_CELL_SIZE,
     ):
         # mss region dict: {"left": x, "top": y, "width": w, "height": h}
-        # default region covers the full GRID_W x GRID_H cell grid in the
-        # top-left corner.
+        # if no region is supplied we resolve to bottom-left of the picked
+        # monitor inside _run() once mss is loaded and we can read the
+        # actual monitor geometry. stays None until then.
         self._cell_size = max(1, int(cell_size))
-        self._region = region or {
-            "left": 0, "top": 0,
-            "width":  GRID_W * self._cell_size,
-            "height": GRID_H * self._cell_size,
-        }
+        self._region = dict(region) if region else None
         self._poll_interval = 1.0 / max(1.0, poll_hz)
         self._monitor_index = monitor_index
 
@@ -297,6 +295,31 @@ class PoseExfilReader:
             return
 
         with mss.mss() as sct:
+            # late-resolve the default region now that we can see the
+            # monitor list. shader writes to bottom-left of the screen.
+            if self._region is None:
+                try:
+                    mon = sct.monitors[self._monitor_index]
+                except IndexError:
+                    logger.warning(
+                        "pose_decoder: monitor index %d not found, falling back to primary",
+                        self._monitor_index,
+                    )
+                    mon = sct.monitors[1]
+                w = GRID_W * self._cell_size
+                h = GRID_H * self._cell_size
+                with self._lock:
+                    self._region = {
+                        "left": mon["left"],
+                        "top":  mon["top"] + mon["height"] - h,
+                        "width":  w,
+                        "height": h,
+                    }
+                logger.info(
+                    "pose_decoder: resolved bottom-left region to %s",
+                    self._region,
+                )
+
             while not self._stop.is_set():
                 tick_started = time.monotonic()
                 try:
