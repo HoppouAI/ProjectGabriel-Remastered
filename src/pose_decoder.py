@@ -320,6 +320,24 @@ class PoseExfilReader:
                     self._region,
                 )
 
+                # the material can have a nonzero Offset Y to lift the strip
+                # above the VRChat HUD bar, so do a one-shot full-monitor
+                # marker scan to find the actual strip position. if found,
+                # lock to it. if not, keep the default region (user might
+                # not be in vrchat yet, we'll rescan after a streak of
+                # failed decodes).
+                located = self._locate_strip(sct, mon)
+                if located is not None:
+                    with self._lock:
+                        self._region = located
+                    logger.info(
+                        "pose_decoder: auto-located strip at %s", located,
+                    )
+                else:
+                    logger.info(
+                        "pose_decoder: marker scan didn't find strip yet, will retry once decodes start failing",
+                    )
+
             while not self._stop.is_set():
                 tick_started = time.monotonic()
                 try:
@@ -363,9 +381,78 @@ class PoseExfilReader:
                         "pose_decoder: %d consecutive failures, is the shader on screen?",
                         self._consecutive_failures,
                     )
+                    # full-monitor rescan, maybe the strip moved (different
+                    # avatar, different offset, vrchat resized, etc).
+                    try:
+                        mon = sct.monitors[self._monitor_index]
+                    except IndexError:
+                        mon = sct.monitors[1]
+                    relocated = self._locate_strip(sct, mon)
+                    if relocated is not None:
+                        with self._lock:
+                            self._region = relocated
+                        logger.info(
+                            "pose_decoder: re-located strip at %s", relocated,
+                        )
 
                 # pace ourselves
                 elapsed = time.monotonic() - tick_started
                 sleep_for = self._poll_interval - elapsed
                 if sleep_for > 0:
                     self._stop.wait(timeout=sleep_for)
+
+    def _locate_strip(self, sct, mon) -> dict | None:
+        """Full-monitor marker scan. Looks for the shader's 2x2 corner
+        marker block (top: GREEN/RED, bottom: RED/GREEN) and returns an
+        mss region dict locked to the strip. Returns None if not found.
+        """
+        try:
+            import numpy as np  # type: ignore
+        except ImportError:
+            return None
+        try:
+            shot = sct.grab(mon)
+        except Exception:
+            return None
+        arr = np.array(shot)  # HxWx4 BGRA
+        b, g, r = arr[..., 0], arr[..., 1], arr[..., 2]
+        red_mask   = (r > 200) & (g < 80)  & (b < 80)
+        green_mask = (g > 200) & (r < 80)  & (b < 80)
+
+        green_left = green_mask & ~np.roll(green_mask, 1, axis=1)
+        green_top  = green_mask & ~np.roll(green_mask, 1, axis=0)
+        green_corner = green_left & green_top
+        ys, xs = np.where(green_corner)
+        h, w = r.shape
+        for y, x in zip(ys.tolist(), xs.tolist()):
+            rw = 0
+            while x + rw < w and green_mask[y, x + rw]:
+                rw += 1
+            rh = 0
+            while y + rh < h and green_mask[y + rh, x]:
+                rh += 1
+            if rw < 2 or rh < 2:
+                continue
+            est_cell = max(rw, rh)
+            x_right = x + est_cell
+            y_down  = y + est_cell
+            if x_right + est_cell > w or y_down + est_cell > h:
+                continue
+            probe = est_cell // 2
+            if not red_mask[y + probe,       x_right + probe]: continue
+            if not red_mask[y_down + probe,  x       + probe]: continue
+            if not green_mask[y_down + probe, x_right + probe]: continue
+            left = x - 32 * est_cell
+            top  = y
+            if left < 0 or top < 0:
+                continue
+            # found a plausible strip. update cell size too, the user might
+            # have rebuilt the prefab with a different _CellSize value.
+            self._cell_size = est_cell
+            return {
+                "left":   mon["left"] + left,
+                "top":    mon["top"]  + top,
+                "width":  GRID_W * est_cell,
+                "height": GRID_H * est_cell,
+            }
+        return None
