@@ -43,6 +43,19 @@ def _strip_emojis(text: str) -> str:
     return re.sub(r"  +", " ", cleaned).strip()
 
 
+# Inline expressive tags like [curious] / [whispers]. Some upstream models
+# emit these as performance hints; most TTS engines just speak them. Strip
+# them at the per-sentence layer so the audio doesn't say "curious" out loud.
+_AUDIO_TAG_RE = re.compile(r"\[(?:[A-Za-z][A-Za-z\s,'-]{0,40})\]")
+
+
+def _strip_audio_tags(text: str) -> str:
+    cleaned = _AUDIO_TAG_RE.sub(" ", text)
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+    cleaned = re.sub(r" {2,}", " ", cleaned)
+    return cleaned.strip()
+
+
 class QwenTTSProvider:
     """Streams output transcription text to a Qwen3 TTS server and produces PCM audio.
 
@@ -238,7 +251,7 @@ class QwenTTSProvider:
                 ):
                     if self._interrupted or not self._running:
                         break
-                    s = _strip_emojis(sentence)
+                    s = _strip_audio_tags(_strip_emojis(sentence))
                     if s:
                         logger.info("TTS sentence ready: %r", s[:80])
                         self._sentence_queue.put(s)
@@ -586,7 +599,7 @@ class HoppouTTSProvider:
                 ):
                     if self._interrupted or not self._running:
                         break
-                    s = _strip_emojis(sentence)
+                    s = _strip_audio_tags(_strip_emojis(sentence))
                     if s:
                         logger.info("TTS sentence ready: %r", s[:80])
                         self._sentence_queue.put(s)
@@ -882,7 +895,7 @@ class Chirp3HDTTSProvider:
                 ):
                     if self._interrupted or not self._running:
                         break
-                    s = _strip_emojis(sentence)
+                    s = _strip_audio_tags(_strip_emojis(sentence))
                     if s:
                         logger.info("TTS sentence ready: %r", s[:80])
                         self._sentence_queue.put(s)
@@ -1162,7 +1175,7 @@ class TikTokTTSProvider:
                 ):
                     if self._interrupted or not self._running:
                         break
-                    s = _strip_emojis(sentence)
+                    s = _strip_audio_tags(_strip_emojis(sentence))
                     if s:
                         logger.info("TTS sentence ready: %r", s[:80])
                         self._sentence_queue.put(s)
