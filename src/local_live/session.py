@@ -93,6 +93,7 @@ class LocalLiveSession:
 
         # streaming buffers
         self._transcript_buffer = ""        # current AI utterance for chatbox
+        self._thinking_shown = False        # "Thinking..." chatbox latch
         self._playback_interrupted = False
         self._audio_in_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._last_audio_time = 0.0
@@ -555,6 +556,7 @@ class LocalLiveSession:
         # prep chatbox / speaking state
         self._transcript_buffer = ""
         self._speaking = False
+        self._thinking_shown = False
         self._barge_in.clear()
         self._idle_chatbox.stop()
         self.osc.set_typing(True)
@@ -577,6 +579,18 @@ class LocalLiveSession:
                     etype = event.get("type")
                     if etype == "text":
                         delta = event["delta"]
+                        if self._thinking_shown:
+                            # transition: model stopped thinking, started speaking
+                            self._thinking_shown = False
+                            try:
+                                self.audio.stop_thinking_sound()
+                            except Exception:
+                                pass
+                            if self._emotion_system:
+                                try:
+                                    self._emotion_system.stop_thinking()
+                                except Exception:
+                                    pass
                         if not self._speaking and delta.strip():
                             self._speaking = True
                             if self._emotion_system:
@@ -591,6 +605,27 @@ class LocalLiveSession:
                             except Exception as e:
                                 logger.debug(f"tts feed failed: {e}")
                         self._update_chatbox(self._transcript_buffer)
+                    elif etype == "thought":
+                        thought = event.get("delta", "")
+                        if thought:
+                            _broadcast_console("thinking", thought, {"streaming": True})
+                        if not self._thinking_shown:
+                            self._thinking_shown = True
+                            self._idle_chatbox.stop()
+                            self.osc.set_typing(True)
+                            try:
+                                self.osc.send_chatbox("Thinking...")
+                            except Exception:
+                                pass
+                            try:
+                                self.audio.start_thinking_sound("thinking")
+                            except Exception:
+                                pass
+                            if self._emotion_system:
+                                try:
+                                    self._emotion_system.start_thinking()
+                                except Exception:
+                                    pass
                     elif etype == "tool_call":
                         tool_calls_this_iter = event["calls"]
                     elif etype == "finish":
@@ -626,6 +661,17 @@ class LocalLiveSession:
                         "content": full_assistant_text.strip() + " [interrupted]",
                     })
                 self._speaking = False
+                if self._thinking_shown:
+                    self._thinking_shown = False
+                    try:
+                        self.audio.stop_thinking_sound()
+                    except Exception:
+                        pass
+                    if self._emotion_system:
+                        try:
+                            self._emotion_system.stop_thinking()
+                        except Exception:
+                            pass
                 if self._emotion_system:
                     self._emotion_system.stop_speaking()
                 self.osc.set_typing(False)
