@@ -148,6 +148,10 @@ class LocalLiveSession:
         # barge-in: set when the user starts speaking while the model is
         # still talking, so the run loop tears down the LLM stream and tts.
         self._barge_in = asyncio.Event()
+        # true while tts pcm is actively being written to the output stream.
+        # this is the real "ai is talking" signal for barge-in, since the
+        # llm text stream finishes long before the audio finishes playing.
+        self._audio_playing = False
 
     # ── chatbox builtins (parity with gemini session) ────────────────────
 
@@ -422,11 +426,25 @@ class LocalLiveSession:
         gemini receive loop does when the server flags server_content.interrupted.
         """
         was_user_speaking = False
+        was_ai_talking = False
         while True:
             try:
                 await asyncio.sleep(0.05)
                 user_speaking = bool(self._stt.speaking)
-                if user_speaking and not was_user_speaking and self._speaking:
+                # "ai is talking" = generating text OR audio is queued/playing.
+                # the llm stream finishes fast but tts playback is what the
+                # user actually hears, so we need both signals.
+                ai_talking = (
+                    self._speaking
+                    or self._audio_playing
+                    or not self._audio_in_queue.empty()
+                )
+                # if the ai just started talking, reset our edge detector so
+                # any in-progress user speech still counts as a fresh barge-in.
+                if ai_talking and not was_ai_talking:
+                    was_user_speaking = False
+                was_ai_talking = ai_talking
+                if user_speaking and not was_user_speaking and ai_talking:
                     logger.info("barge-in: user started speaking while model was talking")
                     self._barge_in.set()
                     self._playback_interrupted = True
@@ -774,6 +792,7 @@ class LocalLiveSession:
                     continue
                 if self._save_audio:
                     self._record_output_audio(audio_data)
+                self._audio_playing = True
                 for i in range(0, len(audio_data), CHUNK):
                     if self._playback_interrupted:
                         break
@@ -782,12 +801,17 @@ class LocalLiveSession:
                     )
                 if self._playback_interrupted:
                     self._playback_interrupted = False
+                # only clear audio_playing if nothing else is queued, otherwise
+                # we'd flicker between chunks and barge-in would miss the window.
+                if self._audio_in_queue.empty():
+                    self._audio_playing = False
             except asyncio.CancelledError:
                 return
             except OSError:
                 return
             except Exception as e:
                 logger.error(f"play audio loop error: {e}")
+                self._audio_playing = False
                 await asyncio.sleep(0.1)
 
     # ── idle / housekeeping ──────────────────────────────────────────────
