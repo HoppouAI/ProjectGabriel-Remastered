@@ -171,10 +171,17 @@ class Config:
 
     @property
     def local_stt_model(self):
-        # moonshine model id. supported: moonshine/tiny, moonshine/base,
-        # UsefulSensors/moonshine-small, UsefulSensors/moonshine-base for v1
-        # and the v2 small/medium variants once installed locally.
-        return self.get("local", "stt", "model", default="moonshine/base")
+        # moonshine streaming arch. one of: tiny_streaming, small_streaming,
+        # medium_streaming. small_streaming is the recommended default
+        # (123M params, ~165ms TTFT).
+        return self.get("local", "stt", "model", default="small_streaming")
+
+    @property
+    def local_stt_language(self):
+        # bcp-47 language code passed to moonshine_voice.download_model.
+        # english (en) gets the streaming weights; other langs fall back
+        # to base models which still work but lose the streaming win.
+        return self.get("local", "stt", "language", default="en")
 
     @property
     def local_stt_min_speech_ms(self):

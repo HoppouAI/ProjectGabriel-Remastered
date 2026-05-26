@@ -39,5 +39,4 @@ pymongo
 protobuf==3.20.3
 imageio-ffmpeg
 # local backend (only needed if backend: "local" in config.yml)
-useful-moonshine-onnx
-onnxruntime
+moonshine-voice

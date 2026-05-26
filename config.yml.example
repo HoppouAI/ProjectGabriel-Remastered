@@ -180,7 +180,8 @@ gemini:
 #   2. One of the external TTS providers below (tts.qwen3 / hoppou /
 #      chirp3_hd / tiktok or a plugin) enabled. local mode refuses to
 #      start without a TTS provider since the LLM has no voice of its own.
-#   3. Moonshine ONNX dependency installed (pip install useful-moonshine-onnx).
+#   3. Moonshine Voice installed (pip install moonshine-voice). First
+#      run downloads the chosen streaming arch into the user cache.
 local:
   llm:
     # OpenAI compatible endpoint. LM Studio defaults to localhost:1234.
@@ -213,12 +214,15 @@ local:
     quality: 70
 
   stt:
-    # Moonshine model id passed to MoonshineOnnxModel. Common values:
-    #   moonshine/tiny  (fastest, smallest)
-    #   moonshine/base  (good default)
-    # The v2 small/medium releases also work once you have them installed
-    # locally, just point at the matching repo id.
-    model: "moonshine/base"
+    # Moonshine streaming model arch. Picks weights via moonshine_voice.
+    # Options:
+    #   tiny_streaming    34M params, ~69ms TTFT, lowest accuracy
+    #   small_streaming   123M params, ~165ms TTFT, recommended default
+    #   medium_streaming  245M params, ~269ms TTFT, best accuracy
+    model: "small_streaming"
+    # Language tag passed to moonshine_voice.download_model. Only English
+    # has full streaming weights; other languages fall back to base v2.
+    language: "en"
     # Drop any speech segment shorter than this. Filters out keyboard
     # clicks, coughs, brief mouth noises.
     min_speech_ms: 400
