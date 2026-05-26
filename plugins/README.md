@@ -404,6 +404,30 @@ The legacy `plugins.<name>.enabled` key in `config.yml` still works as
 a fallback override for upgraders, but new plugins should use the
 manifest field.
 
+## Trust mode and the config sandbox
+
+By default `ctx.config` is a `SafeConfigView` that blocks reads of
+sensitive attrs like `api_key`, `backup_keys`, `_data`, mongo
+connection strings, vrchat password, discord token, anything matching
+the sensitive denylist. Plugins are expected to store their own
+settings under `plugins.<name>.*` and read them through
+`ctx.plugin_config()` instead.
+
+If you genuinely need raw access (e.g. you want to reuse the host's
+gemini key for a sub-agent), document it in your plugin's README and
+tell users to enable trust mode:
+
+```yaml
+plugins:
+  enabled: true
+  trusted: true
+```
+
+When `plugins.trusted: true` the sandbox lets everything through.
+Default is `false`. Prefer asking the user for their own key in your
+plugin config block over relying on trust mode, it keeps your plugin
+usable for paranoid users.
+
 ## How tools.yml works
 
 Every startup the host walks the live `@register_tool` registry plus

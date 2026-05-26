@@ -514,6 +514,29 @@ There are three layers:
    Flip a tool to `false` and it's hidden from the model without
    disabling the rest of the plugin.
 
+### Plugin trust mode
+
+By default plugins get a sandboxed view of `config.yml`. They can read
+their own scoped settings under `plugins.<name>.*` via
+`ctx.plugin_config()` but reaching into `ctx.config.api_key`,
+`ctx.config.backup_keys`, the mongo connection string, vrchat
+password, discord token, etc raises `PermissionError`. This stops a
+rogue plugin from quietly exfiltrating your secrets.
+
+Some older plugins (like `diary`, which uses the main gemini api key
+for its background summarizer sub-agent) need that raw access. Flip
+the master trust switch in `config.yml`:
+
+```yaml
+plugins:
+  enabled: true
+  trusted: true   # let plugins read sensitive config like api_key
+```
+
+Default is `false`. Only enable it if you trust every plugin you've
+dropped into the `plugins/` folder, because any one of them will be
+able to read every secret in the file.
+
 ### Writing your own
 
 Drop a folder under `plugins/<your_name>/` with a `plugin.yml` and an
