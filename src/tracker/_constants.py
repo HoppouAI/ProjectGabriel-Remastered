@@ -9,7 +9,7 @@ TARGET_FPS = 30
 
 
 DEFAULT_CFG = {
-    "confidence_threshold": 0.40,
+    "confidence_threshold": 0.30,
     "iou_threshold": 0.45,
     "target_area": 0.04,
     "sprint_area": 0.015,
@@ -20,18 +20,20 @@ DEFAULT_CFG = {
     "center_distance_weight": 1.0,
     "area_weight": 0.5,
     # how long to keep the lock alive after the ReID model stops seeing the
-    # target. boxmot will usually re-attach the same id when they come back
-    # so we can afford a fairly long wait without grabbing a random person.
-    "lock_timeout": 30.0,
+    # target. once this expires we re-acquire the best-scoring track (unless
+    # strict_lock is on).
+    "lock_timeout": 3.0,
     # when locked, a candidate has to score this much better than the
     # current target to be allowed to steal the lock. set high so noisy
-    # frames dont cause id swaps.
+    # frames cant cause id swaps while the target is still in view.
     "reacquire_threshold": 5.0,
     # when true, the tracker will NOT auto-acquire a new target after the
-    # lock has timed out. the only way to get a target back is to see the
-    # original person again (boxmot reid keeps their id) or call
-    # startFollow again. set to false to get the old auto-grab behavior.
-    "strict_lock": True,
+    # lock has timed out. it sits idle and waits forever until boxmot reid
+    # re-attaches the original person. useful in crowded worlds where you
+    # want to follow exactly one person. default false because vrchat angles
+    # (back of head, sitting, far away) often confuse the reid embedding
+    # and you usually just want to keep following whoever's nearest.
+    "strict_lock": False,
     "max_detections": 10,
     "forward_scale_min": 0.5,
     "forward_scale_max": 0.7,
@@ -45,4 +47,13 @@ DEFAULT_CFG = {
     # detection), the bigger ones are more accurate but slower.
     "reid_model": "osnet_x0_25_msmt17.pt",
     "reid_half": True,
+    # boxmot deepocsort overrides. defaults are tuned for MOT challenge
+    # which has very different framerate/density assumptions than vrchat.
+    # min_hits=1 means new tracks are returned immediately (vs waiting 3
+    # frames). max_age=150 keeps an embedding around for ~5s at 30fps so a
+    # quick occlusion / turnaround doesnt lose the id permanently.
+    "bot_min_hits": 1,
+    "bot_max_age": 150,
+    "bot_det_thresh": 0.30,
+    "bot_iou_threshold": 0.30,
 }

@@ -108,15 +108,37 @@ class ModelMixin:
         use_half = bool(self._cfg.get("reid_half", True)) and device == "cuda"
 
         try:
+            # pull deepocsort defaults from boxmot's bundled yaml then override
+            # the ones tuned wrong for our use case (vrchat is lower framerate
+            # and we cant afford a 3 frame delay before a new track is reported)
+            from boxmot.utils import TRACKER_CONFIGS
+            import yaml
+            cfg_path = TRACKER_CONFIGS / "deepocsort.yaml"
+            with open(cfg_path, "r") as f:
+                yaml_cfg = yaml.safe_load(f) or {}
+            evolve = {k: v["default"] for k, v in yaml_cfg.items()}
+
+            overrides = {
+                "min_hits": int(self._cfg.get("bot_min_hits", 1)),
+                "max_age": int(self._cfg.get("bot_max_age", 150)),
+                "det_thresh": float(self._cfg.get("bot_det_thresh", 0.30)),
+                "iou_thresh": float(self._cfg.get("bot_iou_threshold", 0.30)),
+            }
+            for k, v in overrides.items():
+                if k in evolve:
+                    evolve[k] = v
+
             self._bot_tracker = create_tracker(
                 tracker_type="deepocsort",
                 reid_weights=reid_path,
                 device=bot_device,
                 half=use_half,
                 per_class=False,
+                evolve_param_dict=evolve,
             )
             logger.info(
-                f"boxmot DeepOCSORT ready (reid={reid_name}, device={bot_device}, half={use_half})"
+                f"boxmot DeepOCSORT ready (reid={reid_name}, device={bot_device}, "
+                f"half={use_half}, min_hits={overrides['min_hits']}, max_age={overrides['max_age']})"
             )
         except Exception as e:
             logger.error(f"Failed to init boxmot DeepOCSORT: {e}", exc_info=True)
