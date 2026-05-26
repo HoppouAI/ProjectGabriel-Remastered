@@ -111,3 +111,26 @@ class ToolHandler:
             name=name,
             response=result if result else {"result": "ok"},
         )
+
+    async def handle_by_name(self, name: str, args: dict) -> dict:
+        """Generic dispatch by tool name + args dict. Used by non-Gemini
+        backends (local LM Studio) where there's no FunctionCall object.
+        Returns the same dict shape we'd otherwise wrap in a FunctionResponse."""
+        try:
+            if name in ("emotion", "stopAnimation"):
+                # synthesize a minimal call obj so the existing handler is reused
+                fake_call = types.FunctionCall(id=name, name=name, args=args or {})
+                resp = await handle_emotion_function_call(fake_call)
+                return dict(resp.response) if resp and resp.response else {"result": "ok"}
+
+            result = None
+            for tool in self._tools:
+                result = await tool.handle(name, args or {})
+                if result is not None:
+                    break
+            if result is None:
+                return {"result": "error", "message": f"unknown function: {name}"}
+            return result
+        except Exception as e:
+            logger.error(f"Tool {name} failed: {e}")
+            return {"result": "error", "message": str(e)}
