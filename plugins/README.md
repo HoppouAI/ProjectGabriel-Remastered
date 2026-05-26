@@ -176,9 +176,63 @@ Hook into app lifecycle. Built in events:
 - `shutdown` -- fires once on graceful shutdown
 - `message_in` (`text, source`) -- fires on each transcribed user message
 - `message_out` (`text`) -- fires on each AI reply
+- `mic_chunk` (`data: bytes, sample_rate: int`) -- raw PCM mic audio,
+  int16 mono. Fires for every chunk the host pulls from the mic
+  (only when not muted). Plugin api v3+. Keep handlers FAST, this
+  fires ~16 times a second. Just buffer the bytes and process
+  elsewhere. Use `np.frombuffer(data, dtype=np.int16)` to decode.
+- `tts_audio_chunk` (`data: bytes, sample_rate: int`) -- raw PCM
+  bytes of audio about to be played out (post fx, post pitch shift).
+  Plugin api v3+. Same throughput warning, keep handlers cheap.
 
 Callbacks can be sync or async. Exceptions in any single handler are
 caught so one bad subscriber will not break the rest.
+
+### `ctx.register_periodic_task(name, interval_seconds, fn, run_immediately=False)`
+
+Plugin api v3+. Schedule a function to run every N seconds in a
+daemon thread the host owns. Use this instead of spinning your own
+thread, so the host can shut everything down cleanly on teardown.
+
+- `name` -- short label for logging
+- `interval_seconds` -- how often to run
+- `fn` -- callable taking no args. Sync runs inline in the worker
+  thread, async coroutines get scheduled on the main event loop via
+  `run_coroutine_threadsafe`.
+- `run_immediately` -- if True, fires once at startup before the
+  first interval. Default False (waits one interval first).
+
+Periodic tasks start firing right after the `startup` event. Exceptions
+are caught and logged.
+
+```python
+def setup(self, ctx):
+    ctx.register_periodic_task("rotate_log", 600.0, self._rotate)
+```
+
+### Security: `ctx.config` is sandboxed
+
+Plugin api v3+. `ctx.config` is a `SafeConfigView` wrapper around the
+real host config. Plugins cannot read sensitive things from it:
+api keys, backup keys, tokens, passwords, secrets, cookies, mongo
+connection strings, discord token, vrchat creds, etc. Attempting to
+do so raises `PermissionError`.
+
+For your own settings use `ctx.plugin_config()` which scopes to
+`plugins.<your_name>.*` in `config.yml` and is NOT filtered (a plugin
+is allowed to store its own third-party api keys there).
+
+```python
+# allowed
+model_name = ctx.config.get("gemini", "model")
+
+# raises PermissionError
+key = ctx.config.get("gemini", "api_key")
+key = ctx.config.api_key
+
+# fine, this is the plugin's own scoped subtree
+my_key = ctx.plugin_config("openai_api_key")
+```
 
 ### `await ctx.send_system_instruction(text)` / `await ctx.send_user_text(text)`
 
