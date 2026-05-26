@@ -39,4 +39,6 @@ pymongo
 protobuf==3.20.3
 imageio-ffmpeg
 # local backend (only needed if backend: "local" in config.yml)
-moonshine-voice
+# 0.0.59 is the latest with prebuilt windows wheels; newer releases are
+# linux only.
+moonshine-voice==0.0.59
