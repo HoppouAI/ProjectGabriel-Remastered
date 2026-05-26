@@ -6,6 +6,16 @@
 # Display name used in the WebUI, console logs, OBS overlays, and chatbox.
 app_name: "Gabriel"
 
+# Which brain to run. Two options:
+#   gemini_live - cloud Gemini Live websocket (the original setup, native voice)
+#   local       - LM Studio for the LLM + Moonshine v2 for STT + your chosen
+#                 external TTS provider (qwen3 / hoppou / chirp3hd / tiktok / plugin)
+# Local mode is fully offline aside from a few short flash-lite sub-agents
+# (memory recall, conversation summary). Local mode REQUIRES one of the
+# external TTS providers under tts:* to be enabled, since LM Studio has no
+# native voice.
+backend: "gemini_live"
+
 # Privacy controls. Off by default. See README "Privacy" section.
 privacy:
   # When true, every Gemini Live session writes a JSON transcript of the
@@ -159,6 +169,65 @@ gemini:
     # Number of recent user/assistant messages to replay as context on fresh reconnect.
     # These are sent to the new session so the model knows what was being discussed.
     replay_messages: 10
+
+# ══════════════════════════════════════════════════════════
+# Local backend (LM Studio + Moonshine + external TTS)
+# ══════════════════════════════════════════════════════════
+# Only used when backend: local at the top of this file. Otherwise ignored.
+# Requirements:
+#   1. LM Studio running with a chat model loaded and server enabled
+#      (Developer tab -> Start Server). default endpoint is the one below.
+#   2. One of the external TTS providers below (tts.qwen3 / hoppou /
+#      chirp3_hd / tiktok or a plugin) enabled. local mode refuses to
+#      start without a TTS provider since the LLM has no voice of its own.
+#   3. Moonshine ONNX dependency installed (pip install useful-moonshine-onnx).
+local:
+  llm:
+    # OpenAI compatible endpoint. LM Studio defaults to localhost:1234.
+    base_url: "http://localhost:1234/v1"
+    # Model identifier as shown in LM Studio. The default placeholder works
+    # because LM Studio routes to whatever is loaded, but be explicit when
+    # you can.
+    model: "local-model"
+    api_key: "lm-studio"
+    temperature: 0.8
+    top_p: 0.95
+    max_tokens: 1024
+    # Rolling chat history kept in context across turns. Higher = more
+    # memory but more tokens per request.
+    history_messages: 30
+    # Per-request timeout in seconds.
+    request_timeout: 120
+    # Safety cap on tool call -> response -> tool call -> response loops in
+    # a single user turn. If the model wants more iterations than this we
+    # stop and let it speak.
+    max_tool_iterations: 6
+
+  vision:
+    # When true, captures the screen and attaches an image to every user
+    # turn. Requires a multimodal model loaded in LM Studio (eg qwen2.5-vl).
+    enabled: false
+    # Longest edge of the resized image. Smaller = faster, fewer tokens.
+    max_size: 768
+    # JPEG quality (1-100) for the encoded image.
+    quality: 70
+
+  stt:
+    # Moonshine model id passed to MoonshineOnnxModel. Common values:
+    #   moonshine/tiny  (fastest, smallest)
+    #   moonshine/base  (good default)
+    # The v2 small/medium releases also work once you have them installed
+    # locally, just point at the matching repo id.
+    model: "moonshine/base"
+    # Drop any speech segment shorter than this. Filters out keyboard
+    # clicks, coughs, brief mouth noises.
+    min_speech_ms: 400
+    # Hard cap on a single utterance so a noisy room can't grow the buffer
+    # forever. The utterance is force-finalised at this length.
+    max_utterance_ms: 30000
+    # Keep this much audio from BEFORE VAD triggered so we never clip the
+    # first phoneme. 200-400ms is the sweet spot.
+    pre_roll_ms: 300
 
 # ══════════════════════════════════════════════════════════
 # TTS Provider

@@ -103,6 +103,97 @@ class Config:
         return self.get("app_name", default="Gabriel")
 
     @property
+    def backend(self):
+        # which brain runs the show. gemini_live = cloud websocket (default,
+        # the og setup). local = LM Studio + Moonshine STT + external TTS, fully
+        # offline aside from the small flash-lite sub-agents we keep around for
+        # summaries.
+        val = (self.get("backend", default="gemini_live") or "gemini_live").lower()
+        if val not in ("gemini_live", "local"):
+            logger.warning(f"unknown backend '{val}', defaulting to gemini_live")
+            return "gemini_live"
+        return val
+
+    # local backend (LM Studio + Moonshine) settings ─────────────────────
+    @property
+    def local_llm_base_url(self):
+        return self.get("local", "llm", "base_url", default="http://localhost:1234/v1").rstrip("/")
+
+    @property
+    def local_llm_model(self):
+        # whatever model identifier LM Studio shows. usually the file/repo name.
+        return self.get("local", "llm", "model", default="local-model")
+
+    @property
+    def local_llm_api_key(self):
+        # LM Studio ignores this but the openai-compat path requires a value
+        return self.get("local", "llm", "api_key", default="lm-studio")
+
+    @property
+    def local_llm_temperature(self):
+        return self.get("local", "llm", "temperature", default=0.8)
+
+    @property
+    def local_llm_top_p(self):
+        return self.get("local", "llm", "top_p", default=0.95)
+
+    @property
+    def local_llm_max_tokens(self):
+        return self.get("local", "llm", "max_tokens", default=1024)
+
+    @property
+    def local_llm_history_messages(self):
+        # how many prior user/assistant turns to keep in the rolling context.
+        return self.get("local", "llm", "history_messages", default=30)
+
+    @property
+    def local_llm_request_timeout(self):
+        return self.get("local", "llm", "request_timeout", default=120)
+
+    @property
+    def local_llm_max_tool_iterations(self):
+        # safety net so a misbehaving model can't loop tool calls forever.
+        return self.get("local", "llm", "max_tool_iterations", default=6)
+
+    @property
+    def local_vision_enabled(self):
+        # send a screen capture with every user turn. requires a multimodal
+        # model loaded in LM Studio (eg qwen2.5-vl).
+        return bool(self.get("local", "vision", "enabled", default=False))
+
+    @property
+    def local_vision_max_size(self):
+        return self.get("local", "vision", "max_size", default=768)
+
+    @property
+    def local_vision_quality(self):
+        return self.get("local", "vision", "quality", default=70)
+
+    @property
+    def local_stt_model(self):
+        # moonshine model id. supported: moonshine/tiny, moonshine/base,
+        # UsefulSensors/moonshine-small, UsefulSensors/moonshine-base for v1
+        # and the v2 small/medium variants once installed locally.
+        return self.get("local", "stt", "model", default="moonshine/base")
+
+    @property
+    def local_stt_min_speech_ms(self):
+        # ignore blips shorter than this, stops random keyboard clicks from
+        # triggering a full LLM turn.
+        return self.get("local", "stt", "min_speech_ms", default=400)
+
+    @property
+    def local_stt_max_utterance_ms(self):
+        # hard cap so a noisy room doesn't accumulate forever.
+        return self.get("local", "stt", "max_utterance_ms", default=30000)
+
+    @property
+    def local_stt_pre_roll_ms(self):
+        # keep a small ring of audio from before VAD triggered so we don't
+        # clip the first phoneme.
+        return self.get("local", "stt", "pre_roll_ms", default=300)
+
+    @property
     def conversation_logging_enabled(self):
         # off by default for privacy. flip on in config.yml under
         # privacy.save_conversations: true to write JSON transcripts
