@@ -137,6 +137,15 @@ class LocalLiveSession:
         self._stt = MoonshineSTT(config)
         self._llm = LMStudioClient(config)
 
+        # cached prompt + tools so LM Studio's prefix cache actually hits
+        # across turns. rebuilt on personality switch or reconnect, same idea
+        # as a gemini live session_handle lifetime.
+        self._system_text: Optional[str] = None
+        self._system_personality_id: Optional[str] = None
+        self._cached_tools: Optional[list] = None
+        # last partial we already broadcast, so we don't spam the WebUI
+        self._last_partial_broadcast: str = ""
+
     # ── chatbox builtins (parity with gemini session) ────────────────────
 
     def _builtin_local_music(self):
@@ -169,9 +178,38 @@ class LocalLiveSession:
 
     def request_reconnect(self):
         """In local mode there's no websocket; this just clears the in-flight
-        turn so the next iteration starts fresh."""
+        turn so the next iteration starts fresh, and forces the system prompt
+        + tools list to be rebuilt (mirrors a gemini session_handle reset)."""
         self._reconnect_requested = True
+        self._system_text = None
+        self._cached_tools = None
         logger.info("local: reconnect requested - resetting turn state")
+
+    def _current_personality_id(self) -> Optional[str]:
+        try:
+            cur = self.personality.get_current() if self.personality else None
+            if isinstance(cur, dict):
+                return cur.get("id") or cur.get("name")
+        except Exception:
+            return None
+        return None
+
+    def _get_system_text(self) -> str:
+        """Return the cached system instruction, rebuilding only on personality
+        switch or explicit reconnect. Keeping this stable across turns is what
+        lets LM Studio's prompt prefix cache hit instead of reprocessing the
+        whole context every time the {date} placeholder changes by a second.
+        """
+        pid = self._current_personality_id()
+        if self._system_text is None or pid != self._system_personality_id:
+            self._system_text = self.config.build_system_instruction(self.personality)
+            self._system_personality_id = pid
+        return self._system_text
+
+    def _get_tools(self):
+        if self._cached_tools is None:
+            self._cached_tools = collect_openai_tools(self.config)
+        return self._cached_tools
 
     async def send_text(self, text: str):
         """Inject a user text message into the next LLM turn."""
@@ -268,6 +306,7 @@ class LocalLiveSession:
             task_specs = [
                 ("mic", self._mic_loop(input_stream)),
                 ("turn-pump", self._turn_pump_loop()),
+                ("stt-partials", self._stt_partial_loop()),
                 ("tts-audio", self._tts_audio_loop()),
                 ("audio-playback", self._play_audio_loop(output_stream)),
                 ("idle-check", self._idle_check_loop()),
@@ -333,6 +372,27 @@ class LocalLiveSession:
                 logger.error(f"mic loop error: {e}")
                 await asyncio.sleep(0.1)
 
+    async def _stt_partial_loop(self):
+        """Watch Moonshine's in-flight partial and push it to the WebUI as a
+        streaming transcription event, so the user sees text appear while
+        they're still talking instead of only after VAD ends."""
+        while True:
+            try:
+                await asyncio.sleep(0.15)
+                partial = (self._stt.partial_text or "").strip()
+                if partial and partial != self._last_partial_broadcast:
+                    self._last_partial_broadcast = partial
+                    _broadcast_console(
+                        "transcription", partial, {"streaming": True, "partial": True}
+                    )
+                elif not self._stt.speaking and self._last_partial_broadcast:
+                    self._last_partial_broadcast = ""
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.debug(f"stt partial loop: {e}")
+                await asyncio.sleep(0.5)
+
     async def _turn_pump_loop(self):
         """Pull either a new STT transcript or a queued send_text, then run
         one LLM turn end-to-end (including tool call iterations)."""
@@ -376,8 +436,10 @@ class LocalLiveSession:
         self._history.append({"role": msg["role"], "content": content})
         self._trim_history()
 
-        # build messages with system instruction + optional image
-        system_text = self.config.build_system_instruction(self.personality)
+        # build messages with system instruction + optional image. system
+        # prompt is cached for the life of the session (see _get_system_text)
+        # so LM Studio can reuse the kv-cache prefix.
+        system_text = self._get_system_text()
         messages: list[dict] = [{"role": "system", "content": system_text}]
         messages.extend(self._history[:-1])
 
@@ -400,7 +462,7 @@ class LocalLiveSession:
         else:
             messages.append(last_user_msg)
 
-        tools = collect_openai_tools(self.config)
+        tools = self._get_tools()
         max_iter = self.config.local_llm_max_tool_iterations
 
         # prep chatbox / speaking state
