@@ -373,20 +373,38 @@ class LocalLiveSession:
                 await asyncio.sleep(0.1)
 
     async def _stt_partial_loop(self):
-        """Watch Moonshine's in-flight partial and push it to the WebUI as a
-        streaming transcription event, so the user sees text appear while
-        they're still talking instead of only after VAD ends."""
+        """Watch Moonshine's in-flight partial and push deltas to the WebUI as
+        streaming transcription events. Moonshine reports the cumulative line
+        text on every update, so we diff against what we already sent and only
+        forward the new tail. The webui appends consecutive streaming entries
+        of the same type into a single user message, so the user sees text
+        grow live while they're talking.
+        """
         while True:
             try:
                 await asyncio.sleep(0.15)
-                partial = (self._stt.partial_text or "").strip()
-                if partial and partial != self._last_partial_broadcast:
-                    self._last_partial_broadcast = partial
+                partial = (self._stt.partial_text or "")
+                if not partial:
+                    continue
+                if partial == self._last_partial_broadcast:
+                    continue
+                if partial.startswith(self._last_partial_broadcast):
+                    delta = partial[len(self._last_partial_broadcast):]
+                else:
+                    # moonshine revised the partial mid-flight. start a new
+                    # user line so the corrected text replaces cleanly.
                     _broadcast_console(
-                        "transcription", partial, {"streaming": True, "partial": True}
+                        "transcription", "\n" + partial,
+                        {"streaming": True, "partial": True},
                     )
-                elif not self._stt.speaking and self._last_partial_broadcast:
-                    self._last_partial_broadcast = ""
+                    self._last_partial_broadcast = partial
+                    continue
+                if delta:
+                    _broadcast_console(
+                        "transcription", delta,
+                        {"streaming": True, "partial": True},
+                    )
+                    self._last_partial_broadcast = partial
             except asyncio.CancelledError:
                 return
             except Exception as e:
@@ -425,7 +443,13 @@ class LocalLiveSession:
         content = msg["content"]
         source = msg.pop("_source", "voice")
         if msg["role"] == "user":
-            _broadcast_console("transcription", content, {"streaming": False})
+            # voice transcripts were already streamed live via _stt_partial_loop,
+            # so broadcasting them again here would duplicate the user line in
+            # the webui (the streaming-append handler concatenates same-type
+            # events). only re-broadcast for text inputs.
+            if source != "voice":
+                _broadcast_console("transcription", content, {"streaming": False})
+            self._last_partial_broadcast = ""
             if self._conv_logger:
                 self._conv_logger.stream_user_message(content)
                 self._conv_logger.finalize_user_message()
