@@ -25,6 +25,16 @@ Python-based system for running a live AI in VRChat. Handles real-time audio str
   - the `stable` tag
 - If there is **no GitHub Release** for the current commit or branch state, treat it as **not stable**. It may include recent changes that are not fully tested for long term use.
 
+### Experimental Branch: Fully Local Backend
+
+There is an active WIP branch [`local-llm-backend`](https://github.com/HoppouAI/ProjectGabriel-Remastered/tree/local-llm-backend) that replaces the Gemini Live cloud round-trip with a fully local pipeline:
+
+- **STT:** Moonshine + Silero VAD running on your GPU
+- **LLM:** any OpenAI-compatible endpoint (LM Studio, Ollama with the OpenAI shim, llama.cpp server, vLLM) with streaming tool calls, vision, and reasoning-model support (`<think>` tags stripped and surfaced as thought summaries the same way Gemini does)
+- **TTS:** any of the existing providers (qwen3, hoppou, chirp3_hd, tiktok) or the new [OmniVoice](https://github.com/HoppouAI/ProjectGabriel-Plugins/tree/main/omnivoice) plugin (600+ languages, voice cloning from a local wav)
+
+When enabled, no audio or text leaves your machine. The Discord bot still uses Gemini Live separately. Expect rough edges, breaking config changes, and partial feature parity until it lands on main.
+
 ### Download Stable Versions
 
 Use the Releases page to download stable snapshots:
