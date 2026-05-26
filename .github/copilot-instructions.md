@@ -99,7 +99,7 @@ class MyTool(BaseTool):
 ### Diary Plugin
 - `plugins/diary/` -- long term first person diary for the AI, separate from the structured memory system.
 - Background `DiaryScheduler` ticks every 2 hours (configurable via `plugins.diary.interval_hours`), runs after a 5 minute warmup.
-- Each tick gathers the most recent N session JSON files for today from `data/conversations/` (default 5), passes them to `gemini-3.1-flash-lite-preview` along with any earlier diary entries from today.
+- Each tick gathers the most recent N session JSON files for today from `data/conversations/` (default 5), passes them to `gemini-3.1-flash-lite` along with any earlier diary entries from today.
 - Sub-agent returns strict JSON `{people, mood_arc, body, highlights}`, the plugin wraps it as a `DiaryEntry` and appends to `data/plugins/diary/gabriel.diary` (custom plain text format, lenient parser).
 - Multiple entries per day allowed, numbered as "part 1, part 2, ...". Tick is skipped if no new sessions appeared since the last entry.
 - Tools: `readDiary(date?, limit?)`, `searchDiary(query, limit?)`, `listDiaryDates()`, `updateDiaryNow()` (force tick).
@@ -131,7 +131,7 @@ class MyTool(BaseTool):
 - Types: `long_term` (permanent), `short_term` (7 days), `quick_note` (6 hours)
 - Tools: `saveMemory`, `searchMemories`, `deleteMemory`, `listMemories`, `recallMemories`
 - Each tool is a separate FunctionDeclaration (avoids Gemini Live 1011 errors from complex schemas)
-- Recall sub-agent uses `gemini-3.1-flash-lite-preview` to summarize all memories
+- Recall sub-agent uses `gemini-3.1-flash-lite` to summarize all memories
 - Recent memories injected into system prompt via `{memories}` placeholder
 - RAG providers: `gemini` (Gemini embeddings + MongoDB Atlas vector search) or `local` (LM Studio + ChromaDB)
 - Local RAG: ChromaDB for vector storage, LM Studio for embeddings (EmbeddingGemma 300M), works with any backend
