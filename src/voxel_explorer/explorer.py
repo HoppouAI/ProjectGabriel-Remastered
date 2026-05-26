@@ -1,4 +1,4 @@
-﻿"""reference-style trail explorer.
+"""reference-style trail explorer (main class).
 
 Python port of the reference walk-to-target + discovery target loop,
 swapping the reference depth camera for our pose strip and using direct
@@ -28,29 +28,20 @@ import logging
 import math
 import threading
 import time
-from dataclasses import dataclass
 from typing import Optional
 
-from src.voxel_nav import (
-    NodeType, Serial, VoxelNavManager, find_path_astar, serial_to_center,
-)
+from src.voxel_nav import NodeType, Serial, VoxelNavManager, serial_to_center
+
+from .follow import FollowMixin
+from .motion import MotionMixin
+from .state import ExplorerState
+from .targeting import TargetingMixin
+
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ExplorerState:
-    target: Optional[Serial] = None
-    target_source: Optional[Serial] = None     # the Reachable node we
-                                               # discovered the target from
-    e_count: float = 0.0
-    last_distance: float = math.inf
-    last_cell: Optional[Serial] = None         # for no-progress watchdog
-    last_progress_t: float = 0.0
-    action: str = "idle"
-
-
-class VoxelExplorer:
+class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin):
     """Drives the avatar via OSC to fill in `nav.graph` reference style.
 
     Call `tick(pose)` at ~20Hz from the same loop that calls
@@ -132,62 +123,6 @@ class VoxelExplorer:
         self._active = False
         self._send_osc(0.0, 0.0, run=False)
         logger.info("voxel_explorer: stopped")
-
-    # ----------------------------------------------------------------------
-    # path-follow mode (drive-to-waypoint)
-    # ----------------------------------------------------------------------
-    def follow_path(self, serials: list[Serial], *, label: str = "",
-                    final_yaw_deg: Optional[float] = None) -> None:
-        """Drive along the given cell sequence. Replaces any current target.
-        The explorer must be active; if not, start() is called first.
-        If final_yaw_deg is given, the explorer rotates to that heading
-        once the queue is empty before going inactive."""
-        with self._lock:
-            if not self._active:
-                self.start()
-            self._path_queue = list(serials)
-            self._follow_active = True
-            self._follow_label = label or ""
-            self._final_yaw_deg = final_yaw_deg
-            self._aligning = False
-            # last cell of the queue is treated as the goal for replans
-            self._follow_goal = serials[-1] if serials else None
-            self._follow_replans = 0
-            s = self.state
-            s.target = None
-            s.target_source = None
-            s.e_count = 0.0
-            s.last_distance = math.inf
-            s.last_cell = None
-            s.last_progress_t = time.time()
-            self._ec_multiplier = 1.0
-            logger.info("voxel_explorer: follow path label=%r len=%d final_yaw=%s",
-                        self._follow_label, len(self._path_queue),
-                        f"{final_yaw_deg:.1f}" if final_yaw_deg is not None else "none")
-
-    def cancel_follow(self) -> None:
-        with self._lock:
-            if not self._follow_active and not self._aligning:
-                return
-            self._follow_active = False
-            self._aligning = False
-            self._final_yaw_deg = None
-            self._path_queue.clear()
-            self._follow_goal = None
-            self._follow_replans = 0
-            self.state.target = None
-            self._send_osc(0.0, 0.0, run=False)
-            self.state.action = "follow_cancel"
-            logger.info("voxel_explorer: follow cancelled")
-
-    @property
-    def follow_status(self) -> dict:
-        return {
-            "active": self._follow_active or self._aligning,
-            "remaining": len(self._path_queue),
-            "label": self._follow_label,
-            "aligning": self._aligning,
-        }
 
     # ----------------------------------------------------------------------
     # main tick
@@ -395,229 +330,3 @@ class VoxelExplorer:
             s.last_progress_t = time.time()
 
         self._last_pose = (pose_x, pose_z, fx, fz)
-
-    # ----------------------------------------------------------------------
-    # CheckImpeded -- reference Wander.CheckImpeded
-    # ----------------------------------------------------------------------
-    def _check_impeded(self, forward: float, turn: float,
-                       pose_x: float, pose_z: float,
-                       fx: float, fz: float,
-                       current_serial: Serial) -> bool:
-        s = self.state
-        if s.target is None or current_serial == s.target:
-            return False
-        # not actually trying to move
-        if forward < 0.1 and -0.5 < turn < 0.5:
-            return False
-        if self._last_pose is None:
-            return False
-        lx, lz, lfx, lfz = self._last_pose
-        if lx != pose_x or lz != pose_z:
-            return False
-        # reference tolerates 0.5 wobble on forward vector before declaring stuck
-        if lfx < fx - 0.5 or lfx > fx + 0.5:
-            return False
-        if lfz < fz - 0.5 or lfz > fz + 0.5:
-            return False
-        return True
-
-    # ----------------------------------------------------------------------
-    # helpers
-    # ----------------------------------------------------------------------
-    def _choose_target(self, current, forward_xz: tuple[float, float]) -> None:
-        s = self.state
-        cand = self.nav.choose_discovery_target(current, forward_xz)
-        if cand is not None:
-            s.target = cand
-            s.target_source = current.serial
-            s.e_count = 0.0
-            s.last_distance = math.inf
-            s.last_cell = None
-            s.last_progress_t = time.time()
-            logger.info("voxel_explorer: discover cardinal %s from %s",
-                        cand, current.serial)
-            return
-        # prune expired abandons before asking the nav for a stack pick
-        now_m = time.monotonic()
-        if self._abandoned:
-            self._abandoned = {c: t for c, t in self._abandoned.items() if t > now_m}
-        stack = self.nav.check_stack(forward_xz,
-                                     blacklist=set(self._abandoned.keys()) or None)
-        if stack is None:
-            logger.info("voxel_explorer: no unexplored cells remain")
-            return
-        cand, src = stack
-        # if the source is current we can just walk
-        if src.serial == current.serial:
-            s.target = cand
-            s.target_source = current.serial
-            s.e_count = 0.0
-            s.last_distance = math.inf
-            s.last_cell = None
-            s.last_progress_t = time.time()
-            logger.info("voxel_explorer: discover stack target %s via %s",
-                        cand, src.serial)
-            return
-        # route through the graph instead of walking in a straight line.
-        # without this we tried to head straight toward a target that might
-        # be on a totally different floor and just smashed into walls.
-        # mirrors reference NodeManager.CheckStack which always SetPaths to
-        # the source node before chasing the cardinal.
-        pr = find_path_astar(self.nav.graph, current.serial, src.serial)
-        if not pr.found or not pr.full_serials:
-            logger.info("voxel_explorer: no graph path to %s for target %s, "
-                        "blacklisting", src.serial, cand)
-            self._abandoned[cand] = time.monotonic() + self._abandon_ttl
-            return
-        # queue = every hop after current, then the cardinal unexplored cell
-        # as the final step
-        queue: list[Serial] = list(pr.full_serials[1:]) + [cand]
-        self._path_queue = queue
-        self._follow_active = True
-        self._follow_label = f"explore -> {cand}"
-        if not self._advance_follow_queue(current.serial):
-            # _advance_follow_queue couldnt find a valid next cell (everything
-            # too high to climb maybe). abandon and move on.
-            self._follow_active = False
-            self._path_queue.clear()
-            self._abandoned[cand] = time.monotonic() + self._abandon_ttl
-            logger.info("voxel_explorer: stack route to %s had no climbable "
-                        "step, blacklisting", cand)
-            return
-        s.e_count = 0.0
-        s.last_distance = math.inf
-        s.last_cell = None
-        s.last_progress_t = time.time()
-        logger.info("voxel_explorer: route to stack target %s via %d hops "
-                    "through %s", cand, len(queue), src.serial)
-
-    def _advance_follow_queue(self, current_serial: Serial) -> bool:
-        """Pop cells off the follow queue until we find one we should actually
-        drive toward. Skips cells we're already in (same XZ column).
-        Sets state.target and returns True on success, False if the queue
-        is exhausted.
-
-        We used to also skip cells more than FOLLOW_MAX_CLIMB above us, but
-        that ate entire upstairs/elevator paths. now if a cell is bogus
-        we let _give_up_target catch it via eCount and replan instead."""
-        s = self.state
-        while self._path_queue:
-            nxt = self._path_queue.pop(0)
-            same_col = (current_serial[0] == nxt[0]
-                        and current_serial[2] == nxt[2])
-            if same_col or self.nav.bar_check(current_serial, nxt):
-                continue
-            s.target = nxt
-            s.target_source = current_serial
-            return True
-        s.target = None
-        s.target_source = None
-        return False
-
-    def _give_up_target(self, why: str) -> None:
-        s = self.state
-        failed = s.target
-        cur = self.nav.current
-        if failed is not None and self.learning_mode:
-            is_neighbor = (cur is not None
-                           and self.nav.is_pathable_neighbor(cur.serial, failed))
-            # follow mode + still have a goal to reach: just demote the
-            # blocked cell to Iffy so the replanner avoids it. dont commit
-            # to a full wall since it might be reachable from another angle.
-            if self._follow_active and self._follow_goal is not None:
-                if is_neighbor:
-                    logger.info("voxel_explorer: marking %s Iffy mid-follow "
-                                "(%s)", failed, why)
-                    self.nav.mark_iffy(failed)
-                else:
-                    logger.info("voxel_explorer: abandon distant follow cell "
-                                "%s (%s), no wall mark", failed, why)
-                    self._abandoned[failed] = time.monotonic() + self._abandon_ttl
-            elif is_neighbor:
-                logger.info("voxel_explorer: marking %s UnReachable (%s)",
-                            failed, why)
-                self.nav.mark_unreachable(failed)
-            else:
-                logger.info("voxel_explorer: abandon distant target %s (%s) "
-                            "without wall mark", failed, why)
-                self._abandoned[failed] = time.monotonic() + self._abandon_ttl
-        s.target = None
-        s.target_source = None
-        s.e_count = 0.0
-        s.last_distance = math.inf
-        s.last_cell = None
-        # try to replan in follow mode rather than just blindly walking into
-        # the next queued cell (which is probably behind the same obstacle).
-        if (self._follow_active and self._follow_goal is not None
-                and cur is not None):
-            if self._follow_replans >= self._follow_replan_limit:
-                logger.warning("voxel_explorer: follow replan limit hit (%d), "
-                               "cancelling follow %r",
-                               self._follow_replan_limit, self._follow_label)
-                self._follow_active = False
-                self._path_queue.clear()
-                self._follow_goal = None
-                self._follow_replans = 0
-            else:
-                self._follow_replans += 1
-                pr = find_path_astar(self.nav.graph, cur.serial,
-                                     self._follow_goal)
-                if pr.found and len(pr.full_serials) > 1:
-                    self._path_queue = list(pr.full_serials[1:])
-                    s.last_progress_t = time.time()
-                    logger.info("voxel_explorer: follow replan #%d ok, "
-                                "%d cells to goal %s",
-                                self._follow_replans,
-                                len(self._path_queue), self._follow_goal)
-                else:
-                    logger.warning("voxel_explorer: follow replan #%d failed, "
-                                   "no path from %s to %s, cancelling",
-                                   self._follow_replans, cur.serial,
-                                   self._follow_goal)
-                    self._follow_active = False
-                    self._path_queue.clear()
-                    self._follow_goal = None
-                    self._follow_replans = 0
-        self._send_osc(0.0, 0.0, run=False)
-
-    def _drive_final_yaw(self, pose_yaw_deg: float) -> bool:
-        """Rotate toward `_final_yaw_deg` via LookHorizontal. Returns True
-        once we're inside the deadband (caller should release)."""
-        target = self._final_yaw_deg
-        if target is None:
-            return True
-        delta = (target - pose_yaw_deg + 540.0) % 360.0 - 180.0
-        if abs(delta) <= 3.0:
-            return True
-        sign = 1.0 if delta > 0 else -1.0
-        # bigger floor than the old mapping-side aligner so vrchat actually
-        # registers the turn at small angles. ramps up to 0.6 by ~45deg.
-        mag = min(0.6, max(0.18, abs(delta) / 45.0))
-        # push lookhorizontal every tick (not just on change) so face tracker
-        # or other systems writing 0 to lookhorizontal cant strand us.
-        try:
-            c = self.osc.client
-            c.send_message("/input/Vertical", 0.0)
-            c.send_message("/input/LookHorizontal", float(sign * mag))
-            c.send_message("/input/Run", 0)
-            self._last_send_forward = 0.0
-            self._last_send_turn = sign * mag
-            self._last_send_run = False
-        except Exception:
-            logger.exception("voxel_explorer: align OSC send failed")
-        return False
-
-    def _send_osc(self, forward: float, turn: float, run: bool) -> None:
-        # reference SendOSC: dedupe each channel against last value
-        c = self.osc.client
-        forward = max(-1.0, min(1.0, forward))
-        turn = max(-1.0, min(1.0, turn))
-        if forward != self._last_send_forward:
-            c.send_message("/input/Vertical", float(forward))
-            self._last_send_forward = forward
-        if turn != self._last_send_turn:
-            c.send_message("/input/LookHorizontal", float(turn))
-            self._last_send_turn = turn
-        if run != self._last_send_run:
-            c.send_message("/input/Run", 1 if run else 0)
-            self._last_send_run = run
