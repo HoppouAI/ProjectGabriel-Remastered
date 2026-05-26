@@ -32,7 +32,6 @@ dependencies = [
     "pedalboard>=0.9.0",
     "ultralytics>=8.0.0",
     "lap>=0.5.12",
-    "boxmot>=18.0.0",
     "bettercam>=1.0.0",
     "opencv-python>=4.8.0",
     "mss>=9.0.0",
