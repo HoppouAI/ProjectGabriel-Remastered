@@ -36,6 +36,7 @@ from typing import Optional
 
 from src.idle_chatbox import IdleChatbox
 from src.emotions import init_emotion_system, get_emotion_system
+from src.gemini_live.chatbox import ChatboxFormattersMixin
 from src.tools import ToolHandler
 
 from .llm import LMStudioClient
@@ -804,10 +805,13 @@ class LocalLiveSession:
             return
         if not text:
             return
-        if len(text) <= CHATBOX_LIMIT:
-            self.osc.send_chatbox(text)
+        cleaned = ChatboxFormattersMixin._strip_audio_tags_for_chatbox(text)
+        if not cleaned:
+            return
+        if len(cleaned) <= CHATBOX_LIMIT:
+            self.osc.send_chatbox(cleaned)
         else:
-            self.osc.send_chatbox("..." + text[-(CHATBOX_LIMIT - 3):])
+            self.osc.send_chatbox("..." + cleaned[-(CHATBOX_LIMIT - 3):])
 
     async def _finalize_chatbox(self, text: str):
         if self.audio.is_music_playing():
@@ -820,7 +824,11 @@ class LocalLiveSession:
         if not text:
             self.osc.set_typing(False)
             return
-        pages = self.osc.send_chatbox_paginated(text)
+        cleaned = ChatboxFormattersMixin._strip_audio_tags_for_chatbox(text)
+        if not cleaned:
+            self.osc.set_typing(False)
+            return
+        pages = self.osc.send_chatbox_paginated(cleaned)
         if pages and len(pages) > 1:
             await self.osc.display_pages(pages, self.config.chatbox_page_delay)
         self.osc.set_typing(False)
