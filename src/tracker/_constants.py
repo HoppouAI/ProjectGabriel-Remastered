@@ -2,7 +2,7 @@
 
 MODEL_DIR = "models/yolov8"
 MODEL_NAME = "yolov8n.pt"
-REID_MODEL_NAME = "osnet_x1_0_msmt17.pt"
+REID_MODEL_NAME = "osnet_x0_25_msmt17.pt"
 FRAME_W = 640
 FRAME_H = 360
 TARGET_FPS = 30
@@ -43,11 +43,9 @@ DEFAULT_CFG = {
     "backup_scale": 0.5,
     "cache_cleanup_interval": 300.0,
     "tracker_reset_interval": 1800.0,
-    # reid model variant. osnet_x1_0 is the full size one (~10 mb, ~10ms
-    # per detection on cuda) and matches way better across angles/avatars
-    # than the tiny x0_25 variant. drop back to osnet_x0_25_msmt17.pt if
-    # you need more speed.
-    "reid_model": "osnet_x1_0_msmt17.pt",
+    # reid model variant. osnet_x0_25 is the tiny one (~3 mb, <5 ms per
+    # detection), the bigger ones are more accurate but slower.
+    "reid_model": "osnet_x0_25_msmt17.pt",
     "reid_half": True,
     # boxmot deepocsort overrides. defaults are tuned for MOT challenge
     # which has very different framerate/density assumptions than vrchat.
