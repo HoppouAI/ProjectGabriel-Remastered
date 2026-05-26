@@ -381,43 +381,16 @@ class LocalLiveSession:
                 await asyncio.sleep(0.1)
 
     async def _stt_partial_loop(self):
-        """Watch Moonshine's in-flight partial and push deltas to the WebUI as
-        streaming transcription events. Moonshine reports the cumulative line
-        text on every update, so we diff against what we already sent and only
-        forward the new tail. The webui appends consecutive streaming entries
-        of the same type into a single user message, so the user sees text
-        grow live while they're talking.
+        """No-op for now. Silero VAD + moonshine batch transcription doesn't
+        produce stable partials; the user sees the full transcript once their
+        utterance ends (typically <300ms after silence). Kept as a task slot
+        in case we wire up incremental decoding later.
         """
         while True:
             try:
-                await asyncio.sleep(0.15)
-                partial = (self._stt.partial_text or "")
-                if not partial:
-                    continue
-                if partial == self._last_partial_broadcast:
-                    continue
-                if partial.startswith(self._last_partial_broadcast):
-                    delta = partial[len(self._last_partial_broadcast):]
-                else:
-                    # moonshine revised the partial mid-flight. start a new
-                    # user line so the corrected text replaces cleanly.
-                    _broadcast_console(
-                        "transcription", "\n" + partial,
-                        {"streaming": True, "partial": True},
-                    )
-                    self._last_partial_broadcast = partial
-                    continue
-                if delta:
-                    _broadcast_console(
-                        "transcription", delta,
-                        {"streaming": True, "partial": True},
-                    )
-                    self._last_partial_broadcast = partial
+                await asyncio.sleep(60)
             except asyncio.CancelledError:
                 return
-            except Exception as e:
-                logger.debug(f"stt partial loop: {e}")
-                await asyncio.sleep(0.5)
 
     async def _barge_in_loop(self):
         """Watch for the user starting to talk while the model is mid-reply.
@@ -502,12 +475,7 @@ class LocalLiveSession:
         content = msg["content"]
         source = msg.pop("_source", "voice")
         if msg["role"] == "user":
-            # voice transcripts were already streamed live via _stt_partial_loop,
-            # so broadcasting them again here would duplicate the user line in
-            # the webui (the streaming-append handler concatenates same-type
-            # events). only re-broadcast for text inputs.
-            if source != "voice":
-                _broadcast_console("transcription", content, {"streaming": False})
+            _broadcast_console("transcription", content, {"streaming": False})
             self._last_partial_broadcast = ""
             if self._conv_logger:
                 self._conv_logger.stream_user_message(content)
