@@ -262,6 +262,29 @@ async def on_user_msg(text, source):
 ctx.subscribe("message_in", on_user_msg)
 ```
 
+### `await ctx.send_realtime_text(text)` (api v3+)
+
+Inject a SHORT text annotation into the user's CURRENT incoming
+turn without ending it. Use this for inline tags the model should
+see alongside whatever audio is streaming right now: speaker labels,
+sensor readings, vision tags.
+
+Unlike `send_user_text` / `send_system_instruction`, this does NOT
+wait for the model to stop speaking and does NOT close the turn. It
+auto-detects the live model variant:
+
+- gemini 2.5 native-audio -> `send_client_content(turn_complete=False)`,
+  deterministically appends to the current turn.
+- gemini 3.1 flash-live -> `send_realtime_input(text=...)`, best-effort
+  ordering but lands in the same turn pre-VAD-end.
+
+Returns `False` if the session isnt up or sending failed. Throttle
+this in your plugin, dont call it every chunk or youll spam the turn.
+
+```python
+await ctx.send_realtime_text(f"[System: current speaker is {name}]")
+```
+
 ### `ctx.discord` -- Discord bot integration
 
 The Discord selfbot module runs its own Gemini Live session, separate

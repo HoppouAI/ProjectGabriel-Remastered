@@ -286,6 +286,43 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
             except Exception as e:
                 logger.error(f"Failed to send text: {e}")
 
+    async def send_inline_text(self, text: str) -> bool:
+        """Inject a short text annotation into the current incoming turn
+        WITHOUT waiting for the model to stop, WITHOUT sending an
+        activity_end. Used for things like speaker labels that should
+        ride along with the user's audio so the model sees them as part
+        of the same turn.
+
+        For 3.1 models we use send_realtime_input(text=...) which the
+        docs flag as 'best-effort ordering' but in practice lands in
+        the same turn as long as the server VAD has not closed it.
+
+        For 2.5 models we use send_client_content with
+        turn_complete=False which deterministically appends to the
+        current turn.
+
+        No-op if the session is not up. Returns True on success.
+        """
+        if not self._session:
+            return False
+        if not text:
+            return False
+        try:
+            if self.config.is_31_model:
+                await self._session.send_realtime_input(text=text)
+            else:
+                await self._session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=text)],
+                    ),
+                    turn_complete=False,
+                )
+            return True
+        except Exception as e:
+            logger.debug(f"send_inline_text failed: {e}")
+            return False
+
     async def send_client_content_safe(self, turns, turn_complete=True):
         """Send client content, waiting until the model stops speaking to avoid interruptions.
         

@@ -505,6 +505,31 @@ class PluginContext:
             self.logger.error(f"send_user_text failed: {e}")
             return False
 
+    async def send_realtime_text(self, text: str) -> bool:
+        """Inject a short text annotation into the CURRENT incoming
+        user turn without ending it. Use this for things like speaker
+        labels, vision tags, sensor readings, anything you want the
+        model to see as part of whatever audio is streaming right now.
+
+        Works on both gemini 3.1 (uses send_realtime_input(text=...))
+        and gemini 2.5 (uses send_client_content with
+        turn_complete=False). Does NOT wait for the model to stop
+        speaking, so don't spam it, the model might mix annotations
+        across turns if you call it too often. Throttle in your plugin.
+
+        Returns False if the session is not up or sending failed.
+        Plugin api v3+.
+        """
+        session = self._app.get("session")
+        if session is None or not hasattr(session, "send_inline_text"):
+            self.logger.debug("send_realtime_text: session not ready")
+            return False
+        try:
+            return await session.send_inline_text(text)
+        except Exception as e:
+            self.logger.error(f"send_realtime_text failed: {e}")
+            return False
+
 def get_tts_factory(name: str):
     return _tts_providers.get(name)
 
