@@ -402,7 +402,7 @@ class Config:
 
     @property
     def custom_compression_model(self):
-        return self.get("gemini", "custom_compression", "model", default="gemini-3.1-flash-lite-preview")
+        return self.get("gemini", "custom_compression", "model", default="gemini-3.1-flash-lite")
 
     @property
     def language(self):
