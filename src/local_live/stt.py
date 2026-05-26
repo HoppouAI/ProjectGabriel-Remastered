@@ -325,6 +325,21 @@ class MoonshineSTT:
         except asyncio.TimeoutError:
             return None
 
+    def drain_pending(self) -> list[str]:
+        """Pop every transcript currently sitting in the queue, in order.
+        Used to coalesce backlogged utterances or to flush stale ones after
+        a barge-in. Returns [] when the queue is empty.
+        """
+        out: list[str] = []
+        while True:
+            try:
+                out.append(self._transcript_queue.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+            except Exception:
+                break
+        return out
+
     def _push_transcript(self, text: str):
         if not self._loop:
             return

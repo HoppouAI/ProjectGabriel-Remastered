@@ -421,6 +421,17 @@ class LocalLiveSession:
                     logger.info("barge-in: user started speaking while model was talking")
                     self._barge_in.set()
                     self._playback_interrupted = True
+                    # also drop any stale transcripts queued from before the
+                    # interruption so the next turn handles ONLY the new
+                    # utterance the user is starting right now.
+                    try:
+                        dropped = self._stt.drain_pending()
+                        if dropped:
+                            logger.debug(
+                                f"barge-in: dropped {len(dropped)} stale transcripts"
+                            )
+                    except Exception:
+                        pass
                     try:
                         if self._tts and hasattr(self._tts, "interrupt"):
                             self._tts.interrupt()
@@ -456,6 +467,31 @@ class LocalLiveSession:
                     # 2) wait briefly for STT
                     transcript = await self._stt.next_transcript(timeout=0.3)
                     if transcript:
+                        # if more transcripts piled up while we were busy (eg
+                        # the user spoke twice in a row, or barge-in left a
+                        # backlog), coalesce them into one user turn so we
+                        # don't end up replying to stale utterances out of
+                        # order.
+                        extras = self._stt.drain_pending()
+                        if extras:
+                            parts = [transcript] + extras
+                            transcript = " ".join(p.strip() for p in parts if p and p.strip())
+                            logger.info(
+                                f"coalesced {len(parts)} backlogged transcripts into one turn"
+                            )
+                        # also, if the user is STILL talking right now, hold
+                        # off; the next transcript will include that audio.
+                        if self._stt.speaking:
+                            # push it back to the front by storing then
+                            # waiting one tick.
+                            wait_started = time.time()
+                            while self._stt.speaking and time.time() - wait_started < 5.0:
+                                await asyncio.sleep(0.1)
+                            tail = self._stt.drain_pending()
+                            if tail:
+                                transcript = " ".join(
+                                    [transcript] + [t.strip() for t in tail if t.strip()]
+                                )
                         msg = {"role": "user", "content": transcript, "_source": "voice"}
                 if msg is None:
                     continue
@@ -623,14 +659,28 @@ class LocalLiveSession:
                         args = json.loads(args_raw) if args_raw.strip() else {}
                     except json.JSONDecodeError:
                         args = {}
-                    logger.info(f"tool call: {name}({args})")
-                    _broadcast_console("info", f"tool call: {name}")
+                    args_str = json.dumps(args, ensure_ascii=False) if args else ""
+                    logger.info(f"tool call: {name}({args_str})")
+                    _broadcast_console("tool_call", f"{name}({args_str})")
+                    if self._conv_logger:
+                        try:
+                            self._conv_logger.add_tool_call(name, args)
+                        except Exception:
+                            pass
                     result = await self.tool_handler.handle_by_name(name, args)
+                    result_dict = result if isinstance(result, dict) else {"result": result}
+                    result_str = json.dumps(result_dict, ensure_ascii=False)
+                    _broadcast_console("tool_response", f"{name} \u2192 {result_str}")
+                    if self._conv_logger:
+                        try:
+                            self._conv_logger.add_tool_response(name, result_dict)
+                        except Exception:
+                            pass
                     tool_msg = {
                         "role": "tool",
                         "tool_call_id": tc.get("id") or f"call_{name}",
                         "name": name,
-                        "content": json.dumps(result),
+                        "content": json.dumps(result_dict),
                     }
                     messages.append(tool_msg)
                     self._history.append(tool_msg)
