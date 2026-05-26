@@ -47,6 +47,10 @@ PLUGIN_API_VERSION = 3
 # for the first one. Filled by record_plugin_issue() and the
 # _PluginLogCounter filter, read by src.cli._print_plugins_block.
 _plugin_issues: dict[str, list[dict]] = {}
+# Plugins that the loader gave up on (import crashed, setup() crashed,
+# missing entry file, no Plugin subclass, etc). Banner uses this to draw
+# the row as effectively disabled instead of misleadingly green.
+_failed_plugins: set[str] = set()
 _PLUGIN_NAME_RE = re.compile(r"plugin '([^']+)'")
 _REQUIRES_PREFIX_RE = re.compile(r"^plugin '[^']+'\s+", re.IGNORECASE)
 
@@ -88,6 +92,12 @@ def record_plugin_issue(plugin_name: str, level: str, message: str) -> None:
 
 def get_plugin_issues() -> dict[str, list[dict]]:
     return {k: list(v) for k, v in _plugin_issues.items()}
+
+
+def get_failed_plugins() -> set[str]:
+    """Names of plugins that were enabled but failed to load. Banner
+    uses this to mark the row as disabled at runtime."""
+    return set(_failed_plugins)
 
 
 def get_plugin_log_counts() -> dict[str, dict[str, int]]:
@@ -238,6 +248,7 @@ class PluginManager:
                 # the banner so the user sees it next to the plugin row.
                 logger.error(f"failed to load plugin '{entry.name}': {e}", exc_info=True)
                 record_plugin_issue(entry.name, "error", f"load failed: {e}")
+                _failed_plugins.add(entry.name)
 
         if self.loaded:
             names = ", ".join(p.name for p, _ in self.loaded)
@@ -294,6 +305,7 @@ class PluginManager:
             msg = f"entry file '{entry_file}' not found"
             logger.error(f"plugin '{name}' {msg}")
             record_plugin_issue(name, "error", msg)
+            _failed_plugins.add(name)
             return
 
         module_name = f"plugins.{plugin_dir.name}"
@@ -303,6 +315,7 @@ class PluginManager:
         if spec is None or spec.loader is None:
             logger.error(f"plugin '{name}' could not build import spec")
             record_plugin_issue(name, "error", "could not build import spec")
+            _failed_plugins.add(name)
             return
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
@@ -311,6 +324,7 @@ class PluginManager:
         except Exception as e:
             logger.error(f"plugin '{name}' import failed: {e}", exc_info=True)
             record_plugin_issue(name, "error", f"import failed: {e}")
+            _failed_plugins.add(name)
             return
 
         # Find the Plugin instance/class. Prefer an explicit `plugin`
@@ -331,6 +345,7 @@ class PluginManager:
         if plugin_obj is None:
             logger.error(f"plugin '{name}' has no Plugin subclass or `plugin` attribute")
             record_plugin_issue(name, "error", "has no Plugin subclass or `plugin` attribute")
+            _failed_plugins.add(name)
             return
 
         # Let manifest fill in metadata when the class did not set it.
@@ -355,6 +370,7 @@ class PluginManager:
         except Exception as e:
             logger.error(f"plugin '{plugin_obj.name}' setup() crashed: {e}", exc_info=True)
             record_plugin_issue(plugin_obj.name, "error", f"setup() crashed: {e}")
+            _failed_plugins.add(plugin_obj.name)
             return
 
         self.loaded.append((plugin_obj, ctx))

@@ -199,16 +199,28 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
         return
 
     try:
-        from src.plugins.loader import get_plugin_issues, get_plugin_log_path
+        from src.plugins.loader import (
+            get_plugin_issues,
+            get_plugin_log_path,
+            get_failed_plugins,
+        )
         issues_map = get_plugin_issues()
         log_path = get_plugin_log_path()
+        failed = get_failed_plugins()
     except Exception:
         issues_map = {}
         log_path = None
+        failed = set()
 
     print(f"  {C.DIM}Plugins{C.RST}")
     for name, enabled, on_count, total, version, author in rows:
-        if enabled:
+        # plugin tried to load but blew up -> render as disabled with a
+        # red dot so the user notices, instead of misleadingly green.
+        crashed = name in failed
+        if crashed:
+            dot = f"{C.B_RED}\u25cb{C.RST}"
+            label = f"{C.DIM}{name}{C.RST}"
+        elif enabled:
             dot = f"{C.B_GREEN}\u25cf{C.RST}"
             label = f"{C.B_WHITE}{name}{C.RST}"
         else:
