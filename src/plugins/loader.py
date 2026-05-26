@@ -4,6 +4,7 @@ Walks `./plugins/`, reads each `plugin.yml` manifest, imports the entry
 module, finds the `Plugin` subclass and calls `setup()`. Errors in any
 single plugin are caught so the host stays up.
 """
+import importlib.metadata
 import importlib.util
 import logging
 import re
@@ -36,6 +37,21 @@ PLUGIN_API_VERSION = 2
 _plugin_issues: dict[str, list[dict]] = {}
 _PLUGIN_NAME_RE = re.compile(r"plugin '([^']+)'")
 _REQUIRES_PREFIX_RE = re.compile(r"^plugin '[^']+'\s+", re.IGNORECASE)
+
+# Some pip packages install under a different import name than their pip
+# name (pyfluidsynth -> fluidsynth, opencv-python -> cv2, etc). Plain
+# find_spec on the pip name fails for those, so we check installed
+# distributions via importlib.metadata first, which uses pip's own
+# name normalization, and only fall back to find_spec for vendored or
+# stdlib modules that have no dist metadata.
+def _requirement_installed(pkg_name: str) -> bool:
+    try:
+        importlib.metadata.distribution(pkg_name)
+        return True
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    probe = pkg_name.replace("-", "_")
+    return importlib.util.find_spec(probe) is not None
 
 
 def record_plugin_issue(plugin_name: str, level: str, message: str) -> None:
@@ -251,9 +267,10 @@ class PluginManager:
         # Check declared python deps. Never auto pip install -- that
         # would be a footgun. Just warn so the user knows what to install.
         for req in manifest.get("requirements", []) or []:
-            mod_name = req.split("==")[0].split(">=")[0].split("<")[0].split("~=")[0].strip()
-            probe = mod_name.replace("-", "_")
-            if importlib.util.find_spec(probe) is None:
+            pkg_name = re.split(r"[<>=!~ ]", req, 1)[0].strip()
+            if not pkg_name:
+                continue
+            if not _requirement_installed(pkg_name):
                 msg = f"requires '{req}' but it does not look installed."
                 # full hint goes to plugins.log, banner shows the short msg
                 logger.debug(f"plugin '{name}' {msg} run: pip install {req}")
