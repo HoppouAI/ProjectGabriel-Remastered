@@ -81,22 +81,24 @@ class SafeConfigView:
     keys there if it really needs to).
     """
 
-    __slots__ = ("_real", "_plugin")
+    __slots__ = ("_real", "_plugin", "_trusted")
 
-    def __init__(self, real_config: Any, plugin_name: str):
+    def __init__(self, real_config: Any, plugin_name: str, trusted: bool = False):
         object.__setattr__(self, "_real", real_config)
         object.__setattr__(self, "_plugin", plugin_name)
+        object.__setattr__(self, "_trusted", bool(trusted))
 
     def __getattr__(self, name: str):
         if name.startswith("_"):
             raise AttributeError(
                 f"plugin '{self._plugin}' tried to read private config attr '{name}'"
             )
-        if name in _BLOCKED_CONFIG_ATTRS:
+        if name in _BLOCKED_CONFIG_ATTRS and not self._trusted:
             raise PermissionError(
                 f"plugin '{self._plugin}' is not allowed to read sensitive config "
                 f"attribute '{name}'. Use ctx.plugin_config() for your own "
-                f"settings under plugins.{self._plugin}.* in config.yml."
+                f"settings under plugins.{self._plugin}.* in config.yml, or set "
+                f"plugins.trusted: true in config.yml to allow it."
             )
         return getattr(self._real, name)
 
@@ -107,12 +109,12 @@ class SafeConfigView:
         )
 
     def get(self, *keys, default=None):
-        if _path_is_sensitive(*keys):
+        if _path_is_sensitive(*keys) and not self._trusted:
             raise PermissionError(
                 f"plugin '{self._plugin}' tried to read sensitive config path "
                 f"'{'.'.join(str(k) for k in keys) or '<root>'}'. Plugins are "
                 f"sandboxed away from secrets. Use ctx.plugin_config() for your "
-                f"own settings."
+                f"own settings, or set plugins.trusted: true in config.yml."
             )
         return self._real.get(*keys, default=default)
 
@@ -286,15 +288,21 @@ class PluginContext:
     importing internal modules directly. One context per plugin so logs
     and config lookups are scoped to that plugin's name."""
 
-    def __init__(self, plugin_name: str, config, plugin_dir: Path):
+    def __init__(self, plugin_name: str, config, plugin_dir: Path, trusted: bool = False):
         self.plugin_name = plugin_name
         # Keep the real config private for internal plugin_config() lookups
         # (a plugin needs to read its OWN scoped subdict, even if it
         # contains things like api keys for third-party services). What
         # we expose publicly is a sandboxed SafeConfigView so plugins
-        # can't read gemini's api key, vrchat creds, mongo strings, etc.
+        # cant read gemini's api key, vrchat creds, mongo strings, etc.
+        # When `trusted` is True the guard is disabled (set via
+        # plugins.trusted in config.yml) for backwards compat with older
+        # plugins that reach into ctx.config.api_key etc.
         self._real_config = config
-        self.config = SafeConfigView(config, plugin_name) if config is not None else None
+        self.config = (
+            SafeConfigView(config, plugin_name, trusted=trusted)
+            if config is not None else None
+        )
         self.plugin_dir = plugin_dir
         self.logger = logging.getLogger(f"plugin.{plugin_name}")
         # Filled in later by PluginManager.bind_app() once the rest of

@@ -343,7 +343,13 @@ class PluginManager:
         if "author" in manifest and not plugin_obj.author:
             plugin_obj.author = manifest["author"]
 
-        ctx = PluginContext(plugin_obj.name, self.config, plugin_dir)
+        trusted = False
+        if self.config is not None:
+            try:
+                trusted = bool(self.config.get("plugins", "trusted", default=False))
+            except Exception:
+                trusted = False
+        ctx = PluginContext(plugin_obj.name, self.config, plugin_dir, trusted=trusted)
         try:
             plugin_obj.setup(ctx)
         except Exception as e:
