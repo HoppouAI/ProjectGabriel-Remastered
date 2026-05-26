@@ -162,7 +162,20 @@ async def main(save_audio=False):
                     logger.error(f"plugin TTS '{ext_name}' failed to start: {e}")
                     tts_provider = None
 
-    session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
+    if config.backend == "local":
+        if tts_provider is None:
+            logger.error(
+                "local backend selected but no TTS provider is enabled. "
+                "enable one of tts.qwen3 / tts.hoppou / tts.chirp3_hd / tts.tiktok, "
+                "or set tts.external_provider to a plugin-supplied name."
+            )
+            raise SystemExit(2)
+        from src.local_live import LocalLiveSession
+        logger.info("backend = local (LM Studio + Moonshine)")
+        session = LocalLiveSession(config, audio, osc, tracker, personality, tts_provider)
+    else:
+        logger.info("backend = gemini_live")
+        session = GeminiLiveSession(config, audio, osc, tracker, personality, tts_provider)
     session._save_audio = save_audio
 
     # Instance monitor for player list (VRChat log parsing)
