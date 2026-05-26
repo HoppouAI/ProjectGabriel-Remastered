@@ -36,6 +36,15 @@ class AudioLoopsMixin:
                 if self._stream_closing:
                     return
                 if not self._mic_muted:
+                    # let plugins peek at raw mic audio (voice id, vad,
+                    # speaker diarization, ...). emit_event swallows
+                    # subscriber errors per-callback so a bad plugin
+                    # cant kill the mic loop.
+                    try:
+                        from src.plugins import emit_event as _plg_emit
+                        _plg_emit("mic_chunk", data, self.config.send_sample_rate)
+                    except Exception:
+                        pass
                     try:
                         self._out_queue.put_nowait(("audio", data))
                     except asyncio.QueueFull:
@@ -212,6 +221,13 @@ class AudioLoopsMixin:
                 if audio_data:
                     if self._save_audio:
                         self._record_output_audio(audio_data)
+                    # plugins can listen to outgoing tts audio too,
+                    # eg for lipsync, captions, audio mirror, etc.
+                    try:
+                        from src.plugins import emit_event as _plg_emit
+                        _plg_emit("tts_audio_chunk", audio_data, self.config.receive_sample_rate)
+                    except Exception:
+                        pass
                     # Chunked write so we can stop quickly on interrupt
                     for i in range(0, len(audio_data), CHUNK_BYTES):
                         if self._playback_interrupted:
