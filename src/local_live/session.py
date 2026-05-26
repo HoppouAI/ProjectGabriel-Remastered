@@ -145,6 +145,9 @@ class LocalLiveSession:
         self._cached_tools: Optional[list] = None
         # last partial we already broadcast, so we don't spam the WebUI
         self._last_partial_broadcast: str = ""
+        # barge-in: set when the user starts speaking while the model is
+        # still talking, so the run loop tears down the LLM stream and tts.
+        self._barge_in = asyncio.Event()
 
     # ── chatbox builtins (parity with gemini session) ────────────────────
 
@@ -307,6 +310,7 @@ class LocalLiveSession:
                 ("mic", self._mic_loop(input_stream)),
                 ("turn-pump", self._turn_pump_loop()),
                 ("stt-partials", self._stt_partial_loop()),
+                ("barge-in", self._barge_in_loop()),
                 ("tts-audio", self._tts_audio_loop()),
                 ("audio-playback", self._play_audio_loop(output_stream)),
                 ("idle-check", self._idle_check_loop()),
@@ -411,6 +415,43 @@ class LocalLiveSession:
                 logger.debug(f"stt partial loop: {e}")
                 await asyncio.sleep(0.5)
 
+    async def _barge_in_loop(self):
+        """Watch for the user starting to talk while the model is mid-reply.
+        When that happens we cut the tts, drain the playback queue, and set
+        _barge_in so the active turn aborts the LLM stream. Mirrors what the
+        gemini receive loop does when the server flags server_content.interrupted.
+        """
+        was_user_speaking = False
+        while True:
+            try:
+                await asyncio.sleep(0.05)
+                user_speaking = bool(self._stt.speaking)
+                if user_speaking and not was_user_speaking and self._speaking:
+                    logger.info("barge-in: user started speaking while model was talking")
+                    self._barge_in.set()
+                    self._playback_interrupted = True
+                    try:
+                        if self._tts and hasattr(self._tts, "interrupt"):
+                            self._tts.interrupt()
+                    except Exception as e:
+                        logger.debug(f"tts interrupt failed: {e}")
+                    drained = 0
+                    while not self._audio_in_queue.empty():
+                        try:
+                            self._audio_in_queue.get_nowait()
+                            drained += 1
+                        except asyncio.QueueEmpty:
+                            break
+                    if drained:
+                        logger.debug(f"barge-in: dropped {drained} pending audio chunks")
+                    self.osc.set_typing(False)
+                was_user_speaking = user_speaking
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.debug(f"barge-in loop: {e}")
+                await asyncio.sleep(0.2)
+
     async def _turn_pump_loop(self):
         """Pull either a new STT transcript or a queued send_text, then run
         one LLM turn end-to-end (including tool call iterations)."""
@@ -492,18 +533,24 @@ class LocalLiveSession:
         # prep chatbox / speaking state
         self._transcript_buffer = ""
         self._speaking = False
+        self._barge_in.clear()
         self._idle_chatbox.stop()
         self.osc.set_typing(True)
 
         full_assistant_text = ""
+        interrupted = False
 
         for iteration in range(max_iter):
             tool_calls_this_iter: list[dict] = []
             saw_finish_reason = None
+            stream = self._llm.stream_turn(messages, tools=tools)
             try:
-                async for event in self._llm.stream_turn(messages, tools=tools):
+                async for event in stream:
                     if self._reconnect_requested:
                         self._reconnect_requested = False
+                        break
+                    if self._barge_in.is_set():
+                        interrupted = True
                         break
                     etype = event.get("type")
                     if etype == "text":
@@ -536,6 +583,31 @@ class LocalLiveSession:
             except Exception as e:
                 logger.exception(f"LLM stream crashed: {e}")
                 _broadcast_console("error", f"LLM stream crashed: {e}")
+                try:
+                    await stream.aclose()
+                except Exception:
+                    pass
+                return
+            finally:
+                if interrupted:
+                    try:
+                        await stream.aclose()
+                    except Exception:
+                        pass
+
+            if interrupted:
+                logger.info("local turn aborted by barge-in")
+                _broadcast_console("info", "interrupted by user")
+                if full_assistant_text.strip():
+                    self._history.append({
+                        "role": "assistant",
+                        "content": full_assistant_text.strip() + " [interrupted]",
+                    })
+                self._speaking = False
+                if self._emotion_system:
+                    self._emotion_system.stop_speaking()
+                self.osc.set_typing(False)
+                self._barge_in.clear()
                 return
 
             # if there were tool calls, dispatch them, append messages, loop
