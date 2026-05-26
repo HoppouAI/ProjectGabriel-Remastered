@@ -157,7 +157,7 @@ gemini:
     # Token count that triggers the summarize-and-reconnect cycle
     trigger_tokens: 100000
     # Model used for summarization (lightweight, fast)
-    model: "gemini-3.1-flash-lite-preview"
+    model: "gemini-3.1-flash-lite"
 
   # ── Session Resumption ──
   # Controls how aggressively session handles are cleared on errors and
