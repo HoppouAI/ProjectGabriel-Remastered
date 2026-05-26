@@ -14,7 +14,13 @@ from pathlib import Path
 
 import yaml
 
-from src.plugins.api import Plugin, PluginContext, emit_event
+from src.plugins.api import (
+    Plugin,
+    PluginContext,
+    emit_event,
+    start_periodic_tasks,
+    stop_periodic_tasks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +33,13 @@ logger = logging.getLogger(__name__)
 #        subscribe(), send_system_instruction, send_user_text
 #   2 -- ctx.discord namespace for the Discord bot's Gemini session,
 #        ChatboxOrchestrator with on_clear lifecycle hook
-PLUGIN_API_VERSION = 2
+#   3 -- ctx.register_periodic_task scheduler primitive,
+#        new audio events 'mic_chunk' / 'tts_audio_chunk' (raw PCM
+#        bytes + sample_rate), SafeConfigView wraps ctx.config so
+#        plugins can't read gemini api key, vrchat creds, mongo
+#        connection strings, discord token, etc. plugin_config() still
+#        sees the plugin's own scoped subtree unfiltered.
+PLUGIN_API_VERSION = 3
 
 
 # Per-plugin issue tally so the startup banner can show how many warnings
@@ -355,8 +367,22 @@ class PluginManager:
 
     def emit(self, event: str, *args, **kwargs):
         emit_event(event, *args, **kwargs)
+        # The 'startup' event is the canonical "host is fully wired"
+        # signal. Spin up any periodic tasks plugins registered during
+        # setup() right after their startup handlers had a chance to
+        # run. Idempotent so it's safe even if emit('startup') is
+        # called twice.
+        if event == "startup":
+            try:
+                start_periodic_tasks()
+            except Exception as e:
+                logger.error(f"failed to start plugin periodic tasks: {e}", exc_info=True)
 
     async def teardown_all(self):
+        try:
+            stop_periodic_tasks(timeout=2.0)
+        except Exception as e:
+            logger.debug(f"stop_periodic_tasks errored: {e}")
         for plugin_obj, ctx in self.loaded:
             try:
                 res = plugin_obj.teardown(ctx)

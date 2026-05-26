@@ -8,6 +8,7 @@ from src.plugins.api import (
     DiscordPluginContext,
     Plugin,
     PluginContext,
+    SafeConfigView,
     _bind_discord_session,
     collect_discord_prompt_contributions,
     collect_prompt_contributions,
@@ -17,6 +18,9 @@ from src.plugins.api import (
     get_tts_factory,
     iter_chatbox_sources,
     iter_discord_tool_classes,
+    register_periodic_task,
+    start_periodic_tasks,
+    stop_periodic_tasks,
 )
 from src.plugins.loader import PLUGIN_API_VERSION, PluginManager
 
@@ -26,10 +30,14 @@ __all__ = [
     "DiscordPluginContext",
     "PluginManager",
     "PLUGIN_API_VERSION",
+    "SafeConfigView",
     "get_tts_factory",
     "get_stt_factory",
     "emit_event",
     "emit_discord_event",
     "iter_discord_tool_classes",
     "collect_discord_prompt_contributions",
+    "register_periodic_task",
+    "start_periodic_tasks",
+    "stop_periodic_tasks",
 ]
