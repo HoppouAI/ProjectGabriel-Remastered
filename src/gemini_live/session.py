@@ -90,6 +90,7 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         }
         self._compression_in_progress = False  # Guard to prevent concurrent compression
         self._compression_summary = None  # Summary from custom compression to seed on reconnect
+        self._ready_badge_shown = False  # Big green READY banner only fires on first successful connect
         self._load_session_handle()
         self._conv_logger = ConversationLogger(enabled=config.conversation_logging_enabled)
         
@@ -561,13 +562,21 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     logger.info(f"Connecting to Gemini Live ({self.config.model})...")
 
                 self._last_connect_succeeded = False
-                async with client.aio.live.connect(
+                from src.cli import Spinner, print_ready_badge
+                spinner_label = "Connecting to Gemini Live" if not self._ready_badge_shown else "Reconnecting to Gemini Live"
+                _live_cm = client.aio.live.connect(
                     model=self.config.model,
                     config=live_config,
-                ) as session:
+                )
+                with Spinner(spinner_label):
+                    session = await _live_cm.__aenter__()
+                try:
                     self._last_connect_succeeded = True
                     logger.info("Connected to Gemini Live")
                     _broadcast_console("info", f"Connected to Gemini Live ({self.config.model})")
+                    if not self._ready_badge_shown:
+                        print_ready_badge(self.config.model)
+                        self._ready_badge_shown = True
                     self._notify_chatbox_resolved()
                     # Reset resumption fail streak on successful connection
                     if self._resumption_fail_streak > 0 and self._resumption_fail_streak < 3:
@@ -675,6 +684,11 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                         except Exception:
                             pass
                         self._stream_closing = False
+                finally:
+                    try:
+                        await _live_cm.__aexit__(None, None, None)
+                    except Exception:
+                        pass
 
             except APIError as e:
                 err_str = str(e)
