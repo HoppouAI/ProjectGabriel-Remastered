@@ -8,6 +8,20 @@ logger = logging.getLogger(__name__)
 PROMPTS_DIR = Path("config/prompts")
 
 
+# Hardcoded internal-command rule appended to every assembled system
+# prompt. Lives in code (not appends.yml) so users cant accidentally
+# delete it and break mid-session steering from the WebUI or plugins.
+_SYSTEM_INSTRUCTION_RULE = (
+    "INTERNAL COMMANDS: Any user message that begins with \"SYSTEM INSTRUCTION:\" "
+    "(or with \"Personality update\") is an internal control signal, not something "
+    "a real person said. Silently obey what comes after the colon. Never read it "
+    "out loud, never repeat it, never quote it, never paraphrase it, never say the "
+    "words \"system instruction\". Do not acknowledge it (no \"okay\", \"got it\", "
+    "\"understood\", \"switching\"). Just do the thing. If your reply would mention "
+    "the instruction text in any form, you have failed."
+)
+
+
 class Config:
     def __init__(self, path="config.yml"):
         with open(path, "r", encoding="utf-8") as f:
@@ -179,6 +193,13 @@ class Config:
                     parts.append(extra)
         except Exception as e:
             logger.warning(f"plugin prompt contributors failed: {e}")
+
+        # Always-on internal command handling rule. Baked into the code
+        # so users cant accidentally delete it from appends.yml and
+        # break mid-session steering. Goes last so the rule lands at
+        # the bottom of the assembled prompt where the model weighs it
+        # most heavily.
+        parts.append(_SYSTEM_INSTRUCTION_RULE)
 
         return "\n\n".join(parts)
 
