@@ -29,11 +29,12 @@ _RESPONSE_PREFIX_BRACE = re.compile(
     re.DOTALL,
 )
 # bare camelCase or snake_case identifier followed directly by a brace
-# block that contains at least two key:value-looking entries. The two-pair
-# requirement keeps us from nuking legit sentences that happen to contain
-# a single "word{thing}" shape.
+# block that contains at least two key:value-looking entries. The identifier
+# must have either an uppercase letter (camelCase) or an underscore so plain
+# english words like "options{a:1, b:2}" said in casual conversation are
+# not nuked.
 _BARE_FUNC_BRACE = re.compile(
-    r"\b[a-zA-Z_]\w{2,}\s*\{(?:\s*[a-zA-Z_]\w*\s*:[^{}\n]{1,200},\s*){1,}[^{}\n]{1,200}\}",
+    r"\b(?=\w*(?:[A-Z]|_))[a-zA-Z_]\w{2,}\s*\{(?:\s*[a-zA-Z_]\w*\s*:[^{}\n]{1,200},\s*){1,}[^{}\n]{1,200}\}",
     re.DOTALL,
 )
 
@@ -48,10 +49,17 @@ _BARE_FUNC_BRACE = re.compile(
 # we can't find one. Better to log nothing than to log poisoned text that
 # recallMemories will feed back into the next session.
 _LEAK_PREFIX_UNCLOSED = re.compile(
-    r"^\s*(?:response\s*[:\-]\s*)?[a-zA-Z_]\w{2,}\s*\{",
+    r"^\s*(?:response\s*[:\-]\s*)?(?=\w*(?:[A-Z]|_))[a-zA-Z_]\w{2,}\s*\{",
     re.DOTALL,
 )
 _SENTENCE_RESTART = re.compile(r"(?<=[a-z])([A-Z][a-z])")
+# Right after the unclosed `{` we want to see actual function-arg-shaped
+# content (at least one `keyword:value,` pair) before we trust that this
+# is really a leak and not just a weirdly-formatted real reply. This
+# prevents nuking buffers that start with `word{` for unrelated reasons.
+_LEAK_ARGS_EVIDENCE = re.compile(
+    r"^\s*[a-zA-Z_]\w*\s*:\s*[^,{}\n]{1,200},",
+)
 
 
 def strip_tool_call_leaks(text: str) -> tuple[str, bool]:
@@ -65,18 +73,22 @@ def strip_tool_call_leaks(text: str) -> tuple[str, bool]:
     for pat in (_PAREN_CALL, _RESPONSE_PREFIX_BRACE, _BARE_FUNC_BRACE):
         text = pat.sub("", text)
 
-    # unclosed leak prefix at start of buffer (no `}` ever shows up). Look for
-    # the first sentence restart AFTER the open brace, cut to there. If we
-    # can't find one, drop the whole buffer - better to log nothing than
-    # poison recall with leaked function args.
+    # unclosed leak prefix at start of buffer (no `}` ever shows up). We only
+    # treat it as a leak if the text right after the brace looks like a real
+    # function-arg list (key:value,). If it doesnt, we leave the buffer
+    # alone, even if the prefix shape matches, so we never destroy a normal
+    # reply that just happens to start with `word{`.
     m = _LEAK_PREFIX_UNCLOSED.match(text)
     if m:
         after_brace = text[m.end():]
-        restart = _SENTENCE_RESTART.search(after_brace)
-        if restart:
-            text = after_brace[restart.start(1):]
-        else:
-            text = ""
+        if _LEAK_ARGS_EVIDENCE.match(after_brace):
+            restart = _SENTENCE_RESTART.search(after_brace)
+            if restart:
+                text = after_brace[restart.start(1):]
+            else:
+                # confident leak but no clean sentence boundary, drop
+                # the whole buffer rather than log poison
+                text = ""
 
     # collapse the extra whitespace the deletions leave behind
     text = re.sub(r"[ \t]{2,}", " ", text)
