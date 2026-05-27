@@ -87,7 +87,9 @@ async def main(save_audio=False):
     from src.plugins import PluginManager, get_tts_factory
     plugin_manager = PluginManager(config)
     _t = time.perf_counter()
-    plugin_manager.discover_and_load()
+    from src.cli import Spinner
+    with Spinner("Loading plugins"):
+        plugin_manager.discover_and_load()
     _boot_plugins_s = time.perf_counter() - _t
 
     # Sync the live tool registry into config/tools.yml so any newly added
