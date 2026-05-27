@@ -23,7 +23,7 @@ from src.personalities import PersonalityManager
 from src.gemini_live import GeminiLiveSession
 from src.emotions import get_emotion_system
 from src.memory import memory_system
-logger.info(f"[boot] top-level imports done in {time.perf_counter() - _t:.2f}s (cumulative {time.perf_counter() - _BOOT_T0:.2f}s)")
+_BOOT_IMPORT_S = time.perf_counter() - _t
 
 # Suppress the known CPython 3.12 Windows ProactorEventLoop assertion error
 # This fires during pipe transport cleanup and is harmless
@@ -88,7 +88,7 @@ async def main(save_audio=False):
     plugin_manager = PluginManager(config)
     _t = time.perf_counter()
     plugin_manager.discover_and_load()
-    logger.info(f"[boot] plugins loaded in {time.perf_counter() - _t:.2f}s")
+    _boot_plugins_s = time.perf_counter() - _t
 
     # Sync the live tool registry into config/tools.yml so any newly added
     # built-in tools or plugin tools show up as togglable. Then reload the
@@ -102,6 +102,10 @@ async def main(save_audio=False):
 
     # Banner now that plugins + tools.yml are fresh
     print_startup_info(config)
+    logger.info(
+        f"[boot] imports {_BOOT_IMPORT_S:.2f}s | plugins {_boot_plugins_s:.2f}s"
+        f" | banner ready {time.perf_counter() - _BOOT_T0:.2f}s"
+    )
 
     audio = AudioManager(config)
     osc = VRChatOSC(config)
