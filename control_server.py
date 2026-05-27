@@ -371,7 +371,7 @@ async def send_system_instruction(data: TextInput):
         await session.send_client_content_safe(
             turns=types.Content(
                 role="user",
-                parts=[types.Part.from_text(text=f"System instruction update - {data.text}")],
+                parts=[types.Part.from_text(text=f"SYSTEM INSTRUCTION: {data.text}")],
             ),
             turn_complete=True,
         )

@@ -240,7 +240,7 @@ Inject text into the live Gemini session mid-conversation. Same code
 path the WebUI uses.
 
 - `send_system_instruction(text)` wraps the text as
-  `System instruction update - <text>` and pushes it as a user-role
+  `SYSTEM INSTRUCTION: <text>` and pushes it as a user-role
   client content turn. The host waits up to 30 seconds for the model
   to stop speaking before injecting so it doesnt cut off a reply.
   Use this for runtime behavior changes ("stop using emojis", "go
