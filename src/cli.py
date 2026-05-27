@@ -358,10 +358,12 @@ def print_ready_badge(model: str):
     time Gemini Live successfully connects. Reconnects stay quiet."""
     line = f"Connected to Gemini Live  ({model})"
     inner = max(len(line) + 6, 48)
-    bar = "\u2500" * (inner - 2)
-    pad = inner - len(line) - 5
+    label = "\u2500 READY "  # what sits between ┌ and the trailing dashes
+    top_dashes = "\u2500" * (inner - 2 - len(label))
+    bot_dashes = "\u2500" * (inner - 2)
+    pad = inner - len(line) - 4  # │ + 2 spaces + line + pad + │ = inner
     print()
-    print(f"  {C.B_GREEN}\u250c\u2500 READY {bar[7:]}\u2510{C.RST}")
+    print(f"  {C.B_GREEN}\u250c{label}{top_dashes}\u2510{C.RST}")
     print(f"  {C.B_GREEN}\u2502{C.RST}  {C.B_WHITE}{line}{C.RST}{' ' * pad}{C.B_GREEN}\u2502{C.RST}")
-    print(f"  {C.B_GREEN}\u2514{bar}\u2518{C.RST}")
+    print(f"  {C.B_GREEN}\u2514{bot_dashes}\u2518{C.RST}")
     print()

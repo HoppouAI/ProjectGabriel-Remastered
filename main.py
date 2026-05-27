@@ -88,8 +88,17 @@ async def main(save_audio=False):
     plugin_manager = PluginManager(config)
     _t = time.perf_counter()
     from src.cli import Spinner
-    with Spinner("Loading plugins"):
-        plugin_manager.discover_and_load()
+    # silence plugin chatter while they load so the plugins block in the
+    # startup banner lands right under the cyan banner, not after a wall
+    # of INFO lines. warnings/errors still come through.
+    _root = logging.getLogger()
+    _prev_level = _root.level
+    _root.setLevel(logging.WARNING)
+    try:
+        with Spinner("Loading plugins"):
+            plugin_manager.discover_and_load()
+    finally:
+        _root.setLevel(_prev_level)
     _boot_plugins_s = time.perf_counter() - _t
 
     # Sync the live tool registry into config/tools.yml so any newly added
