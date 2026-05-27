@@ -49,7 +49,7 @@ class LoopMixin:
                         conf=self._cfg["confidence_threshold"],
                         iou=self._cfg["iou_threshold"],
                         classes=[0],
-                        max_det=self._cfg["max_detections"],
+                        max_det=int(self._cfg["max_detections"]),
                         verbose=False,
                         half=self._use_half,
                     )
