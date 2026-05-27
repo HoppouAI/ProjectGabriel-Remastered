@@ -404,14 +404,6 @@ class Config:
         return self.get("wanderer", "enabled", default=False)
 
     @property
-    def vision_debug(self):
-        return self.get("yolo", "vision_debug", default=False)
-
-    @property
-    def vision_debug_port(self):
-        return self.get("yolo", "vision_debug_port", default=8767)
-
-    @property
     def yolo_model_dir(self):
         return self.get("yolo", "model_dir", default="models/yolov8")
 

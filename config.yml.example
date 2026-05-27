@@ -380,10 +380,7 @@ yolo:
   # (removes the tool declarations from Gemini and skips tracker init)
   enabled: true
 
-  # Vision debug WebUI -- view YOLO detections + bounding boxes + OSC data in browser
-  # Access at http://localhost:8767/vision when enabled
-  vision_debug: false
-  vision_debug_port: 8767
+  # Live YOLO stream + per-setting sliders are in the main WebUI under the Vision tab.
 
   # YOLOv8n model auto-downloads here if missing
   model_dir: "models/yolov8"

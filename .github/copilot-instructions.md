@@ -167,7 +167,7 @@ class MyTool(BaseTool):
 - FastAPI control server on port 8766
 - Dashboard with console log, controls, and session info
 - Memory manager tab for viewing/searching/deleting memories
-- Vision debug server on port 8767 (when `yolo.vision_debug: true`)
+- Vision tab: live MJPEG of the YOLO tracker + per-key sliders for `models/yolov8/config.json`, saves call `tracker.reload_config()` for instant hot-reload
 - OBS overlay system (optional, `obs.enabled: false` by default):
   - `/overlay` -- transparent text overlay (browser source)
   - `/overlay/music` -- standalone music overlay (browser source)

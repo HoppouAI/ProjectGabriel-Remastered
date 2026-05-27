@@ -10,7 +10,6 @@ interface Props {
 interface VisionState {
   enabled: boolean
   has_frame: boolean
-  vision_debug_port_running?: boolean
   fps?: number
   target_id?: number | null
   target_area?: number
@@ -254,11 +253,6 @@ export default function Vision({ onToast }: Props) {
                 <div className="h-px bg-white/[0.06] my-2" />
                 <Stat label="Frame" value={`${state.frame_w ?? 0}x${state.frame_h ?? 0}`} />
                 <Stat label="Tracker Running" value={trackerRunning ? 'yes' : 'no'} tone={trackerRunning ? 'good' : 'bad'} />
-                {state.vision_debug_port_running && (
-                  <p className="text-[10px] text-text-muted/60 pt-2">
-                    standalone debug also on :{(window.location.host.split(':')[0])}:8767/vision
-                  </p>
-                )}
               </div>
             )}
           </Card>

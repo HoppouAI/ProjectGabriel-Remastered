@@ -1212,7 +1212,6 @@ def _vision_state():
 async def vision_state():
     vs = _vision_state()
     tracker = shared_state.get("tracker")
-    cfg = shared_state.get("config")
     enabled = bool(tracker)
     if not vs:
         return JSONResponse({
@@ -1225,7 +1224,6 @@ async def vision_state():
         return JSONResponse({
             "enabled": enabled,
             "has_frame": vs["jpeg_bytes"] is not None,
-            "vision_debug_port_running": bool(cfg and getattr(cfg, "vision_debug", False)),
             "fps": vs["fps"],
             "target_id": vs["target_id"],
             "target_area": vs["target_area"],
