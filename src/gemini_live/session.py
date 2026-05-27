@@ -268,14 +268,15 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         """Send a normal user-style text turn to the model. Works on
         both half-cascade (2.5) and native-audio (3.x) Live models.
 
-        - 3.x models: send_realtime_input(text=...) plus an explicit
-          activity_start/activity_end so the model knows the user turn
-          is finished. Without the activity markers a text-only turn
-          would never close (server VAD is waiting on silence in an
-          audio stream that never came).
-        - 2.5 / half-cascade models: send_client_content with
-          role=user and turn_complete=True. send_realtime_input(text=)
-          is a v3 addition, older endpoints reject it or silently no-op.
+        - 3.x models w/ automatic VAD: just send_realtime_input(text=...).
+          Activity markers are forbidden here and will get you a precondition
+          error. The server treats the realtime text as a complete user turn
+          on its own.
+        - 3.x models w/ manual VAD (silero): wrap the text with activity_start
+          and activity_end so the server knows the turn closed.
+        - 2.5 / half-cascade: send_client_content with role=user and
+          turn_complete=True. send_realtime_input(text=) is a v3 addition,
+          older endpoints reject it or silently no-op.
         """
         if not self._session:
             return
@@ -284,9 +285,13 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
             return
         try:
             if self.config.is_31_model:
-                await self._session.send_realtime_input(text=text)
-                await self._session.send_realtime_input(activity_start=types.ActivityStart())
-                await self._session.send_realtime_input(activity_end=types.ActivityEnd())
+                manual_vad = getattr(self.config, "vad_mode", "auto") == "silero"
+                if manual_vad:
+                    await self._session.send_realtime_input(activity_start=types.ActivityStart())
+                    await self._session.send_realtime_input(text=text)
+                    await self._session.send_realtime_input(activity_end=types.ActivityEnd())
+                else:
+                    await self._session.send_realtime_input(text=text)
             else:
                 await self._session.send_client_content(
                     turns=types.Content(
