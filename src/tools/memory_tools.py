@@ -18,15 +18,15 @@ class MemoryTools(BaseTool):
         return [
             types.FunctionDeclaration(
                 name="saveMemory",
-                description="Save a memory. These are YOUR memories about things you learned, people you met, or experiences you had. Always use actual names/usernames, never 'user' or 'the user'.\n**Invocation Condition:** Call when you learn something worth remembering about a person, fact, or experience.",
+                description="Save a memory about a person, fact, or experience. Always use actual names, never 'user'.\n**Invocation Condition:** You learned something worth remembering.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "key": {"type": "STRING", "description": "Short identifier (e.g., 'john_likes_cats')"},
-                        "content": {"type": "STRING", "description": "What to remember. Always use actual names, never 'user' or 'the user'. Example: 'Kitty likes playing horror games in VRChat'"},
-                        "category": {"type": "STRING", "description": "Category (e.g., 'personal', 'facts', 'preferences')"},
-                        "memoryType": {"type": "STRING", "description": "long_term (permanent), short_term (7 days), or quick_note (6 hours)"},
-                        "tags": {"type": "STRING", "description": "Comma-separated tags (e.g., 'friend,vrc,important')"},
+                        "key": {"type": "STRING", "description": "Short id, e.g. 'john_likes_cats'."},
+                        "content": {"type": "STRING", "description": "What to remember. Use real names, not 'user'."},
+                        "category": {"type": "STRING", "description": "e.g. 'personal', 'facts', 'preferences'."},
+                        "memoryType": {"type": "STRING", "description": "long_term (default), short_term (7d), quick_note (6h)."},
+                        "tags": {"type": "STRING", "description": "Comma-separated tags."},
                     },
                     "required": ["key", "content"],
                 },
@@ -69,27 +69,27 @@ class MemoryTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="updateMemory",
-                description="Directly edit and update an existing memory in-place. This REPLACES the old content/fields with the new values you provide. The memory is modified immediately -- when you get result 'ok', the edit is already saved. Use searchMemories or listMemories first to find the exact key.\n**Invocation Condition:** Call when you need to fix, correct, update, or expand an existing memory. You MUST provide the key. After a successful update, confirm to the user that the memory was edited.",
+                description="Edit an existing memory in place. Replaces the fields you provide. Find the exact key first via searchMemories/listMemories.\n**Invocation Condition:** Fix, correct, or expand an existing memory. Confirm to the user after.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "key": {"type": "STRING", "description": "The memory key to update"},
-                        "content": {"type": "STRING", "description": "New content (replaces old). Use actual names, never 'user' or 'the user'"},
-                        "category": {"type": "STRING", "description": "New category (optional)"},
-                        "memoryType": {"type": "STRING", "description": "New type: long_term, short_term, or quick_note (optional)"},
-                        "tags": {"type": "STRING", "description": "New comma-separated tags (optional, replaces old tags)"},
+                        "key": {"type": "STRING", "description": "Memory key to update."},
+                        "content": {"type": "STRING", "description": "New content (replaces old). Use real names."},
+                        "category": {"type": "STRING", "description": "New category."},
+                        "memoryType": {"type": "STRING", "description": "long_term, short_term, or quick_note."},
+                        "tags": {"type": "STRING", "description": "New comma-separated tags (replaces)."},
                     },
                     "required": ["key"],
                 },
             ),
             types.FunctionDeclaration(
                 name="recallMemories",
-                description="Deep memory recall and summarization agent. Searches ALL memories using AI to find and summarize everything relevant. THIS is the tool to use when asked to remember, recall, or summarize anything. Results are YOUR OWN memories, speak in first person ('I remember...') not third person ('It is said that...'). Pay attention to NAMES in each memory, do not assume the current speaker was involved in every recalled memory.\n**Invocation Condition:** ALWAYS use this instead of searchMemories when asked to summarize, recall, remember, or tell what you know about something. Use when someone references past events, asks about people, or says 'summarize'. This is your PRIMARY memory tool.",
+                description="Deep memory recall agent. Searches ALL memories with AI and summarizes. Speak in first person ('I remember...'). Pay attention to names, don't assume the current speaker was in every memory.\n**Invocation Condition:** ALWAYS use this (not searchMemories) when asked to remember, recall, summarize, or tell what you know.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "query": {"type": "STRING", "description": "What to recall -- person's name, topic, event, or question"},
-                        "context": {"type": "STRING", "description": "Why you need this -- helps find the most relevant memories"},
+                        "query": {"type": "STRING", "description": "Person, topic, event, or question."},
+                        "context": {"type": "STRING", "description": "Why you need this, helps narrow results."},
                     },
                     "required": ["query"],
                 },

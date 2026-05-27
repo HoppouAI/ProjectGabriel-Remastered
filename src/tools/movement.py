@@ -25,13 +25,13 @@ class MovementTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="vrchatMove",
-                description="Start walking in a direction in VRChat. Supports strafing (left/right) and sprinting. The avatar will keep moving until duration expires or vrchatStop is called.\n**Invocation Condition:** Call when asked to walk, run, or move somewhere.",
+                description="Walk/run in VRChat until duration expires or vrchatStop is called. Supports strafe and sprint.\n**Invocation Condition:** Asked to walk, run, or move somewhere.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "direction": {"type": "STRING", "description": "Direction to move: 'forward', 'backward', 'left' (strafe left), or 'right' (strafe right)"},
-                        "duration": {"type": "NUMBER", "description": "How long to move in seconds (0.1 to 600). After this time, movement stops automatically."},
-                        "speed": {"type": "STRING", "description": "Movement speed: 'slow' (careful walk), 'normal' (default walk), 'fast' (brisk walk), 'sprint' (full run)"},
+                        "direction": {"type": "STRING", "description": "'forward', 'backward', 'left' (strafe), 'right' (strafe)."},
+                        "duration": {"type": "NUMBER", "description": "Seconds, 0.1-600."},
+                        "speed": {"type": "STRING", "description": "'slow', 'normal', 'fast', 'sprint'."},
                     },
                     "required": ["direction", "duration"],
                 },
@@ -63,26 +63,26 @@ class MovementTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="vrchatLook",
-                description="Smoothly turn/rotate the avatar left or right in VRChat. Uses the same smooth EMA turning as the follow system with gradual ramp up and ramp down.\n**Invocation Condition:** Call when asked to look left or right, turn around, or face a direction. Also useful for aiming your view at objects before grabbing/using them.",
+                description="Smoothly turn left/right in VRChat. Same EMA turning as follow system.\n**Invocation Condition:** Asked to look or turn, or to aim view before grabbing/using something.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "direction": {"type": "STRING", "description": "Direction to turn: 'left' or 'right'"},
-                        "duration": {"type": "NUMBER", "description": "How long to turn in seconds (0.1 to 10). Small values for slight adjustments, larger for big turns."},
-                        "speed": {"type": "STRING", "description": "Turn speed: 'slow' (gentle glance), 'normal' (default), 'fast' (quick snap)"},
+                        "direction": {"type": "STRING", "description": "'left' or 'right'."},
+                        "duration": {"type": "NUMBER", "description": "Seconds, 0.1-10."},
+                        "speed": {"type": "STRING", "description": "'slow', 'normal', 'fast'."},
                     },
                     "required": ["direction", "duration"],
                 },
             ),
             types.FunctionDeclaration(
                 name="vrchatLookVertical",
-                description="Smoothly tilt the avatar's view up or down in VRChat. Same smooth EMA turning as horizontal look.\n**Invocation Condition:** Call when asked to look up, look down, tilt head up/down, or check something above/below.",
+                description="Smoothly tilt view up/down in VRChat.\n**Invocation Condition:** Asked to look up/down or check something above/below.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "direction": {"type": "STRING", "description": "Direction to look: 'up' or 'down'"},
-                        "duration": {"type": "NUMBER", "description": "How long to look in seconds (0.1 to 10). Small values for slight tilts, larger for full up/down."},
-                        "speed": {"type": "STRING", "description": "Tilt speed: 'slow' (gentle), 'normal' (default), 'fast' (quick snap)"},
+                        "direction": {"type": "STRING", "description": "'up' or 'down'."},
+                        "duration": {"type": "NUMBER", "description": "Seconds, 0.1-10."},
+                        "speed": {"type": "STRING", "description": "'slow', 'normal', 'fast'."},
                     },
                     "required": ["direction", "duration"],
                 },
