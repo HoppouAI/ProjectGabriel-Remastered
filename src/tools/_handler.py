@@ -39,6 +39,7 @@ class ToolHandler:
             voice,
             vrchat_api,
             wanderer,
+            yap_mode,
         )
         from src.tools import discord as discord_tools  # noqa: F401
         from src.tools import music_gen as music_gen_tools  # noqa: F401
