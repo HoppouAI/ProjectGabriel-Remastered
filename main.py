@@ -1,12 +1,16 @@
 import argparse
 import asyncio
 import logging
+import time
+_BOOT_T0 = time.perf_counter()
+
 from src.cli import setup_logging, print_startup_info
 
 setup_logging()
 logger = logging.getLogger("gabriel")
+_t = time.perf_counter()
 
-# Import tracker FIRST — its module-level code pre-initialises bettercam
+# Import tracker FIRST, its module-level code pre-initialises bettercam
 # via DXGI Desktop Duplication BEFORE any CUDA library loads.
 # If CUDA loads first, DXGI fails on hybrid-GPU systems.
 # Importing is safe even when tracker is disabled in config.
@@ -19,6 +23,7 @@ from src.personalities import PersonalityManager
 from src.gemini_live import GeminiLiveSession
 from src.emotions import get_emotion_system
 from src.memory import memory_system
+logger.info(f"[boot] top-level imports done in {time.perf_counter() - _t:.2f}s (cumulative {time.perf_counter() - _BOOT_T0:.2f}s)")
 
 # Suppress the known CPython 3.12 Windows ProactorEventLoop assertion error
 # This fires during pipe transport cleanup and is harmless
@@ -55,6 +60,7 @@ def setup_control_server(session, audio, personality, memory, get_emotion_fn, co
 
 
 async def main(save_audio=False):
+    _t_main = time.perf_counter()
     loop = asyncio.get_running_loop()
     _orig_handler = loop.get_exception_handler()
     def _suppress_proactor_write_assert(loop, context):
@@ -80,7 +86,9 @@ async def main(save_audio=False):
     # Done before the banner so the unified banner can show fresh plugin status.
     from src.plugins import PluginManager, get_tts_factory
     plugin_manager = PluginManager(config)
+    _t = time.perf_counter()
     plugin_manager.discover_and_load()
+    logger.info(f"[boot] plugins loaded in {time.perf_counter() - _t:.2f}s")
 
     # Sync the live tool registry into config/tools.yml so any newly added
     # built-in tools or plugin tools show up as togglable. Then reload the
@@ -278,6 +286,8 @@ async def main(save_audio=False):
     plugin_manager.bind_app(audio=audio, osc=osc, session=session,
                             tool_handler=session.tool_handler, config=config)
     plugin_manager.emit("startup")
+
+    logger.info(f"[boot] main() ready in {time.perf_counter() - _t_main:.2f}s, total boot {time.perf_counter() - _BOOT_T0:.2f}s")
 
     while True:
         try:
