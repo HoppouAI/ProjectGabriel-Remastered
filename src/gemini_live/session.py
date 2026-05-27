@@ -265,26 +265,45 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         logger.info(f"Mic mute set to {muted}")
 
     async def send_text(self, text: str):
-        """Send text to the model via realtime input."""
-        if self._session:
-            if self._tool_call_pending:
-                logger.debug("Skipping text send - tool call pending")
-                return
-            try:
+        """Send a normal user-style text turn to the model. Works on
+        both half-cascade (2.5) and native-audio (3.x) Live models.
+
+        - 3.x models: send_realtime_input(text=...) plus an explicit
+          activity_start/activity_end so the model knows the user turn
+          is finished. Without the activity markers a text-only turn
+          would never close (server VAD is waiting on silence in an
+          audio stream that never came).
+        - 2.5 / half-cascade models: send_client_content with
+          role=user and turn_complete=True. send_realtime_input(text=)
+          is a v3 addition, older endpoints reject it or silently no-op.
+        """
+        if not self._session:
+            return
+        if self._tool_call_pending:
+            logger.debug("Skipping text send - tool call pending")
+            return
+        try:
+            if self.config.is_31_model:
                 await self._session.send_realtime_input(text=text)
-                # Signal activity start+end so the model knows the text turn is complete
-                # Without this, the model waits for audio silence (VAD) which never comes for text-only input
                 await self._session.send_realtime_input(activity_start=types.ActivityStart())
                 await self._session.send_realtime_input(activity_end=types.ActivityEnd())
-                self._conv_logger.add_user_message(text)
-                try:
-                    from src.plugins import emit_event
-                    emit_event("message_in", text, "text")
-                except Exception as e:
-                    logger.debug(f"plugin message_in dispatch failed: {e}")
-                logger.info(f"Sent text to model: {text[:50]}...")
+            else:
+                await self._session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=text)],
+                    ),
+                    turn_complete=True,
+                )
+            self._conv_logger.add_user_message(text)
+            try:
+                from src.plugins import emit_event
+                emit_event("message_in", text, "text")
             except Exception as e:
-                logger.error(f"Failed to send text: {e}")
+                logger.debug(f"plugin message_in dispatch failed: {e}")
+            logger.info(f"Sent text to model: {text[:50]}...")
+        except Exception as e:
+            logger.error(f"Failed to send text: {e}")
 
     async def send_inline_text(self, text: str) -> bool:
         """Inject a short text annotation into the current incoming turn
