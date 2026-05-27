@@ -151,6 +151,24 @@ class PlayerTracker:
         with open(model_dir / "config.json", "w") as f:
             json.dump(self._cfg, f, indent=2)
 
+    def reload_config(self):
+        # re-read config.json from disk and swap in the new dict. cheap, safe under GIL
+        new_cfg = dict(DEFAULT_CFG)
+        config_path = Path(MODEL_DIR) / "config.json"
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    new_cfg.update(json.load(f))
+            except Exception as e:
+                logger.warning(f"reload_config failed: {e}")
+                return False
+        self._cfg = new_cfg
+        logger.info("Tracker config hot-reloaded")
+        return True
+
+    def get_config(self):
+        return dict(self._cfg)
+
     # ── Background Preload ────────────────────────────────────────────────
 
     def preload(self):

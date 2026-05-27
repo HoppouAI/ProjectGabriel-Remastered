@@ -219,6 +219,12 @@ async def main(save_audio=False):
         try:
             from control_server import shared_state
             shared_state["instance_monitor"] = instance_monitor
+            shared_state["tracker"] = tracker
+            # tracker pushes annotated frames into vision_server module state whenever
+            # _vision_debug is on. webui vision tab pulls from that same buffer, so just
+            # flip it on whenever the WebUI is running.
+            if tracker:
+                tracker._vision_debug = True
             # mapping + waypoints service (lazy, nothing runs til UI starts it)
             try:
                 from src.mapping_service import MappingService
