@@ -162,4 +162,13 @@ class ConfigBuilderMixin:
                     thinking_kwargs["include_thoughts"] = True
                 config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
 
+        # 3.1 needs initial_history_in_client_content=true so that the first
+        # send_client_content (used for replay/summary seeding on a fresh
+        # connect) is actually accepted as history. without this flag the
+        # server treats it as a regular conversation update and rejects it.
+        if self.config.is_31_model:
+            config_kwargs["history_config"] = types.HistoryConfig(
+                initial_history_in_client_content=True
+            )
+
         return types.LiveConnectConfig(**config_kwargs)

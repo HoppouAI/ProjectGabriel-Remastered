@@ -277,12 +277,23 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         - 2.5 / half-cascade: send_client_content with role=user and
           turn_complete=True. send_realtime_input(text=) is a v3 addition,
           older endpoints reject it or silently no-op.
+
+        Waits for the model to finish its current turn first. Firing text
+        into the middle of an active model turn makes the server reject the
+        frame with 1007 (precondition failed).
         """
         if not self._session:
             return
         if self._tool_call_pending:
             logger.debug("Skipping text send - tool call pending")
             return
+        # Wait up to 30s for model to stop speaking, same pattern as
+        # send_client_content_safe. Otherwise the server rejects our
+        # frame and tears the socket down.
+        for _ in range(300):
+            if not self._speaking:
+                break
+            await asyncio.sleep(0.1)
         try:
             if self.config.is_31_model:
                 manual_vad = getattr(self.config, "vad_mode", "auto") == "silero"
@@ -378,7 +389,11 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
     async def _replay_previous_context(self, session):
         """Replay last few messages as context after an error reconnect.
         Uses send_client_content to seed the session with recent conversation history
-        so the model doesnt lose track of what was being discussed."""
+        so the model doesnt lose track of what was being discussed.
+
+        Works on 3.1 too now that we set history_config.initial_history_in_client_content=true
+        in the connect config -- the first send_client_content burst is treated
+        as initial history seeding instead of mid-conversation updates."""
         if not self._replay_context:
             return
         try:

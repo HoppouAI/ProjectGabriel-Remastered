@@ -1,4 +1,4 @@
-google-genai>=1.0.0
+google-genai>=2.6.0
 pyaudio
 python-osc
 pyyaml

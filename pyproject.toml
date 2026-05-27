@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "google-genai>=1.0.0",
+    "google-genai>=2.6.0",
     "pyaudio>=0.2.14",
     "python-osc>=1.8.0",
     "pytz>=2024.1",
