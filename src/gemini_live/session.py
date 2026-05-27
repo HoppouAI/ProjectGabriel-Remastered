@@ -17,6 +17,7 @@ from .config_builder import ConfigBuilderMixin
 from .audio import AudioLoopsMixin
 from .vision import VisionLoopMixin
 from .receive import ReceiveLoopMixin
+from .leak_filter import strip_tool_call_leaks
 
 logger = logging.getLogger(__name__)
 
@@ -712,7 +713,9 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     logger.warning(f"Rate limit error details: {err_str[:200]}")
                     # Flush buffered transcript so last messages make it into replay context
                     if self._transcript_buffer.strip():
-                        self._conv_logger.add_assistant_message(self._transcript_buffer)
+                        _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                        if _cleaned:
+                            self._conv_logger.add_assistant_message(_cleaned)
                         self._transcript_buffer = ""
                     if self._input_transcript_buffer.strip():
                         self._conv_logger.finalize_user_message()
@@ -756,7 +759,9 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     self._notify_chatbox_error()
                     # Flush buffered transcript so last messages make it into replay context
                     if self._transcript_buffer.strip():
-                        self._conv_logger.add_assistant_message(self._transcript_buffer)
+                        _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                        if _cleaned:
+                            self._conv_logger.add_assistant_message(_cleaned)
                         self._transcript_buffer = ""
                     if self._input_transcript_buffer.strip():
                         self._conv_logger.finalize_user_message()
@@ -820,7 +825,9 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                 self._notify_chatbox_error()
                 # Flush any buffered transcript so the last model message is in replay context
                 if self._transcript_buffer.strip():
-                    self._conv_logger.add_assistant_message(self._transcript_buffer)
+                    _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                    if _cleaned:
+                        self._conv_logger.add_assistant_message(_cleaned)
                     self._transcript_buffer = ""
                 if self._input_transcript_buffer.strip():
                     self._conv_logger.finalize_user_message()
@@ -867,7 +874,9 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                 self._notify_chatbox_error()
                 # Flush buffered transcript so last messages make it into replay context
                 if self._transcript_buffer.strip():
-                    self._conv_logger.add_assistant_message(self._transcript_buffer)
+                    _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                    if _cleaned:
+                        self._conv_logger.add_assistant_message(_cleaned)
                     self._transcript_buffer = ""
                 if self._input_transcript_buffer.strip():
                     self._conv_logger.finalize_user_message()

@@ -8,6 +8,8 @@ no side effects beyond returning a string.
 import re
 import time
 
+from src.gemini_live.leak_filter import strip_tool_call_leaks
+
 
 class ChatboxFormattersMixin:
     @staticmethod
@@ -15,6 +17,8 @@ class ChatboxFormattersMixin:
         """Remove inline expressive audio tags (for example [whispers]) from chatbox text only."""
         if not text:
             return ""
+        # drop leaked tool-call shaped text first so it never flashes in vrc chatbox
+        text, _ = strip_tool_call_leaks(text)
         cleaned = re.sub(r"\[(?:[A-Za-z][A-Za-z\s,'-]{0,40})\]", " ", text)
         cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
         cleaned = re.sub(r" {2,}", " ", cleaned)

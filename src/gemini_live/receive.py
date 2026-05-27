@@ -18,6 +18,8 @@ import time
 from google.genai import types
 from websockets.exceptions import ConnectionClosed
 
+from src.gemini_live.leak_filter import strip_tool_call_leaks
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,9 +134,11 @@ class ReceiveLoopMixin:
                         if self.config.obs_enabled:
                             _broadcast_console("turn_complete", "")
                         # User message already streamed in-place via stream_user_message
-                        ai_text = self._transcript_buffer.strip()
+                        ai_text, leaked = strip_tool_call_leaks(self._transcript_buffer.strip())
+                        if leaked:
+                            logger.warning("stripped tool-call leak from transcript before logging")
                         if ai_text:
-                            self._conv_logger.add_assistant_message(self._transcript_buffer)
+                            self._conv_logger.add_assistant_message(ai_text)
                         self._transcript_buffer = ""
                         if ai_text:
                             try:
@@ -160,9 +164,11 @@ class ReceiveLoopMixin:
                         if self._emotion_system:
                             self._emotion_system.stop_speaking()
                         self.osc.set_typing(False)
-                        ai_text = self._transcript_buffer.strip()
+                        ai_text, leaked = strip_tool_call_leaks(self._transcript_buffer.strip())
+                        if leaked:
+                            logger.warning("stripped tool-call leak from transcript before logging (interrupted turn)")
                         if ai_text:
-                            self._conv_logger.add_assistant_message(self._transcript_buffer)
+                            self._conv_logger.add_assistant_message(ai_text)
                         self._transcript_buffer = ""
                         if ai_text:
                             try:
@@ -284,7 +290,9 @@ class ReceiveLoopMixin:
                         _broadcast_console("info", f"GoAway: reconnecting in {wait}s")
                         # Save current transcript before reconnecting
                         if self._transcript_buffer.strip():
-                            self._conv_logger.add_assistant_message(self._transcript_buffer)
+                            _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                            if _cleaned:
+                                self._conv_logger.add_assistant_message(_cleaned)
                             self._transcript_buffer = ""
                         self._conv_logger.finalize_user_message()
                         self._conv_logger._save_async()
