@@ -6,6 +6,7 @@ no side effects beyond returning a string.
 """
 
 import re
+import time
 
 
 class ChatboxFormattersMixin:
@@ -141,4 +142,44 @@ class ChatboxFormattersMixin:
             text = "\n".join(lines)
             if len(text) > 144:
                 text = text[:144]
+        return text
+
+    def _format_web_search_display(self, active: dict) -> str:
+        """Spinner + counting up timer for an in flight web search/read."""
+        elapsed = max(0, int(time.time() - active.get("started_at", time.time())))
+        kind = active.get("kind", "search")
+        label = (active.get("label") or "").strip()
+        # rotating braille spinner so theres visible motion at 1Hz refresh
+        spinner_frames = "\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F"
+        spinner = spinner_frames[elapsed % len(spinner_frames)]
+
+        if kind == "read":
+            header = f"{spinner} Reading webpage"
+            # urls can be huge, trim the middle
+            if len(label) > 60:
+                label = label[:30] + "..." + label[-25:]
+        else:
+            header = f"{spinner} Searching the web"
+
+        divider_char = self.config.get("vrchat", "idle_chatbox", "divider", default="\u2500")
+        divider_length = self.config.get("vrchat", "idle_chatbox", "divider_length", default=14)
+        divider = str(divider_char) * int(divider_length)
+
+        mins, secs = divmod(elapsed, 60)
+        if mins:
+            time_str = f"{mins}:{secs:02d}"
+        else:
+            time_str = f"{secs}s"
+
+        lines = [header]
+        if label:
+            if len(label) > 80:
+                label = label[:77] + "..."
+            lines.append(label)
+        lines.append(divider)
+        lines.append(time_str)
+
+        text = "\n".join(lines)
+        if len(text) > 144:
+            text = text[:144]
         return text

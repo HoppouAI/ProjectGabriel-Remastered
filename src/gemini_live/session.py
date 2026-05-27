@@ -111,6 +111,10 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         self._chatbox = ChatboxOrchestrator(send_chatbox=osc.send_chatbox)
         self._chatbox.register_builtin("local_music", self._builtin_local_music)
         self._chatbox.register_builtin("music_gen", self._builtin_music_gen)
+        # web search overlay sits last among builtins so it only shows when
+        # nothing musical is happening. comment that out and move it above
+        # local_music if you want the spinner to interrupt music playback.
+        self._chatbox.register_builtin("web_search", self._builtin_web_search)
 
     def _builtin_local_music(self):
         progress = self.audio.get_music_progress()
@@ -123,6 +127,15 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         if music_gen and music_gen.is_active:
             return ("music_gen", self._format_music_gen_display(music_gen))
         return None
+
+    def _builtin_web_search(self):
+        ws = getattr(self.tool_handler, "web_search", None)
+        if not ws:
+            return None
+        active = ws.get_active_search()
+        if not active:
+            return None
+        return ("web_search", self._format_web_search_display(active))
 
     def request_reconnect(self):
         """Request a reconnect on next iteration (manual, no context replay)."""
