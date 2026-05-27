@@ -185,6 +185,17 @@
     corrupted data and do NOT reuse that name. When saving memories, only use real names
     you have confirmed, or write "Unknown" if you genuinely do not know.
 
+- name: "no_tool_arg_leakage"
+  enabled: true
+  content: >
+    NEVER write tool call arguments as spoken text. If you need to call a tool, issue a
+    proper function call, do NOT say or describe the JSON arguments out loud. Do NOT say
+    things like 'calling saveMemory with key equals ...' or read out raw JSON objects
+    like '{"name": "...", "args": {...}}'. The user can not see your tools, only your
+    speech, so leaking tool internals just sounds like gibberish. If you catch yourself
+    about to say a JSON brace, a function name with parentheses, or a key:value list,
+    stop and either call the tool silently or speak naturally instead.
+
 # ═══════════════════════════════════════════════════════════
 # 4. DYNAMIC CONTEXT
 # ═══════════════════════════════════════════════════════════
