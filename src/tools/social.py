@@ -1,19 +1,9 @@
 import logging
-import re
 from google.genai import types
 from src.tools._base import BaseTool, register_tool
+from src.tools._username_guard import looks_fake as _looks_fake, reject_message
 
 logger = logging.getLogger(__name__)
-
-# catches hallucinated VRChat-ish usernames like "29665086:53" or "12345678_07"
-# that the model sometimes invents when it doesnt know who its talking to.
-_FAKE_USERNAME_RE = re.compile(r"\b\d{6,10}[:_]\d{1,2}\b")
-
-
-def _looks_fake(username: str) -> bool:
-    if not username:
-        return False
-    return bool(_FAKE_USERNAME_RE.search(username))
 
 
 @register_tool
@@ -179,11 +169,10 @@ class SocialTools(BaseTool):
         if _looks_fake(candidate):
             return {
                 "result": "error",
-                "message": (
-                    f"'{candidate}' is not a real messaging-app username. "
+                "message": reject_message(
+                    candidate,
                     "Social tools are for the messaging app, not VRChat. "
-                    "Use socialListFriends or socialGetOnline to get real usernames, "
-                    "and never invent numeric IDs."
+                    "Use socialListFriends or socialGetOnline to get real usernames.",
                 ),
             }
 

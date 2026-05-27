@@ -1,6 +1,7 @@
 import logging
 from google.genai import types
 from src.tools._base import BaseTool, register_tool
+from src.tools._username_guard import looks_fake, reject_message
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,14 @@ class DiscordTools(BaseTool):
         message = args.get("message", "")
         if not username or not message:
             return {"result": "error", "message": "username and message required"}
+        if looks_fake(username):
+            return {
+                "result": "error",
+                "message": reject_message(
+                    username,
+                    "Discord usernames are not numeric timestamps. Use a real Discord handle or user ID.",
+                ),
+            }
 
         # Access the Discord bot instance from the tool handler
         discord_bot = getattr(self.handler, "discord_bot", None)

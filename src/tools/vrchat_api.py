@@ -1,6 +1,7 @@
 import logging
 from google.genai import types
 from src.tools._base import BaseTool, register_tool
+from src.tools._username_guard import looks_fake, reject_message
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,16 @@ class VRChatAPITools(BaseTool):
         ]
 
     async def handle(self, name, args):
+        # reject hallucinated numeric usernames before any VRChat API call
+        candidate = (args or {}).get("player") or (args or {}).get("name") or ""
+        if looks_fake(candidate):
+            return {
+                "result": "error",
+                "message": reject_message(
+                    candidate,
+                    "Use getInstancePlayers to get real VRChat display names.",
+                ),
+            }
         if name == "searchAvatars":
             return await self._search_avatars(args["query"])
         elif name == "switchAvatar":
