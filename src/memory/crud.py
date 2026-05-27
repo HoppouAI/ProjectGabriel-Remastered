@@ -14,6 +14,7 @@ from ._helpers import (
     MEMORY_TYPE_SHORT_TERM,
     ReturnDocument,
     _has_generic_subject,
+    _has_hallucinated_username,
     _hash_content,
 )
 
@@ -44,6 +45,14 @@ class CRUDMixin:
             return {
                 "success": False,
                 "message": "Memory rejected: use the person's actual name or username instead of 'the user' or 'user'. Re-save with their real name.",
+            }
+
+        # block timestamp-shaped fake usernames the model sometimes makes up
+        # (looks like 1764065068:08 etc, basically minutes-since-epoch:seconds)
+        if _has_hallucinated_username(content) or _has_hallucinated_username(key):
+            return {
+                "success": False,
+                "message": "Memory rejected: that username looks made up (numeric timestamp pattern). Use the real display name from getInstancePlayers or say 'Unknown' if you genuinely don't know.",
             }
 
         tags_list = list(tags) if tags else []
@@ -169,6 +178,12 @@ class CRUDMixin:
 
         if memory_type and memory_type not in [MEMORY_TYPE_LONG_TERM, MEMORY_TYPE_SHORT_TERM, MEMORY_TYPE_QUICK_NOTE]:
             return {"success": False, "message": f"Invalid memory type: {memory_type}"}
+
+        if content is not None and _has_hallucinated_username(content):
+            return {
+                "success": False,
+                "message": "Update rejected: that username looks made up (numeric timestamp pattern). Use the real display name.",
+            }
 
         try:
             if self.backend == "sqlite":

@@ -96,6 +96,18 @@ _USERNAME_CONTEXT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# the model sometimes hallucinates a fake username in the shape
+# MINUTES_SINCE_EPOCH:SECONDS or MINUTES_SINCE_EPOCH_SECONDS when it
+# doesnt know the real speaker. these always look like 7-10 digits,
+# a separator (: or _), then 1-2 digits. real vrchat ids look like
+# usr_<uuid> so no false positives expected.
+_HALLUCINATED_USERNAME_RE = re.compile(r"\b\d{6,10}[:_]\d{1,2}\b")
+
+
+def _has_hallucinated_username(content: str) -> bool:
+    """True if the content contains a fake timestamp-shaped username."""
+    return bool(_HALLUCINATED_USERNAME_RE.search(content or ""))
+
 
 def _has_generic_subject(content: str) -> bool:
     """Check if content uses generic subjects instead of actual names.
