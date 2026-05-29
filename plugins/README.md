@@ -176,9 +176,63 @@ Hook into app lifecycle. Built in events:
 - `shutdown` -- fires once on graceful shutdown
 - `message_in` (`text, source`) -- fires on each transcribed user message
 - `message_out` (`text`) -- fires on each AI reply
+- `mic_chunk` (`data: bytes, sample_rate: int`) -- raw PCM mic audio,
+  int16 mono. Fires for every chunk the host pulls from the mic
+  (only when not muted). Plugin api v3+. Keep handlers FAST, this
+  fires ~16 times a second. Just buffer the bytes and process
+  elsewhere. Use `np.frombuffer(data, dtype=np.int16)` to decode.
+- `tts_audio_chunk` (`data: bytes, sample_rate: int`) -- raw PCM
+  bytes of audio about to be played out (post fx, post pitch shift).
+  Plugin api v3+. Same throughput warning, keep handlers cheap.
 
 Callbacks can be sync or async. Exceptions in any single handler are
 caught so one bad subscriber will not break the rest.
+
+### `ctx.register_periodic_task(name, interval_seconds, fn, run_immediately=False)`
+
+Plugin api v3+. Schedule a function to run every N seconds in a
+daemon thread the host owns. Use this instead of spinning your own
+thread, so the host can shut everything down cleanly on teardown.
+
+- `name` -- short label for logging
+- `interval_seconds` -- how often to run
+- `fn` -- callable taking no args. Sync runs inline in the worker
+  thread, async coroutines get scheduled on the main event loop via
+  `run_coroutine_threadsafe`.
+- `run_immediately` -- if True, fires once at startup before the
+  first interval. Default False (waits one interval first).
+
+Periodic tasks start firing right after the `startup` event. Exceptions
+are caught and logged.
+
+```python
+def setup(self, ctx):
+    ctx.register_periodic_task("rotate_log", 600.0, self._rotate)
+```
+
+### Security: `ctx.config` is sandboxed
+
+Plugin api v3+. `ctx.config` is a `SafeConfigView` wrapper around the
+real host config. Plugins cannot read sensitive things from it:
+api keys, backup keys, tokens, passwords, secrets, cookies, mongo
+connection strings, discord token, vrchat creds, etc. Attempting to
+do so raises `PermissionError`.
+
+For your own settings use `ctx.plugin_config()` which scopes to
+`plugins.<your_name>.*` in `config.yml` and is NOT filtered (a plugin
+is allowed to store its own third-party api keys there).
+
+```python
+# allowed
+model_name = ctx.config.get("gemini", "model")
+
+# raises PermissionError
+key = ctx.config.get("gemini", "api_key")
+key = ctx.config.api_key
+
+# fine, this is the plugin's own scoped subtree
+my_key = ctx.plugin_config("openai_api_key")
+```
 
 ### `await ctx.send_system_instruction(text)` / `await ctx.send_user_text(text)`
 
@@ -186,7 +240,7 @@ Inject text into the live Gemini session mid-conversation. Same code
 path the WebUI uses.
 
 - `send_system_instruction(text)` wraps the text as
-  `System instruction update - <text>` and pushes it as a user-role
+  `SYSTEM INSTRUCTION: <text>` and pushes it as a user-role
   client content turn. The host waits up to 30 seconds for the model
   to stop speaking before injecting so it doesnt cut off a reply.
   Use this for runtime behavior changes ("stop using emojis", "go
@@ -206,6 +260,29 @@ async def on_user_msg(text, source):
         await ctx.send_system_instruction("Stop talking until further notice.")
 
 ctx.subscribe("message_in", on_user_msg)
+```
+
+### `await ctx.send_realtime_text(text)` (api v3+)
+
+Inject a SHORT text annotation into the user's CURRENT incoming
+turn without ending it. Use this for inline tags the model should
+see alongside whatever audio is streaming right now: speaker labels,
+sensor readings, vision tags.
+
+Unlike `send_user_text` / `send_system_instruction`, this does NOT
+wait for the model to stop speaking and does NOT close the turn. It
+auto-detects the live model variant:
+
+- gemini 2.5 native-audio -> `send_client_content(turn_complete=False)`,
+  deterministically appends to the current turn.
+- gemini 3.1 flash-live -> `send_realtime_input(text=...)`, best-effort
+  ordering but lands in the same turn pre-VAD-end.
+
+Returns `False` if the session isnt up or sending failed. Throttle
+this in your plugin, dont call it every chunk or youll spam the turn.
+
+```python
+await ctx.send_realtime_text(f"[System: current speaker is {name}]")
 ```
 
 ### `ctx.discord` -- Discord bot integration
@@ -326,6 +403,30 @@ that tool to `false` in `config/tools.yml`.
 The legacy `plugins.<name>.enabled` key in `config.yml` still works as
 a fallback override for upgraders, but new plugins should use the
 manifest field.
+
+## Trust mode and the config sandbox
+
+By default `ctx.config` is a `SafeConfigView` that blocks reads of
+sensitive attrs like `api_key`, `backup_keys`, `_data`, mongo
+connection strings, vrchat password, discord token, anything matching
+the sensitive denylist. Plugins are expected to store their own
+settings under `plugins.<name>.*` and read them through
+`ctx.plugin_config()` instead.
+
+If you genuinely need raw access (e.g. you want to reuse the host's
+gemini key for a sub-agent), document it in your plugin's README and
+tell users to enable trust mode:
+
+```yaml
+plugins:
+  enabled: true
+  trusted: true
+```
+
+When `plugins.trusted: true` the sandbox lets everything through.
+Default is `false`. Prefer asking the user for their own key in your
+plugin config block over relying on trust mode, it keeps your plugin
+usable for paranoid users.
 
 ## How tools.yml works
 

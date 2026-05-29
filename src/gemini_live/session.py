@@ -17,6 +17,7 @@ from .config_builder import ConfigBuilderMixin
 from .audio import AudioLoopsMixin
 from .vision import VisionLoopMixin
 from .receive import ReceiveLoopMixin
+from .leak_filter import strip_tool_call_leaks
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         }
         self._compression_in_progress = False  # Guard to prevent concurrent compression
         self._compression_summary = None  # Summary from custom compression to seed on reconnect
+        self._ready_badge_shown = False  # Big green READY banner only fires on first successful connect
         self._load_session_handle()
         self._conv_logger = ConversationLogger(enabled=config.conversation_logging_enabled)
         
@@ -110,6 +112,10 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         self._chatbox = ChatboxOrchestrator(send_chatbox=osc.send_chatbox)
         self._chatbox.register_builtin("local_music", self._builtin_local_music)
         self._chatbox.register_builtin("music_gen", self._builtin_music_gen)
+        # web search overlay sits last among builtins so it only shows when
+        # nothing musical is happening. comment that out and move it above
+        # local_music if you want the spinner to interrupt music playback.
+        self._chatbox.register_builtin("web_search", self._builtin_web_search)
 
     def _builtin_local_music(self):
         progress = self.audio.get_music_progress()
@@ -122,6 +128,15 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         if music_gen and music_gen.is_active:
             return ("music_gen", self._format_music_gen_display(music_gen))
         return None
+
+    def _builtin_web_search(self):
+        ws = getattr(self.tool_handler, "web_search", None)
+        if not ws:
+            return None
+        active = ws.get_active_search()
+        if not active:
+            return None
+        return ("web_search", self._format_web_search_display(active))
 
     def request_reconnect(self):
         """Request a reconnect on next iteration (manual, no context replay)."""
@@ -265,26 +280,98 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         logger.info(f"Mic mute set to {muted}")
 
     async def send_text(self, text: str):
-        """Send text to the model via realtime input."""
-        if self._session:
-            if self._tool_call_pending:
-                logger.debug("Skipping text send - tool call pending")
-                return
+        """Send a normal user-style text turn to the model. Works on
+        both half-cascade (2.5) and native-audio (3.x) Live models.
+
+        - 3.x models w/ automatic VAD: just send_realtime_input(text=...).
+          Activity markers are forbidden here and will get you a precondition
+          error. The server treats the realtime text as a complete user turn
+          on its own.
+        - 3.x models w/ manual VAD (silero): wrap the text with activity_start
+          and activity_end so the server knows the turn closed.
+        - 2.5 / half-cascade: send_client_content with role=user and
+          turn_complete=True. send_realtime_input(text=) is a v3 addition,
+          older endpoints reject it or silently no-op.
+
+        Waits for the model to finish its current turn first. Firing text
+        into the middle of an active model turn makes the server reject the
+        frame with 1007 (precondition failed).
+        """
+        if not self._session:
+            return
+        if self._tool_call_pending:
+            logger.debug("Skipping text send - tool call pending")
+            return
+        # Wait up to 30s for model to stop speaking, same pattern as
+        # send_client_content_safe. Otherwise the server rejects our
+        # frame and tears the socket down.
+        for _ in range(300):
+            if not self._speaking:
+                break
+            await asyncio.sleep(0.1)
+        try:
+            if self.config.is_31_model:
+                manual_vad = getattr(self.config, "vad_mode", "auto") == "silero"
+                if manual_vad:
+                    await self._session.send_realtime_input(activity_start=types.ActivityStart())
+                    await self._session.send_realtime_input(text=text)
+                    await self._session.send_realtime_input(activity_end=types.ActivityEnd())
+                else:
+                    await self._session.send_realtime_input(text=text)
+            else:
+                await self._session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=text)],
+                    ),
+                    turn_complete=True,
+                )
+            self._conv_logger.add_user_message(text)
             try:
-                await self._session.send_realtime_input(text=text)
-                # Signal activity start+end so the model knows the text turn is complete
-                # Without this, the model waits for audio silence (VAD) which never comes for text-only input
-                await self._session.send_realtime_input(activity_start=types.ActivityStart())
-                await self._session.send_realtime_input(activity_end=types.ActivityEnd())
-                self._conv_logger.add_user_message(text)
-                try:
-                    from src.plugins import emit_event
-                    emit_event("message_in", text, "text")
-                except Exception as e:
-                    logger.debug(f"plugin message_in dispatch failed: {e}")
-                logger.info(f"Sent text to model: {text[:50]}...")
+                from src.plugins import emit_event
+                emit_event("message_in", text, "text")
             except Exception as e:
-                logger.error(f"Failed to send text: {e}")
+                logger.debug(f"plugin message_in dispatch failed: {e}")
+            logger.info(f"Sent text to model: {text[:50]}...")
+        except Exception as e:
+            logger.error(f"Failed to send text: {e}")
+
+    async def send_inline_text(self, text: str) -> bool:
+        """Inject a short text annotation into the current incoming turn
+        WITHOUT waiting for the model to stop, WITHOUT sending an
+        activity_end. Used for things like speaker labels that should
+        ride along with the user's audio so the model sees them as part
+        of the same turn.
+
+        For 3.1 models we use send_realtime_input(text=...) which the
+        docs flag as 'best-effort ordering' but in practice lands in
+        the same turn as long as the server VAD has not closed it.
+
+        For 2.5 models we use send_client_content with
+        turn_complete=False which deterministically appends to the
+        current turn.
+
+        No-op if the session is not up. Returns True on success.
+        """
+        if not self._session:
+            return False
+        if not text:
+            return False
+        try:
+            if self.config.is_31_model:
+                await self._session.send_realtime_input(text=text)
+            else:
+                await self._session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=text)],
+                    ),
+                    turn_complete=False,
+                )
+            return True
+        except Exception as e:
+            logger.debug(f"send_inline_text failed: {e}")
+            return False
 
     async def send_client_content_safe(self, turns, turn_complete=True):
         """Send client content, waiting until the model stops speaking to avoid interruptions.
@@ -317,7 +404,11 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
     async def _replay_previous_context(self, session):
         """Replay last few messages as context after an error reconnect.
         Uses send_client_content to seed the session with recent conversation history
-        so the model doesnt lose track of what was being discussed."""
+        so the model doesnt lose track of what was being discussed.
+
+        Works on 3.1 too now that we set history_config.initial_history_in_client_content=true
+        in the connect config -- the first send_client_content burst is treated
+        as initial history seeding instead of mid-conversation updates."""
         if not self._replay_context:
             return
         try:
@@ -485,13 +576,21 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     logger.info(f"Connecting to Gemini Live ({self.config.model})...")
 
                 self._last_connect_succeeded = False
-                async with client.aio.live.connect(
+                from src.cli import Spinner, print_ready_badge
+                spinner_label = "Connecting to Gemini Live" if not self._ready_badge_shown else "Reconnecting to Gemini Live"
+                _live_cm = client.aio.live.connect(
                     model=self.config.model,
                     config=live_config,
-                ) as session:
+                )
+                with Spinner(spinner_label):
+                    session = await _live_cm.__aenter__()
+                try:
                     self._last_connect_succeeded = True
                     logger.info("Connected to Gemini Live")
                     _broadcast_console("info", f"Connected to Gemini Live ({self.config.model})")
+                    if not self._ready_badge_shown:
+                        print_ready_badge(self.config.model)
+                        self._ready_badge_shown = True
                     self._notify_chatbox_resolved()
                     # Reset resumption fail streak on successful connection
                     if self._resumption_fail_streak > 0 and self._resumption_fail_streak < 3:
@@ -599,6 +698,11 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                         except Exception:
                             pass
                         self._stream_closing = False
+                finally:
+                    try:
+                        await _live_cm.__aexit__(None, None, None)
+                    except Exception:
+                        pass
 
             except APIError as e:
                 err_str = str(e)
@@ -609,7 +713,9 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     logger.warning(f"Rate limit error details: {err_str[:200]}")
                     # Flush buffered transcript so last messages make it into replay context
                     if self._transcript_buffer.strip():
-                        self._conv_logger.add_assistant_message(self._transcript_buffer)
+                        _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                        if _cleaned:
+                            self._conv_logger.add_assistant_message(_cleaned)
                         self._transcript_buffer = ""
                     if self._input_transcript_buffer.strip():
                         self._conv_logger.finalize_user_message()
@@ -653,7 +759,9 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     self._notify_chatbox_error()
                     # Flush buffered transcript so last messages make it into replay context
                     if self._transcript_buffer.strip():
-                        self._conv_logger.add_assistant_message(self._transcript_buffer)
+                        _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                        if _cleaned:
+                            self._conv_logger.add_assistant_message(_cleaned)
                         self._transcript_buffer = ""
                     if self._input_transcript_buffer.strip():
                         self._conv_logger.finalize_user_message()
@@ -717,7 +825,9 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                 self._notify_chatbox_error()
                 # Flush any buffered transcript so the last model message is in replay context
                 if self._transcript_buffer.strip():
-                    self._conv_logger.add_assistant_message(self._transcript_buffer)
+                    _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                    if _cleaned:
+                        self._conv_logger.add_assistant_message(_cleaned)
                     self._transcript_buffer = ""
                 if self._input_transcript_buffer.strip():
                     self._conv_logger.finalize_user_message()
@@ -764,7 +874,9 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                 self._notify_chatbox_error()
                 # Flush buffered transcript so last messages make it into replay context
                 if self._transcript_buffer.strip():
-                    self._conv_logger.add_assistant_message(self._transcript_buffer)
+                    _cleaned, _ = strip_tool_call_leaks(self._transcript_buffer)
+                    if _cleaned:
+                        self._conv_logger.add_assistant_message(_cleaned)
                     self._transcript_buffer = ""
                 if self._input_transcript_buffer.strip():
                     self._conv_logger.finalize_user_message()

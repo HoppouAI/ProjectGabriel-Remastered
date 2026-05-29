@@ -2,6 +2,8 @@
 import logging
 import sys
 import platform
+import threading
+import time as _time
 
 
 def _enable_ansi():
@@ -108,6 +110,10 @@ _W = 49
 
 def print_startup_info(config):
     """Print configuration summary and component status."""
+    # plugins go first, right under the supervisor banner, so they read
+    # like the "what loaded" line of the boot sequence
+    _print_plugins_block()
+
     _kv("App Name", config.app_name, C.B_CYAN)
     _kv("Model", config.model, C.B_YELLOW)
     _kv("Voice", config.voice, C.B_MAGENTA)
@@ -141,9 +147,6 @@ def print_startup_info(config):
     for i in range(0, len(parts), 4):
         print(f"  {'   '.join(parts[i:i + 4])}")
     print()
-
-    # Plugin status, integrated into the same banner block
-    _print_plugins_block()
 
     print(f"  {C.DIM}{'\u2500' * _W}{C.RST}")
     print()
@@ -199,16 +202,28 @@ def _print_plugins_block(plugins_dir: str = "plugins"):
         return
 
     try:
-        from src.plugins.loader import get_plugin_issues, get_plugin_log_path
+        from src.plugins.loader import (
+            get_plugin_issues,
+            get_plugin_log_path,
+            get_failed_plugins,
+        )
         issues_map = get_plugin_issues()
         log_path = get_plugin_log_path()
+        failed = get_failed_plugins()
     except Exception:
         issues_map = {}
         log_path = None
+        failed = set()
 
     print(f"  {C.DIM}Plugins{C.RST}")
     for name, enabled, on_count, total, version, author in rows:
-        if enabled:
+        # plugin tried to load but blew up -> render as disabled with a
+        # red dot so the user notices, instead of misleadingly green.
+        crashed = name in failed
+        if crashed:
+            dot = f"{C.B_RED}\u25cb{C.RST}"
+            label = f"{C.DIM}{name}{C.RST}"
+        elif enabled:
             dot = f"{C.B_GREEN}\u25cf{C.RST}"
             label = f"{C.B_WHITE}{name}{C.RST}"
         else:
@@ -265,3 +280,90 @@ def print_plugins_info(plugins_dir: str = "plugins"):
 
 def _kv(key, value, color=C.B_WHITE):
     print(f"  {C.DIM}{key:<12}{C.RST} {color}{value}{C.RST}")
+
+
+_SPINNER_FRAMES = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c",
+                   "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
+
+
+class Spinner:
+    """Tiny braille spinner for short bootstrap phases.
+
+    Use as a context manager. Logging that fires while the spinner is
+    spinning will land on its own line, the spinner just keeps animating
+    on the line below. Designed for quiet phases like plugin discovery
+    and the Gemini Live connect handshake.
+    """
+
+    def __init__(self, text: str, stream=None, interval: float = 0.08):
+        self._text = text
+        self._stream = stream or sys.stdout
+        self._interval = interval
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._enabled = self._stream.isatty()
+        self._t0 = 0.0
+
+    def _run(self):
+        i = 0
+        while not self._stop.is_set():
+            frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+            try:
+                self._stream.write(f"\r  {C.B_CYAN}{frame}{C.RST} {self._text}")
+                self._stream.flush()
+            except Exception:
+                return
+            i += 1
+            self._stop.wait(self._interval)
+        # clear the line on stop
+        try:
+            self._stream.write("\r\x1b[2K")
+            self._stream.flush()
+        except Exception:
+            pass
+
+    def update(self, text: str):
+        self._text = text
+
+    def __enter__(self):
+        self._t0 = _time.perf_counter()
+        if self._enabled:
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        else:
+            # non-tty (piped output, CI, etc.) -- just print a static line
+            print(f"  {self._text}...", flush=True)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        elapsed = _time.perf_counter() - self._t0
+        if self._enabled and self._thread:
+            self._stop.set()
+            self._thread.join(timeout=0.5)
+        # success / failure marker, written to the same line we just cleared
+        if exc_type is None:
+            mark = f"{C.B_GREEN}\u2713{C.RST}"
+        else:
+            mark = f"{C.B_RED}\u2717{C.RST}"
+        try:
+            self._stream.write(f"  {mark} {self._text} {C.DIM}({elapsed:.2f}s){C.RST}\n")
+            self._stream.flush()
+        except Exception:
+            pass
+        return False
+
+
+def print_ready_badge(model: str):
+    """Big visible 'we are live' banner. Called once per process the first
+    time Gemini Live successfully connects. Reconnects stay quiet."""
+    line = f"Connected to Gemini Live  ({model})"
+    inner = max(len(line) + 6, 48)
+    label = "\u2500 READY "  # what sits between ┌ and the trailing dashes
+    top_dashes = "\u2500" * (inner - 2 - len(label))
+    bot_dashes = "\u2500" * (inner - 2)
+    pad = inner - len(line) - 4  # │ + 2 spaces + line + pad + │ = inner
+    print()
+    print(f"  {C.B_GREEN}\u250c{label}{top_dashes}\u2510{C.RST}")
+    print(f"  {C.B_GREEN}\u2502{C.RST}  {C.B_WHITE}{line}{C.RST}{' ' * pad}{C.B_GREEN}\u2502{C.RST}")
+    print(f"  {C.B_GREEN}\u2514{bot_dashes}\u2518{C.RST}")
+    print()

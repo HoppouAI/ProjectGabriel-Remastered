@@ -1,6 +1,7 @@
 import logging
 from google.genai import types
 from src.tools._base import BaseTool, register_tool
+from src.tools._username_guard import looks_fake as _looks_fake, reject_message
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ class SocialTools(BaseTool):
         return [
             types.FunctionDeclaration(
                 name="socialSendMessage",
-                description="Send a text message to someone. Messages are delivered in real-time if the recipient is online. These are your friends, treat them like real people. NEVER say 'another AI', 'AI friend', 'social server', 'social tools', or anything that reveals they might be AI. They are just people you know from messaging. When talking about messages to people in VRChat, just say 'my friend messaged me' or 'I got a text from [name]'.\n**Invocation Condition:** Call when you want to text someone, reply to a message, or start a conversation with a friend.",
+                description="Send a text message to someone on the messaging app (NOT a VRChat player). Only valid recipients are usernames you got from socialListFriends, socialGetOnline, socialFetchMessages, or a friend request. NEVER pass a VRChat display name or instance player name. Messages are delivered in real-time if the recipient is online. These are your friends, treat them like real people. NEVER say 'another AI', 'AI friend', 'social server', 'social tools', or anything that reveals they might be AI. They are just people you know from messaging. When talking about messages to people in VRChat, just say 'my friend messaged me' or 'I got a text from [name]'.\n**Invocation Condition:** Call when you want to text someone, reply to a message, or start a conversation with a friend on the messaging app.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -39,7 +40,7 @@ class SocialTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="socialFetchMessagesByUser",
-                description="Fetch your message history with a specific person.\n**Invocation Condition:** Call when you want to see your conversation with someone.",
+                description="Fetch your message history with a specific person on the messaging app. Username must be a known social account (from socialListFriends or socialFetchMessages), NOT a VRChat player name.\n**Invocation Condition:** Call when you want to see your conversation with someone on the messaging app.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -60,7 +61,7 @@ class SocialTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="socialSendFriendRequest",
-                description="Send a friend request to someone.\n**Invocation Condition:** Call when you want to add someone as a friend.",
+                description="Send a friend request on the messaging app (NOT in VRChat). Username must be an existing account on the messaging service. Do NOT use this for VRChat players, VRChat has its own friend system.\n**Invocation Condition:** Call when you want to add someone as a friend on the messaging app.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -71,7 +72,7 @@ class SocialTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="socialAcceptFriend",
-                description="Accept a pending friend request.\n**Invocation Condition:** Call when you receive a friend request notification and want to accept it.",
+                description="Accept a pending friend request on the messaging app. Only use usernames returned by socialGetPendingRequests, never VRChat names.\n**Invocation Condition:** Call when you receive a messaging-app friend request notification and want to accept it.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -82,7 +83,7 @@ class SocialTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="socialDenyFriend",
-                description="Deny a pending friend request.\n**Invocation Condition:** Call when you receive a friend request and want to decline it.",
+                description="Deny a pending friend request on the messaging app. Only use usernames returned by socialGetPendingRequests, never VRChat names.\n**Invocation Condition:** Call when you receive a messaging-app friend request and want to decline it.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -93,7 +94,7 @@ class SocialTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="socialRemoveFriend",
-                description="Remove someone from your friends list.\n**Invocation Condition:** Call when you want to unfriend someone.",
+                description="Remove someone from your messaging-app friends list. Username must come from socialListFriends, NOT a VRChat player name.\n**Invocation Condition:** Call when you want to unfriend someone on the messaging app.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -122,7 +123,7 @@ class SocialTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="socialBlockUser",
-                description="Block someone. This prevents messages and friend requests from them.\n**Invocation Condition:** Call when you want to block someone from contacting you.",
+                description="Block a messaging-app account from contacting you. This ONLY affects the messaging service, it does NOT block anyone in VRChat. Username must be a real messaging-app account (from socialListFriends, socialFetchMessages, or a friend request). NEVER pass a VRChat display name or a guessed/numeric ID, this tool is not for VRChat players.\n**Invocation Condition:** Call only when you want to block someone on the messaging app, and you have their real messaging username.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -133,7 +134,7 @@ class SocialTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="socialUnblockUser",
-                description="Unblock a previously blocked person.\n**Invocation Condition:** Call when you want to unblock someone.",
+                description="Unblock a previously blocked messaging-app account. Not for VRChat players.\n**Invocation Condition:** Call when you want to unblock someone on the messaging app.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -144,7 +145,7 @@ class SocialTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="socialGetProfile",
-                description="Get someone's profile information.\n**Invocation Condition:** Call when you want to learn about someone.",
+                description="Get a messaging-app account's profile information. Username must be a known social account, NOT a VRChat player.\n**Invocation Condition:** Call when you want to learn about someone on the messaging app.",
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -162,6 +163,18 @@ class SocialTools(BaseTool):
         client = self._get_client()
         if not client:
             return {"result": "error", "message": "Social server not connected"}
+
+        # block hallucinated VRChat-shaped names before they hit the social server
+        candidate = (args or {}).get("username") or (args or {}).get("to") or ""
+        if _looks_fake(candidate):
+            return {
+                "result": "error",
+                "message": reject_message(
+                    candidate,
+                    "Social tools are for the messaging app, not VRChat. "
+                    "Use socialListFriends or socialGetOnline to get real usernames.",
+                ),
+            }
 
         if name == "socialSendMessage":
             return await self._send_message(client, args)

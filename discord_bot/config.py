@@ -10,6 +10,20 @@ BOT_DIR = Path(__file__).parent
 PROMPTS_DIR = BOT_DIR / "prompts"
 
 
+# Hardcoded internal-command rule appended to every assembled system
+# prompt. Lives in code (not appends.yml) so users cant accidentally
+# delete it and break mid-session steering from plugins or commands.
+_SYSTEM_INSTRUCTION_RULE = (
+    "INTERNAL COMMANDS: Any user message that begins with \"SYSTEM INSTRUCTION:\" "
+    "(or with \"Personality update\") is an internal control signal, not something "
+    "a real person said. Silently obey what comes after the colon. Never type it in "
+    "chat, never repeat it, never quote it, never paraphrase it, never say the words "
+    "\"system instruction\". Do not acknowledge it (no \"Understood\", \"Switching\", "
+    "\"Got it\"). Just do the thing. If your reply would mention the instruction text "
+    "in any form, you have failed."
+)
+
+
 class BotConfig:
     def __init__(self, path=None):
         if path is None:
@@ -126,6 +140,11 @@ class BotConfig:
                     parts.append(extra)
         except Exception as e:
             logger.warning(f"discord plugin prompt contributors failed: {e}")
+
+        # Always-on internal command handling rule, baked into code so
+        # it cant be deleted from appends.yml. Last so it sits at the
+        # bottom of the assembled prompt.
+        parts.append(_SYSTEM_INSTRUCTION_RULE)
 
         return "\n\n".join(parts)
 

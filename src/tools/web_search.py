@@ -1,4 +1,5 @@
 import logging
+import time
 import aiohttp
 from urllib.parse import quote
 from google.genai import types
@@ -10,6 +11,23 @@ JINA_READER_URL = "https://r.jina.ai/"
 DDG_SEARCH_URL = "https://html.duckduckgo.com/html/?q="
 MAX_SEARCH_CONTENT = 4000
 MAX_READ_CONTENT = 8000
+
+
+@register_tool
+class WebSearchTools(BaseTool):
+    tool_key = "web_search"
+
+    def __init__(self, handler):
+        super().__init__(handler)
+        # what the chatbox builtin looks at to show the spinner + timer.
+        # None when no search is in flight.
+        self._active_search: dict | None = None
+        # park ourselves on the handler so the session can find us without
+        # walking the tool list every tick.
+        handler.web_search = self
+
+    def get_active_search(self) -> dict | None:
+        return self._active_search
 
 
 @register_tool
@@ -83,68 +101,76 @@ class WebSearchTools(BaseTool):
         return None
 
     async def _search(self, query, api_key=None):
-        headers = {"Accept": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        # Use Jina Reader to fetch DuckDuckGo search results page
-        ddg_url = f"{DDG_SEARCH_URL}{quote(query)}"
-        url = f"{JINA_READER_URL}{ddg_url}"
+        self._active_search = {"kind": "search", "label": query, "started_at": time.time()}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                    if resp.status != 200:
-                        body = await resp.text()
-                        logger.error(f"Web search HTTP {resp.status}: {body[:200]}")
-                        return {"result": "error", "message": f"Search failed (HTTP {resp.status})"}
-                    data = await resp.json()
-                    page_data = data.get("data", {})
-                    content = page_data.get("content", "")
-                    if len(content) > MAX_SEARCH_CONTENT:
-                        content = content[:MAX_SEARCH_CONTENT] + "..."
-                    logger.info(f"Web search: '{query}' ({len(content)} chars)")
-                    return {"result": "ok", "query": query, "content": content}
-        except TimeoutError:
-            logger.error(f"Web search timed out for: {query}")
-            return {"result": "error", "message": "Search timed out"}
-        except aiohttp.ContentTypeError:
-            logger.error(f"Web search: response was not JSON for: {query}")
-            return {"result": "error", "message": "Invalid response format"}
-        except Exception as e:
-            logger.error(f"Web search error: {type(e).__name__}: {e}")
-            return {"result": "error", "message": str(e) or type(e).__name__}
+            headers = {"Accept": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+
+            # Use Jina Reader to fetch DuckDuckGo search results page
+            ddg_url = f"{DDG_SEARCH_URL}{quote(query)}"
+            url = f"{JINA_READER_URL}{ddg_url}"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                        if resp.status != 200:
+                            body = await resp.text()
+                            logger.error(f"Web search HTTP {resp.status}: {body[:200]}")
+                            return {"result": "error", "message": f"Search failed (HTTP {resp.status})"}
+                        data = await resp.json()
+                        page_data = data.get("data", {})
+                        content = page_data.get("content", "")
+                        if len(content) > MAX_SEARCH_CONTENT:
+                            content = content[:MAX_SEARCH_CONTENT] + "..."
+                        logger.info(f"Web search: '{query}' ({len(content)} chars)")
+                        return {"result": "ok", "query": query, "content": content}
+            except TimeoutError:
+                logger.error(f"Web search timed out for: {query}")
+                return {"result": "error", "message": "Search timed out"}
+            except aiohttp.ContentTypeError:
+                logger.error(f"Web search: response was not JSON for: {query}")
+                return {"result": "error", "message": "Invalid response format"}
+            except Exception as e:
+                logger.error(f"Web search error: {type(e).__name__}: {e}")
+                return {"result": "error", "message": str(e) or type(e).__name__}
+        finally:
+            self._active_search = None
 
     async def _read_url(self, target_url, api_key=None):
-        headers = {"Accept": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        url = f"{JINA_READER_URL}{target_url}"
+        self._active_search = {"kind": "read", "label": target_url, "started_at": time.time()}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                    if resp.status != 200:
-                        body = await resp.text()
-                        logger.error(f"Read URL HTTP {resp.status}: {body[:200]}")
-                        return {"result": "error", "message": f"Failed to read URL (HTTP {resp.status})"}
-                    data = await resp.json()
-                    page_data = data.get("data", {})
-                    content = page_data.get("content", "")
-                    if len(content) > MAX_READ_CONTENT:
-                        content = content[:MAX_READ_CONTENT] + "..."
-                    logger.info(f"Read URL: {target_url} ({len(content)} chars)")
-                    return {
-                        "result": "ok",
-                        "title": page_data.get("title", ""),
-                        "url": target_url,
-                        "content": content,
-                    }
-        except TimeoutError:
-            logger.error(f"Read URL timed out: {target_url}")
-            return {"result": "error", "message": "Page load timed out"}
-        except aiohttp.ContentTypeError:
-            logger.error(f"Read URL: response was not JSON for: {target_url}")
-            return {"result": "error", "message": "Invalid response format"}
-        except Exception as e:
-            logger.error(f"Read URL error: {type(e).__name__}: {e}")
-            return {"result": "error", "message": str(e) or type(e).__name__}
+            headers = {"Accept": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+
+            url = f"{JINA_READER_URL}{target_url}"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                        if resp.status != 200:
+                            body = await resp.text()
+                            logger.error(f"Read URL HTTP {resp.status}: {body[:200]}")
+                            return {"result": "error", "message": f"Failed to read URL (HTTP {resp.status})"}
+                        data = await resp.json()
+                        page_data = data.get("data", {})
+                        content = page_data.get("content", "")
+                        if len(content) > MAX_READ_CONTENT:
+                            content = content[:MAX_READ_CONTENT] + "..."
+                        logger.info(f"Read URL: {target_url} ({len(content)} chars)")
+                        return {
+                            "result": "ok",
+                            "title": page_data.get("title", ""),
+                            "url": target_url,
+                            "content": content,
+                        }
+            except TimeoutError:
+                logger.error(f"Read URL timed out: {target_url}")
+                return {"result": "error", "message": "Page load timed out"}
+            except aiohttp.ContentTypeError:
+                logger.error(f"Read URL: response was not JSON for: {target_url}")
+                return {"result": "error", "message": "Invalid response format"}
+            except Exception as e:
+                logger.error(f"Read URL error: {type(e).__name__}: {e}")
+                return {"result": "error", "message": str(e) or type(e).__name__}
+        finally:
+            self._active_search = None

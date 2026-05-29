@@ -1,12 +1,16 @@
 import argparse
 import asyncio
 import logging
+import time
+_BOOT_T0 = time.perf_counter()
+
 from src.cli import setup_logging, print_startup_info
 
 setup_logging()
 logger = logging.getLogger("gabriel")
+_t = time.perf_counter()
 
-# Import tracker FIRST — its module-level code pre-initialises bettercam
+# Import tracker FIRST, its module-level code pre-initialises bettercam
 # via DXGI Desktop Duplication BEFORE any CUDA library loads.
 # If CUDA loads first, DXGI fails on hybrid-GPU systems.
 # Importing is safe even when tracker is disabled in config.
@@ -19,6 +23,7 @@ from src.personalities import PersonalityManager
 from src.gemini_live import GeminiLiveSession
 from src.emotions import get_emotion_system
 from src.memory import memory_system
+_BOOT_IMPORT_S = time.perf_counter() - _t
 
 # Suppress the known CPython 3.12 Windows ProactorEventLoop assertion error
 # This fires during pipe transport cleanup and is harmless
@@ -55,6 +60,7 @@ def setup_control_server(session, audio, personality, memory, get_emotion_fn, co
 
 
 async def main(save_audio=False):
+    _t_main = time.perf_counter()
     loop = asyncio.get_running_loop()
     _orig_handler = loop.get_exception_handler()
     def _suppress_proactor_write_assert(loop, context):
@@ -80,7 +86,20 @@ async def main(save_audio=False):
     # Done before the banner so the unified banner can show fresh plugin status.
     from src.plugins import PluginManager, get_tts_factory
     plugin_manager = PluginManager(config)
-    plugin_manager.discover_and_load()
+    _t = time.perf_counter()
+    from src.cli import Spinner
+    # silence plugin chatter while they load so the plugins block in the
+    # startup banner lands right under the cyan banner, not after a wall
+    # of INFO lines. warnings/errors still come through.
+    _root = logging.getLogger()
+    _prev_level = _root.level
+    _root.setLevel(logging.WARNING)
+    try:
+        with Spinner("Loading plugins"):
+            plugin_manager.discover_and_load()
+    finally:
+        _root.setLevel(_prev_level)
+    _boot_plugins_s = time.perf_counter() - _t
 
     # Sync the live tool registry into config/tools.yml so any newly added
     # built-in tools or plugin tools show up as togglable. Then reload the
@@ -94,16 +113,16 @@ async def main(save_audio=False):
 
     # Banner now that plugins + tools.yml are fresh
     print_startup_info(config)
+    logger.info(
+        f"[boot] imports {_BOOT_IMPORT_S:.2f}s | plugins {_boot_plugins_s:.2f}s"
+        f" | banner ready {time.perf_counter() - _BOOT_T0:.2f}s"
+    )
 
     audio = AudioManager(config)
     osc = VRChatOSC(config)
     tracker = PlayerTracker(config, osc) if config.tracker_enabled else None
     if tracker:
         tracker.preload()  # async background model load + warmup
-        if config.vision_debug:
-            from vision_server import run_vision_server
-            tracker._vision_debug = True
-            run_vision_server(port=config.vision_debug_port, tracker=tracker, app_name=config.app_name)
 
     # Face tracker for looking at people (lazy import to skip heavy deps when disabled)
     face_tracker = None
@@ -232,6 +251,12 @@ async def main(save_audio=False):
         try:
             from control_server import shared_state
             shared_state["instance_monitor"] = instance_monitor
+            shared_state["tracker"] = tracker
+            # tracker pushes annotated frames into vision_server module state whenever
+            # _vision_debug is on. webui vision tab pulls from that same buffer, so just
+            # flip it on whenever the WebUI is running.
+            if tracker:
+                tracker._vision_debug = True
             # mapping + waypoints service (lazy, nothing runs til UI starts it)
             try:
                 from src.mapping_service import MappingService
@@ -289,6 +314,8 @@ async def main(save_audio=False):
     plugin_manager.bind_app(audio=audio, osc=osc, session=session,
                             tool_handler=session.tool_handler, config=config)
     plugin_manager.emit("startup")
+
+    logger.info(f"[boot] main() ready in {time.perf_counter() - _t_main:.2f}s, total boot {time.perf_counter() - _BOOT_T0:.2f}s")
 
     while True:
         try:

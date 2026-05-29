@@ -7,9 +7,10 @@ import Music from './pages/Music'
 import Players from './pages/Players'
 import Mapping from './pages/Mapping'
 import Waypoints from './pages/Waypoints'
+import Vision from './pages/Vision'
 import Toast, { type ToastItem } from './components/Toast'
 
-type Tab = 'dashboard' | 'memories' | 'music' | 'players' | 'mapping' | 'waypoints'
+type Tab = 'dashboard' | 'memories' | 'music' | 'players' | 'mapping' | 'waypoints' | 'vision'
 
 let toastId = 0
 
@@ -25,7 +26,7 @@ export default function App() {
 
   const { state, logs, clearLogs, addLog } = useWebSocket(addToast)
 
-  const fullWidth = tab === 'dashboard' || tab === 'memories' || tab === 'players' || tab === 'mapping'
+  const fullWidth = tab === 'dashboard' || tab === 'memories' || tab === 'players' || tab === 'mapping' || tab === 'vision'
 
   return (
     <div className="min-h-screen bg-background">
@@ -45,6 +46,7 @@ export default function App() {
         {tab === 'players' && <Players state={state} onToast={addToast} />}
         {tab === 'mapping' && <Mapping onToast={addToast} />}
         {tab === 'waypoints' && <Waypoints onToast={addToast} />}
+        {tab === 'vision' && <Vision onToast={addToast} />}
       </main>
       <Toast toasts={toasts} />
     </div>

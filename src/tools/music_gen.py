@@ -24,15 +24,10 @@ class MusicGenTools(BaseTool):
             types.FunctionDeclaration(
                 name="startMusicGen",
                 description=(
-                    "Start playing your guitar/instrument live. Describe the style/mood/genre. "
-                    "Bass and drums are muted by default for solo performance. "
-                    "You are a musician performing live. Say things like 'alright let me grab my guitar' "
-                    "before starting. NEVER say 'music gen', 'music generation', 'AI-generated', "
-                    "'Lyria', or any technical terms. You are PLAYING AN INSTRUMENT, not generating. "
-                    "If a tool error occurs, say 'hmm my guitar isnt cooperating' or similar.\n"
-                    "**Invocation Condition:** Call when someone asks you to play guitar, jam, "
-                    "perform music, play an instrument, or serenade someone. NOT for playing "
-                    "local music files (use playMusic for that)."
+                    "Start playing your instrument live (you are performing, NOT generating). "
+                    "Bass and drums muted by default. Never say 'music gen', 'AI', or 'Lyria'.\n"
+                    "**Invocation Condition:** Asked to play, jam, perform, or serenade. "
+                    "For local audio files use playMusic instead."
                 ),
                 parameters={
                     "type": "OBJECT",
@@ -40,28 +35,15 @@ class MusicGenTools(BaseTool):
                         "prompt": {
                             "type": "STRING",
                             "description": (
-                                "Music style description. Can combine multiple styles separated by commas. "
-                                "IMPORTANT: For solo instrument performances (no backing band), ALWAYS include "
-                                "'Solo' as one of the tags - e.g. 'Acoustic Guitar, Solo, Chill' not just "
-                                "'Acoustic Guitar, Chill'. The 'Solo' tag tells the AI to generate a solo "
-                                "performance without other instruments. "
-                                "Examples: 'Acoustic Guitar, Solo', 'Flamenco Guitar, Solo, Live Performance', "
-                                "'Blues Rock Guitar, Solo', 'Classical Guitar, Solo, Dreamy', "
-                                "'Indian Classical Sitar, Solo', 'Jazz Fusion Guitar, Solo, Smooth', "
-                                "'Piano, Solo, Ballad', 'Violin, Solo, Emotional'. "
-                                "Without 'Solo', other instruments may be added automatically."
+                                "Comma-separated style tags. ALWAYS include 'Solo' for solo "
+                                "performances or other instruments may be added. "
+                                "e.g. 'Acoustic Guitar, Solo, Chill', 'Piano, Solo, Ballad'."
                             ),
                         },
-                        "bpm": {
-                            "type": "INTEGER",
-                            "description": "Beats per minute (60-200). Leave empty to let the AI decide based on the style.",
-                        },
+                        "bpm": {"type": "INTEGER", "description": "60-200, omit to auto."},
                         "scale": {
                             "type": "STRING",
-                            "description": (
-                                "Musical scale/key. Options: " + ", ".join(SCALE_OPTIONS)
-                                + ". Leave empty to let the AI decide."
-                            ),
+                            "description": "Key, e.g. C_MAJOR_A_MINOR. Omit to auto.",
                         },
                     },
                     "required": ["prompt"],
@@ -95,28 +77,23 @@ class MusicGenTools(BaseTool):
             types.FunctionDeclaration(
                 name="steerMusicGen",
                 description=(
-                    "Steer the live music generation in real-time. Change the style, mood, "
-                    "instruments, tempo, key, density, brightness, or toggle bass/drums. "
-                    "Changes apply smoothly without stopping playback. For bpm/scale changes, "
-                    "a brief hard transition occurs as the model resets context.\n"
-                    "**Invocation Condition:** Call when asked to change the music style, "
-                    "speed up/slow down, change key, add/remove bass or drums, make it "
-                    "brighter/darker, busier/sparser, or shift the vibe while playing. "
-                    "'Play faster' = increase bpm. 'Make it sadder' = change prompt. "
-                    "'Add drums' = set mute_drums false."
+                    "Steer the live performance in real-time without stopping. bpm/scale "
+                    "changes cause a brief hard transition, everything else is smooth.\n"
+                    "**Invocation Condition:** Asked to change style, tempo, key, density, "
+                    "brightness, or toggle bass/drums while playing."
                 ),
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "prompt": {"type": "STRING", "description": "New music style description (replaces current). Include 'Solo' for solo performances. Omit to keep current style."},
-                        "bpm": {"type": "INTEGER", "description": "New BPM (60-200). Causes a hard transition."},
-                        "scale": {"type": "STRING", "description": "New musical scale. Causes a hard transition."},
-                        "density": {"type": "NUMBER", "description": "Note density 0.0 (sparse) to 1.0 (busy)"},
-                        "brightness": {"type": "NUMBER", "description": "Tonal brightness 0.0 (dark) to 1.0 (bright)"},
-                        "guidance": {"type": "NUMBER", "description": "Prompt adherence 0.0-6.0 (default 4.0). Higher = follows prompts more strictly."},
-                        "mute_bass": {"type": "BOOLEAN", "description": "Mute bass line (default true)"},
-                        "mute_drums": {"type": "BOOLEAN", "description": "Mute drums (default true)"},
-                        "mode": {"type": "STRING", "description": "Generation mode: 'quality' (default), 'diversity', or 'vocalization'"},
+                        "prompt": {"type": "STRING", "description": "New style tags (replaces current). Include 'Solo' for solo. Omit to keep."},
+                        "bpm": {"type": "INTEGER", "description": "60-200. Hard transition."},
+                        "scale": {"type": "STRING", "description": "New key. Hard transition."},
+                        "density": {"type": "NUMBER", "description": "0.0 sparse to 1.0 busy."},
+                        "brightness": {"type": "NUMBER", "description": "0.0 dark to 1.0 bright."},
+                        "guidance": {"type": "NUMBER", "description": "0-6, default 4. Higher = stricter prompt adherence."},
+                        "mute_bass": {"type": "BOOLEAN", "description": "Default true."},
+                        "mute_drums": {"type": "BOOLEAN", "description": "Default true."},
+                        "mode": {"type": "STRING", "description": "'quality' (default), 'diversity', or 'vocalization'."},
                     },
                 },
             ),

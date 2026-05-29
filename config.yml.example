@@ -463,10 +463,7 @@ yolo:
   # (removes the tool declarations from Gemini and skips tracker init)
   enabled: true
 
-  # Vision debug WebUI -- view YOLO detections + bounding boxes + OSC data in browser
-  # Access at http://localhost:8767/vision when enabled
-  vision_debug: false
-  vision_debug_port: 8767
+  # Live YOLO stream + per-setting sliders are in the main WebUI under the Vision tab.
 
   # YOLOv8n model auto-downloads here if missing
   model_dir: "models/yolov8"
@@ -750,6 +747,18 @@ plugins:
   # Master toggle for the whole plugin system. Set false to skip loading
   # any plugins at all (useful for debugging if a plugin is misbehaving).
   enabled: true
+
+  # Trust mode. When false (default) plugins get a sandboxed view of the
+  # host config that hides secrets (gemini api_key, vrchat password,
+  # mongo connection string, discord token, etc). Plugins should store
+  # their own settings under plugins.<name>.* and read them through
+  # ctx.plugin_config(), not by reaching into ctx.config.api_key.
+  #
+  # Flip this to true if you have an older plugin that needs raw access
+  # to those, like the diary plugin which uses the main gemini api_key
+  # for its background sub-agent. Only do this for plugins you trust,
+  # any loaded plugin will be able to read every secret in this file.
+  trusted: false
 
   # ----------------------------------------------------------
   # Suno Song Generation (plugin)

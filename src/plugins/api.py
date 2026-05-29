@@ -7,10 +7,119 @@ loader.py and be documented in plugins/README.md.
 """
 import asyncio
 import logging
+import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+
+# Sensitive config paths/attrs that plugins are never allowed to read.
+# Match is a case-insensitive substring check against each path element
+# OR the joined "a.b.c" path. Be generous, plugins should never need
+# secrets from the host config anyway, they get their own scoped subdict
+# via ctx.plugin_config().
+_SENSITIVE_PATTERNS = (
+    "api_key",
+    "apikey",
+    "backup_keys",
+    "token",
+    "password",
+    "secret",
+    "cookie",
+    "webhook",
+    "mongodb_uri",
+    "mongo_uri",
+    "connection_string",
+    "private_key",
+    "ssh_key",
+    "auth_header",
+)
+
+# Attribute names on the real Config that plugins cant touch directly,
+# either because they expose secrets or because they let the plugin
+# rotate keys / mutate the live key list.
+_BLOCKED_CONFIG_ATTRS = frozenset({
+    "api_key",
+    "backup_keys",
+    "rotate_key",
+    "_keys",
+    "_key_index",
+    "_data",     # raw nested dict, contains everything including secrets
+    "_raw",
+    "vrchat_api_password",
+})
+
+
+def _path_is_sensitive(*keys) -> bool:
+    """True if any element of the path, or the joined dotted form,
+    matches one of the sensitive patterns."""
+    if not keys:
+        # A bare get() with no path returns the whole config dict, which
+        # would leak every secret in one call. Always deny.
+        return True
+    parts = [str(k).lower() for k in keys]
+    joined = ".".join(parts)
+    for pat in _SENSITIVE_PATTERNS:
+        if pat in joined:
+            return True
+    return False
+
+
+class SafeConfigView:
+    """A read-only proxy around the host Config that hides secrets from
+    plugins. Plugins get this as `ctx.config`. Most reads pass straight
+    through to the real Config, but anything matching a sensitive
+    pattern raises PermissionError so a misbehaving plugin can't silently
+    exfiltrate the gemini api key, vrchat password, mongo connection
+    string, etc.
+
+    Plugins should read their own settings through `ctx.plugin_config()`
+    which is already scoped under `plugins.<plugin_name>` and not
+    exposed to the secret denylist (so a plugin can store its own api
+    keys there if it really needs to).
+    """
+
+    __slots__ = ("_real", "_plugin", "_trusted")
+
+    def __init__(self, real_config: Any, plugin_name: str, trusted: bool = False):
+        object.__setattr__(self, "_real", real_config)
+        object.__setattr__(self, "_plugin", plugin_name)
+        object.__setattr__(self, "_trusted", bool(trusted))
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(
+                f"plugin '{self._plugin}' tried to read private config attr '{name}'"
+            )
+        if name in _BLOCKED_CONFIG_ATTRS and not self._trusted:
+            raise PermissionError(
+                f"plugin '{self._plugin}' is not allowed to read sensitive config "
+                f"attribute '{name}'. Use ctx.plugin_config() for your own "
+                f"settings under plugins.{self._plugin}.* in config.yml, or set "
+                f"plugins.trusted: true in config.yml to allow it."
+            )
+        return getattr(self._real, name)
+
+    def __setattr__(self, name, value):
+        raise PermissionError(
+            f"plugin '{self._plugin}' tried to mutate config attr '{name}'. "
+            f"Plugin config is read-only."
+        )
+
+    def get(self, *keys, default=None):
+        if _path_is_sensitive(*keys) and not self._trusted:
+            raise PermissionError(
+                f"plugin '{self._plugin}' tried to read sensitive config path "
+                f"'{'.'.join(str(k) for k in keys) or '<root>'}'. Plugins are "
+                f"sandboxed away from secrets. Use ctx.plugin_config() for your "
+                f"own settings, or set plugins.trusted: true in config.yml."
+            )
+        return self._real.get(*keys, default=default)
+
+    def __repr__(self):
+        return f"<SafeConfigView for plugin={self._plugin!r}>"
 
 # Module-level registries. Populated as plugins call ctx.register_*.
 # Kept module-level so the rest of the app (main.py, TTS selection) can
@@ -35,6 +144,118 @@ _prompt_contributors: dict[str, Callable[[], Any]] = {}
 _discord_tool_classes: list[type] = []
 _discord_prompt_contributors: dict[str, Callable[[], Any]] = {}
 _discord_event_subscribers: dict[str, list[Callable[..., Any]]] = {}
+
+
+# Periodic task registry. Each entry is a dict with keys:
+#   name, interval_seconds, fn, run_immediately, plugin_name,
+#   thread (set once started), stop_flag (threading.Event)
+# Spawned by `start_periodic_tasks()` which loader.py calls right after
+# the 'startup' event fires.
+_periodic_tasks: list[dict] = []
+_periodic_started: bool = False
+
+
+def register_periodic_task(
+    plugin_name: str,
+    name: str,
+    interval_seconds: float,
+    fn: Callable[[], Any],
+    run_immediately: bool = False,
+):
+    """Module-level register. Most callers should use
+    `ctx.register_periodic_task()` from inside a plugin instead."""
+    _periodic_tasks.append({
+        "plugin_name": plugin_name,
+        "name": name,
+        "interval_seconds": float(interval_seconds),
+        "fn": fn,
+        "run_immediately": bool(run_immediately),
+        "thread": None,
+        "stop_flag": threading.Event(),
+    })
+
+
+def _run_periodic_task(task: dict, loop: Any):
+    """Worker for one periodic task. Sync fns run inline, async fns get
+    scheduled on the main loop via run_coroutine_threadsafe."""
+    stop = task["stop_flag"]
+    interval = max(0.1, task["interval_seconds"])
+    fn = task["fn"]
+    label = f"plugin.{task['plugin_name']}.{task['name']}"
+    log = logging.getLogger(label)
+    if not task["run_immediately"]:
+        if stop.wait(interval):
+            return
+    while not stop.is_set():
+        try:
+            res = fn()
+            if asyncio.iscoroutine(res):
+                if loop is not None and loop.is_running():
+                    fut = asyncio.run_coroutine_threadsafe(res, loop)
+                    try:
+                        # don't block the periodic schedule on a slow task,
+                        # but still surface exceptions
+                        fut.result(timeout=interval * 2)
+                    except Exception as e:
+                        log.error(f"async periodic task failed: {e}")
+                else:
+                    try:
+                        asyncio.run(res)
+                    except Exception as e:
+                        log.error(f"async periodic task failed: {e}")
+        except Exception as e:
+            log.error(f"periodic task crashed: {e}", exc_info=True)
+        if stop.wait(interval):
+            return
+
+
+def start_periodic_tasks(loop: Any = None):
+    """Spawn a daemon thread for each registered periodic task. Idempotent,
+    safe to call once at startup. The loader calls this after the
+    'startup' event fires."""
+    global _periodic_started
+    if _periodic_started:
+        return
+    _periodic_started = True
+    if loop is None:
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+    for task in _periodic_tasks:
+        if task["thread"] is not None:
+            continue
+        t = threading.Thread(
+            target=_run_periodic_task,
+            args=(task, loop),
+            daemon=True,
+            name=f"plugin-periodic-{task['plugin_name']}-{task['name']}",
+        )
+        task["thread"] = t
+        t.start()
+        logger.debug(
+            f"started periodic task {task['plugin_name']}.{task['name']} "
+            f"every {task['interval_seconds']}s"
+        )
+
+
+def stop_periodic_tasks(timeout: float = 2.0):
+    """Signal every periodic task to stop and wait briefly for them.
+    Called from PluginManager.teardown_all()."""
+    for task in _periodic_tasks:
+        task["stop_flag"].set()
+    deadline = time.time() + max(0.0, timeout)
+    for task in _periodic_tasks:
+        t = task.get("thread")
+        if t is None:
+            continue
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            break
+        try:
+            t.join(timeout=remaining)
+        except Exception:
+            pass
 
 
 class Plugin:
@@ -67,9 +288,21 @@ class PluginContext:
     importing internal modules directly. One context per plugin so logs
     and config lookups are scoped to that plugin's name."""
 
-    def __init__(self, plugin_name: str, config, plugin_dir: Path):
+    def __init__(self, plugin_name: str, config, plugin_dir: Path, trusted: bool = False):
         self.plugin_name = plugin_name
-        self.config = config
+        # Keep the real config private for internal plugin_config() lookups
+        # (a plugin needs to read its OWN scoped subdict, even if it
+        # contains things like api keys for third-party services). What
+        # we expose publicly is a sandboxed SafeConfigView so plugins
+        # cant read gemini's api key, vrchat creds, mongo strings, etc.
+        # When `trusted` is True the guard is disabled (set via
+        # plugins.trusted in config.yml) for backwards compat with older
+        # plugins that reach into ctx.config.api_key etc.
+        self._real_config = config
+        self.config = (
+            SafeConfigView(config, plugin_name, trusted=trusted)
+            if config is not None else None
+        )
         self.plugin_dir = plugin_dir
         self.logger = logging.getLogger(f"plugin.{plugin_name}")
         # Filled in later by PluginManager.bind_app() once the rest of
@@ -98,12 +331,33 @@ class PluginContext:
 
     def plugin_config(self, key: str | None = None, default: Any = None):
         """Read this plugin's config from `config.yml` under
-        `plugins.<name>.<key>`. Pass no key to get the whole sub-dict."""
-        if self.config is None:
+        `plugins.<name>.<key>`. Pass no key to get the whole sub-dict.
+
+        This bypasses the SafeConfigView denylist on purpose: a plugin
+        is allowed to put api keys or tokens inside its OWN scoped
+        config block (e.g. plugins.voiceid.openai_api_key)."""
+        if self._real_config is None:
             return default if key is not None else {}
         if key is None:
-            return self.config.get("plugins", self.plugin_name, default={}) or {}
-        return self.config.get("plugins", self.plugin_name, key, default=default)
+            return self._real_config.get("plugins", self.plugin_name, default={}) or {}
+        return self._real_config.get("plugins", self.plugin_name, key, default=default)
+
+    def register_periodic_task(
+        self,
+        name: str,
+        interval_seconds: float,
+        fn: Callable[[], Any],
+        run_immediately: bool = False,
+    ):
+        """Run `fn` every `interval_seconds`. Use this instead of
+        spinning up your own thread, so the host can manage lifecycle
+        and shut it down cleanly on teardown.
+
+        `fn` may be sync or async (async coroutines are scheduled on
+        the main event loop). Keep the work short, don't block forever.
+        Set `run_immediately=True` to also fire once at startup before
+        the first interval."""
+        register_periodic_task(self.plugin_name, name, interval_seconds, fn, run_immediately)
 
     def data_dir(self) -> Path:
         """Per-plugin data dir under data/plugins/<name>/. Created on
@@ -257,6 +511,31 @@ class PluginContext:
             return True
         except Exception as e:
             self.logger.error(f"send_user_text failed: {e}")
+            return False
+
+    async def send_realtime_text(self, text: str) -> bool:
+        """Inject a short text annotation into the CURRENT incoming
+        user turn without ending it. Use this for things like speaker
+        labels, vision tags, sensor readings, anything you want the
+        model to see as part of whatever audio is streaming right now.
+
+        Works on both gemini 3.1 (uses send_realtime_input(text=...))
+        and gemini 2.5 (uses send_client_content with
+        turn_complete=False). Does NOT wait for the model to stop
+        speaking, so don't spam it, the model might mix annotations
+        across turns if you call it too often. Throttle in your plugin.
+
+        Returns False if the session is not up or sending failed.
+        Plugin api v3+.
+        """
+        session = self._app.get("session")
+        if session is None or not hasattr(session, "send_inline_text"):
+            self.logger.debug("send_realtime_text: session not ready")
+            return False
+        try:
+            return await session.send_inline_text(text)
+        except Exception as e:
+            self.logger.error(f"send_realtime_text failed: {e}")
             return False
 
 def get_tts_factory(name: str):

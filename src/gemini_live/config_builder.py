@@ -162,10 +162,11 @@ class ConfigBuilderMixin:
                     thinking_kwargs["include_thoughts"] = True
                 config_kwargs["thinking_config"] = types.ThinkingConfig(**thinking_kwargs)
 
-        # History config for context replay (3.1 models need this to accept send_client_content)
-        # Only needed on fresh sessions (no handle) where we'll replay previous context
-        has_replay = self._replay_context or self._compression_summary
-        if has_replay and not self._session_handle and self.config.is_31_model:
+        # 3.1 needs initial_history_in_client_content=true so that the first
+        # send_client_content (used for replay/summary seeding on a fresh
+        # connect) is actually accepted as history. without this flag the
+        # server treats it as a regular conversation update and rejects it.
+        if self.config.is_31_model:
             config_kwargs["history_config"] = types.HistoryConfig(
                 initial_history_in_client_content=True
             )

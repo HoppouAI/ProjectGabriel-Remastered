@@ -4,6 +4,7 @@ Walks `./plugins/`, reads each `plugin.yml` manifest, imports the entry
 module, finds the `Plugin` subclass and calls `setup()`. Errors in any
 single plugin are caught so the host stays up.
 """
+import importlib.metadata
 import importlib.util
 import logging
 import re
@@ -13,7 +14,13 @@ from pathlib import Path
 
 import yaml
 
-from src.plugins.api import Plugin, PluginContext, emit_event
+from src.plugins.api import (
+    Plugin,
+    PluginContext,
+    emit_event,
+    start_periodic_tasks,
+    stop_periodic_tasks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +33,13 @@ logger = logging.getLogger(__name__)
 #        subscribe(), send_system_instruction, send_user_text
 #   2 -- ctx.discord namespace for the Discord bot's Gemini session,
 #        ChatboxOrchestrator with on_clear lifecycle hook
-PLUGIN_API_VERSION = 2
+#   3 -- ctx.register_periodic_task scheduler primitive,
+#        new audio events 'mic_chunk' / 'tts_audio_chunk' (raw PCM
+#        bytes + sample_rate), SafeConfigView wraps ctx.config so
+#        plugins can't read gemini api key, vrchat creds, mongo
+#        connection strings, discord token, etc. plugin_config() still
+#        sees the plugin's own scoped subtree unfiltered.
+PLUGIN_API_VERSION = 3
 
 
 # Per-plugin issue tally so the startup banner can show how many warnings
@@ -34,8 +47,30 @@ PLUGIN_API_VERSION = 2
 # for the first one. Filled by record_plugin_issue() and the
 # _PluginLogCounter filter, read by src.cli._print_plugins_block.
 _plugin_issues: dict[str, list[dict]] = {}
+# Plugins that the loader gave up on (import crashed, setup() crashed,
+# missing entry file, no Plugin subclass, etc). Banner uses this to draw
+# the row as effectively disabled instead of misleadingly green.
+_failed_plugins: set[str] = set()
+# Guards _plugin_issues / _failed_plugins when plugins load in parallel.
+import threading as _threading
+_issues_global_lock = _threading.Lock()
 _PLUGIN_NAME_RE = re.compile(r"plugin '([^']+)'")
 _REQUIRES_PREFIX_RE = re.compile(r"^plugin '[^']+'\s+", re.IGNORECASE)
+
+# Some pip packages install under a different import name than their pip
+# name (pyfluidsynth -> fluidsynth, opencv-python -> cv2, etc). Plain
+# find_spec on the pip name fails for those, so we check installed
+# distributions via importlib.metadata first, which uses pip's own
+# name normalization, and only fall back to find_spec for vendored or
+# stdlib modules that have no dist metadata.
+def _requirement_installed(pkg_name: str) -> bool:
+    try:
+        importlib.metadata.distribution(pkg_name)
+        return True
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    probe = pkg_name.replace("-", "_")
+    return importlib.util.find_spec(probe) is not None
 
 
 def record_plugin_issue(plugin_name: str, level: str, message: str) -> None:
@@ -45,10 +80,11 @@ def record_plugin_issue(plugin_name: str, level: str, message: str) -> None:
     DEBUG). Also writes to the daily plugins log file."""
     if not plugin_name:
         return
-    _plugin_issues.setdefault(plugin_name, []).append({
-        "level": level,
-        "message": message,
-    })
+    with _issues_global_lock:
+        _plugin_issues.setdefault(plugin_name, []).append({
+            "level": level,
+            "message": message,
+        })
     _file_log = _get_file_logger()
     if _file_log is not None:
         line = f"[{plugin_name}] {message}"
@@ -60,6 +96,12 @@ def record_plugin_issue(plugin_name: str, level: str, message: str) -> None:
 
 def get_plugin_issues() -> dict[str, list[dict]]:
     return {k: list(v) for k, v in _plugin_issues.items()}
+
+
+def get_failed_plugins() -> set[str]:
+    """Names of plugins that were enabled but failed to load. Banner
+    uses this to mark the row as disabled at runtime."""
+    return set(_failed_plugins)
 
 
 def get_plugin_log_counts() -> dict[str, dict[str, int]]:
@@ -176,16 +218,23 @@ def _install_plugins_logfile():
 
 class PluginManager:
     def __init__(self, config, plugins_dir: str = "plugins"):
+        import threading
         self.config = config
         self.plugins_dir = Path(plugins_dir)
         self.loaded: list[tuple[Plugin, PluginContext]] = []
+        self._loaded_lock = threading.Lock()
+        self._issues_lock = threading.Lock()
         _install_log_counter()
         _install_plugins_logfile()
 
     def discover_and_load(self):
         """Scan the plugins dir, load each enabled plugin, call setup().
         Plugins that crash on load are logged and skipped, they will not
-        take down the rest of the host."""
+        take down the rest of the host.
+
+        Imports + setup() run in parallel on a small thread pool to cut
+        cold start latency. Plugin order in self.loaded is restored to
+        alphabetical at the end so the banner stays stable."""
         if not self.plugins_dir.is_dir():
             logger.info(f"plugins dir '{self.plugins_dir}' missing, skipping plugin load")
             return
@@ -196,6 +245,7 @@ class PluginManager:
                 logger.info("plugins disabled in config, skipping plugin load")
                 return
 
+        entries = []
         for entry in sorted(self.plugins_dir.iterdir()):
             if not entry.is_dir() or entry.name.startswith((".", "_")):
                 continue
@@ -203,20 +253,43 @@ class PluginManager:
             if not manifest_path.exists():
                 logger.debug(f"no plugin.yml in {entry}, skipping")
                 continue
-            try:
-                self._load_one(entry, manifest_path)
-            except Exception as e:
-                # crash-on-load is loud enough to keep at ERROR, also feed
-                # the banner so the user sees it next to the plugin row.
-                logger.error(f"failed to load plugin '{entry.name}': {e}", exc_info=True)
-                record_plugin_issue(entry.name, "error", f"load failed: {e}")
+            entries.append((entry, manifest_path))
+
+        if not entries:
+            logger.debug("plugin manager: no plugins found")
+            return
+
+        # cap concurrency, plugins doing port binds or NLTK init dont
+        # play super well with 20 of them stomping on each other
+        from concurrent.futures import ThreadPoolExecutor
+        max_workers = min(6, len(entries))
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="plugin-load") as ex:
+            futures = {
+                ex.submit(self._safe_load_one, entry, manifest_path): entry.name
+                for entry, manifest_path in entries
+            }
+            for fut in futures:
+                fut.result()  # surface unexpected exceptions, _safe_load_one already swallows expected ones
+
+        # restore alphabetical order (parallel completion shuffled self.loaded)
+        order = {entry.name: i for i, (entry, _) in enumerate(entries)}
+        with self._loaded_lock:
+            self.loaded.sort(key=lambda pair: order.get(pair[1].plugin_dir.name, 999))
 
         if self.loaded:
             names = ", ".join(p.name for p, _ in self.loaded)
-            # banner already shows the full list, dont double print on console
             logger.debug(f"plugin manager: {len(self.loaded)} plugin(s) loaded -> {names}")
         else:
             logger.debug("plugin manager: no plugins loaded")
+
+    def _safe_load_one(self, plugin_dir: Path, manifest_path: Path):
+        try:
+            self._load_one(plugin_dir, manifest_path)
+        except Exception as e:
+            logger.error(f"failed to load plugin '{plugin_dir.name}': {e}", exc_info=True)
+            with self._issues_lock:
+                record_plugin_issue(plugin_dir.name, "error", f"load failed: {e}")
+                _failed_plugins.add(plugin_dir.name)
 
     def _load_one(self, plugin_dir: Path, manifest_path: Path):
         with open(manifest_path, "r", encoding="utf-8") as f:
@@ -251,9 +324,10 @@ class PluginManager:
         # Check declared python deps. Never auto pip install -- that
         # would be a footgun. Just warn so the user knows what to install.
         for req in manifest.get("requirements", []) or []:
-            mod_name = req.split("==")[0].split(">=")[0].split("<")[0].split("~=")[0].strip()
-            probe = mod_name.replace("-", "_")
-            if importlib.util.find_spec(probe) is None:
+            pkg_name = re.split(r"[<>=!~ ]", req, 1)[0].strip()
+            if not pkg_name:
+                continue
+            if not _requirement_installed(pkg_name):
                 msg = f"requires '{req}' but it does not look installed."
                 # full hint goes to plugins.log, banner shows the short msg
                 logger.debug(f"plugin '{name}' {msg} run: pip install {req}")
@@ -264,7 +338,9 @@ class PluginManager:
         if not entry_path.exists():
             msg = f"entry file '{entry_file}' not found"
             logger.error(f"plugin '{name}' {msg}")
-            record_plugin_issue(name, "error", msg)
+            with self._issues_lock:
+                record_plugin_issue(name, "error", msg)
+                _failed_plugins.add(name)
             return
 
         module_name = f"plugins.{plugin_dir.name}"
@@ -273,7 +349,9 @@ class PluginManager:
         )
         if spec is None or spec.loader is None:
             logger.error(f"plugin '{name}' could not build import spec")
-            record_plugin_issue(name, "error", "could not build import spec")
+            with self._issues_lock:
+                record_plugin_issue(name, "error", "could not build import spec")
+                _failed_plugins.add(name)
             return
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
@@ -281,7 +359,9 @@ class PluginManager:
             spec.loader.exec_module(module)
         except Exception as e:
             logger.error(f"plugin '{name}' import failed: {e}", exc_info=True)
-            record_plugin_issue(name, "error", f"import failed: {e}")
+            with self._issues_lock:
+                record_plugin_issue(name, "error", f"import failed: {e}")
+                _failed_plugins.add(name)
             return
 
         # Find the Plugin instance/class. Prefer an explicit `plugin`
@@ -301,7 +381,9 @@ class PluginManager:
                     break
         if plugin_obj is None:
             logger.error(f"plugin '{name}' has no Plugin subclass or `plugin` attribute")
-            record_plugin_issue(name, "error", "has no Plugin subclass or `plugin` attribute")
+            with self._issues_lock:
+                record_plugin_issue(name, "error", "has no Plugin subclass or `plugin` attribute")
+                _failed_plugins.add(name)
             return
 
         # Let manifest fill in metadata when the class did not set it.
@@ -314,15 +396,24 @@ class PluginManager:
         if "author" in manifest and not plugin_obj.author:
             plugin_obj.author = manifest["author"]
 
-        ctx = PluginContext(plugin_obj.name, self.config, plugin_dir)
+        trusted = False
+        if self.config is not None:
+            try:
+                trusted = bool(self.config.get("plugins", "trusted", default=False))
+            except Exception:
+                trusted = False
+        ctx = PluginContext(plugin_obj.name, self.config, plugin_dir, trusted=trusted)
         try:
             plugin_obj.setup(ctx)
         except Exception as e:
             logger.error(f"plugin '{plugin_obj.name}' setup() crashed: {e}", exc_info=True)
-            record_plugin_issue(plugin_obj.name, "error", f"setup() crashed: {e}")
+            with self._issues_lock:
+                record_plugin_issue(plugin_obj.name, "error", f"setup() crashed: {e}")
+                _failed_plugins.add(plugin_obj.name)
             return
 
-        self.loaded.append((plugin_obj, ctx))
+        with self._loaded_lock:
+            self.loaded.append((plugin_obj, ctx))
         # the banner shows version + author per plugin so we keep this DEBUG
         # to avoid duplicating that info in the startup log.
         logger.debug(
@@ -338,8 +429,22 @@ class PluginManager:
 
     def emit(self, event: str, *args, **kwargs):
         emit_event(event, *args, **kwargs)
+        # The 'startup' event is the canonical "host is fully wired"
+        # signal. Spin up any periodic tasks plugins registered during
+        # setup() right after their startup handlers had a chance to
+        # run. Idempotent so it's safe even if emit('startup') is
+        # called twice.
+        if event == "startup":
+            try:
+                start_periodic_tasks()
+            except Exception as e:
+                logger.error(f"failed to start plugin periodic tasks: {e}", exc_info=True)
 
     async def teardown_all(self):
+        try:
+            stop_periodic_tasks(timeout=2.0)
+        except Exception as e:
+            logger.debug(f"stop_periodic_tasks errored: {e}")
         for plugin_obj, ctx in self.loaded:
             try:
                 res = plugin_obj.teardown(ctx)

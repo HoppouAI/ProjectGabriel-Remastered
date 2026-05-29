@@ -10,6 +10,28 @@ logger = logging.getLogger(__name__)
 class SoundboardTools(BaseTool):
     tool_key = "soundboard"
 
+    def __init__(self, handler):
+        super().__init__(handler)
+        # background tasks spawned by play* with repeat>1. stopSoundboard
+        # needs to cancel these or the remaining repeats keep firing after
+        # stop_sfx() killed the currently audible one.
+        self._repeat_tasks: list[asyncio.Task] = []
+
+    def _track_repeat_task(self, coro):
+        task = asyncio.create_task(coro)
+        self._repeat_tasks.append(task)
+        task.add_done_callback(lambda t: self._repeat_tasks.remove(t) if t in self._repeat_tasks else None)
+        return task
+
+    def _cancel_repeat_tasks(self):
+        count = 0
+        for task in list(self._repeat_tasks):
+            if not task.done():
+                task.cancel()
+                count += 1
+        self._repeat_tasks.clear()
+        return count
+
     def declarations(self, config=None):
         return [
             types.FunctionDeclaration(
@@ -39,7 +61,7 @@ class SoundboardTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="stopSoundboard",
-                description="Stop all currently playing MyInstants soundboard clips immediately.\n**Invocation Condition:** Call when asked to stop a clip or when it is disruptive.",
+                description="Stop ALL currently playing MyInstants soundboard clips immediately, including any pending repeats from playSoundboard or playRandomSoundboard. Works even if a batch of 25 sounds is in flight.\n**Invocation Condition:** Call when asked to stop a clip, stop the spam, or when sounds are disruptive.",
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
@@ -67,8 +89,11 @@ class SoundboardTools(BaseTool):
                 delay=float(args.get("delay", 1.0)),
             )
         elif name == "stopSoundboard":
+            cancelled = self._cancel_repeat_tasks()
             self.audio.stop_sfx()
-            return {"result": "ok"}
+            if cancelled:
+                logger.info(f"stopSoundboard: cancelled {cancelled} pending repeat task(s)")
+            return {"result": "ok", "cancelled_pending": cancelled}
         elif name == "playRandomSoundboard":
             return await self._play_random_sfx(
                 boost=int(args.get("boost", 0)),
@@ -111,10 +136,14 @@ class SoundboardTools(BaseTool):
         self.audio.play_sfx_file(filepath, boost=boost)
         if repeat > 1:
             async def _repeat_sfx():
-                for i in range(1, repeat):
-                    await asyncio.sleep(delay)
-                    self.audio.play_sfx_file(filepath, boost=boost)
-            asyncio.create_task(_repeat_sfx())
+                try:
+                    for i in range(1, repeat):
+                        await asyncio.sleep(delay)
+                        self.audio.play_sfx_file(filepath, boost=boost)
+                except asyncio.CancelledError:
+                    logger.info(f"playSoundboard: repeat loop cancelled for '{entry['title']}'")
+                    raise
+            self._track_repeat_task(_repeat_sfx())
         return {"result": "ok", "name": entry["title"], "boost": boost, "repeat": repeat}
 
     async def _play_random_sfx(self, boost=0, repeat=1, delay=1.0):
@@ -137,17 +166,21 @@ class SoundboardTools(BaseTool):
         if len(picks) > 1:
             remaining = picks[1:]
             async def _play_remaining():
-                for i, pick in enumerate(remaining):
-                    await asyncio.sleep(delay)
-                    if pick.get("_local"):
-                        fp = pick["mp3"]
-                    else:
-                        fp = await download_sound(pick["mp3"])
-                    if not fp:
-                        logger.warning(f"playRandomSoundboard: download failed for '{pick['title']}'")
-                        continue
-                    logger.info(f"playRandomSoundboard: [{i+2}/{repeat}] playing '{pick['title']}' (boost={boost})")
-                    self.audio.play_sfx_file(fp, boost=boost)
-            asyncio.create_task(_play_remaining())
+                try:
+                    for i, pick in enumerate(remaining):
+                        await asyncio.sleep(delay)
+                        if pick.get("_local"):
+                            fp = pick["mp3"]
+                        else:
+                            fp = await download_sound(pick["mp3"])
+                        if not fp:
+                            logger.warning(f"playRandomSoundboard: download failed for '{pick['title']}'")
+                            continue
+                        logger.info(f"playRandomSoundboard: [{i+2}/{repeat}] playing '{pick['title']}' (boost={boost})")
+                        self.audio.play_sfx_file(fp, boost=boost)
+                except asyncio.CancelledError:
+                    logger.info("playRandomSoundboard: remaining loop cancelled")
+                    raise
+            self._track_repeat_task(_play_remaining())
             played_names.extend(p["title"] for p in remaining)
         return {"result": "ok", "played": played_names, "count": len(played_names), "boost": boost}

@@ -25,6 +25,16 @@ Python-based system for running a live AI in VRChat. Handles real-time audio str
   - the `stable` tag
 - If there is **no GitHub Release** for the current commit or branch state, treat it as **not stable**. It may include recent changes that are not fully tested for long term use.
 
+### Experimental Branch: Fully Local Backend
+
+There is an active WIP branch [`local-llm-backend`](https://github.com/HoppouAI/ProjectGabriel-Remastered/tree/local-llm-backend) that replaces the Gemini Live cloud round-trip with a fully local pipeline:
+
+- **STT:** Moonshine + Silero VAD running on your GPU
+- **LLM:** any OpenAI-compatible endpoint (LM Studio, Ollama with the OpenAI shim, llama.cpp server, vLLM) with streaming tool calls, vision, and reasoning-model support (`<think>` tags stripped and surfaced as thought summaries the same way Gemini does)
+- **TTS:** any of the existing providers (qwen3, hoppou, chirp3_hd, tiktok) or the new [OmniVoice](https://github.com/HoppouAI/ProjectGabriel-Plugins/tree/main/omnivoice) plugin (600+ languages, voice cloning from a local wav)
+
+When enabled, no audio or text leaves your machine. The Discord bot still uses Gemini Live separately. Expect rough edges, breaking config changes, and partial feature parity until it lands on main.
+
 ### Download Stable Versions
 
 Use the Releases page to download stable snapshots:
@@ -503,6 +513,29 @@ There are three layers:
    `plugin_tools.<plugin>.<tool_name>`. Auto-populated on first run.
    Flip a tool to `false` and it's hidden from the model without
    disabling the rest of the plugin.
+
+### Plugin trust mode
+
+By default plugins get a sandboxed view of `config.yml`. They can read
+their own scoped settings under `plugins.<name>.*` via
+`ctx.plugin_config()` but reaching into `ctx.config.api_key`,
+`ctx.config.backup_keys`, the mongo connection string, vrchat
+password, discord token, etc raises `PermissionError`. This stops a
+rogue plugin from quietly exfiltrating your secrets.
+
+Some older plugins (like `diary`, which uses the main gemini api key
+for its background summarizer sub-agent) need that raw access. Flip
+the master trust switch in `config.yml`:
+
+```yaml
+plugins:
+  enabled: true
+  trusted: true   # let plugins read sensitive config like api_key
+```
+
+Default is `false`. Only enable it if you trust every plugin you've
+dropped into the `plugins/` folder, because any one of them will be
+able to read every secret in the file.
 
 ### Writing your own
 

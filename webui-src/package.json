@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node -e \"import('node:fs').then(({rmSync,readdirSync,existsSync})=>{const d='../webui/assets';if(!existsSync(d))return;for(const f of readdirSync(d)){if(/^main-.*\\.(js|css)$/.test(f))rmSync(d+'/'+f)}})\"",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

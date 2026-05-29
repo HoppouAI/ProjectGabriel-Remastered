@@ -1,4 +1,4 @@
-google-genai>=1.0.0
+google-genai==2.6.0
 pyaudio
 python-osc
 pyyaml
@@ -10,6 +10,7 @@ pedalboard
 ultralytics
 lap>=0.5.12
 bettercam
+opencv-python
 mss
 aiohttp
 beautifulsoup4
@@ -36,6 +37,7 @@ nltk
 websockets
 chromadb
 pymongo
+mutagen
 protobuf==3.20.3
 imageio-ffmpeg
 # local backend (only needed if backend: "local" in config.yml). NOT installed
