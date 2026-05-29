@@ -132,9 +132,15 @@ class NavigationMixin:
             if not preview.get("found"):
                 return preview
             self._ensure_explorer_for_follow()
-            # build cell-serial list -- include both full + filtered path
+            # prefer the line-of-sight filtered path (just the turn points) so
+            # the follower drives long straightaways and sprints between them
+            # instead of micro-turning at every voxel. raycast-assist handles
+            # local obstacle dodging. fall back to the full path if filtering
+            # collapsed it to nothing (very short hops).
+            filtered = preview.get("filtered") or []
             full = preview.get("full") or []
-            cells: list[tuple[int, int, int]] = [tuple(s) for s in full]  # type: ignore
+            chosen = filtered if len(filtered) >= 1 else full
+            cells: list[tuple[int, int, int]] = [tuple(s) for s in chosen]  # type: ignore
             try:
                 self._explorer.follow_path(cells, label=label or "goto",
                                            final_yaw_deg=final_yaw_deg)
