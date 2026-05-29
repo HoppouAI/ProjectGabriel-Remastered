@@ -299,7 +299,7 @@ class LocalLiveSession:
             raise RuntimeError(f"STT init failed: {err}")
         await self._llm.start()
 
-        logger.info("local backend connected (LM Studio + Moonshine)")
+        logger.info("local backend connected (OpenAI-compatible LLM + Moonshine)")
         _broadcast_console("info",
             f"Local backend ready (model={self.config.local_llm_model}, "
             f"stt={self.config.local_stt_model})")

@@ -162,7 +162,7 @@ class LMStudioClient:
             ) as resp:
                 if resp.status_code != 200:
                     body = await resp.aread()
-                    msg = f"LM Studio HTTP {resp.status_code}: {body.decode(errors='ignore')[:300]}"
+                    msg = f"local LLM HTTP {resp.status_code}: {body.decode(errors='ignore')[:300]}"
                     yield {"type": "error", "message": msg}
                     return
                 async for line in resp.aiter_lines():
@@ -212,10 +212,10 @@ class LMStudioClient:
         except asyncio.CancelledError:
             raise
         except httpx.RequestError as e:
-            yield {"type": "error", "message": f"LM Studio request failed: {e}"}
+            yield {"type": "error", "message": f"local LLM request failed (is your server at {self._base_url} running?): {e}"}
             return
         except Exception as e:
-            yield {"type": "error", "message": f"LM Studio stream error: {e}"}
+            yield {"type": "error", "message": f"local LLM stream error: {e}"}
             return
 
         if pending_tools:
