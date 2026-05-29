@@ -34,6 +34,7 @@ from src.voxel_nav import NodeType, Serial, VoxelNavManager, serial_to_center
 
 from .follow import FollowMixin
 from .motion import MotionMixin
+from .raycast_assist import RaycastAssistMixin
 from .state import ExplorerState
 from .targeting import TargetingMixin
 
@@ -41,7 +42,7 @@ from .targeting import TargetingMixin
 logger = logging.getLogger(__name__)
 
 
-class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin):
+class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin):
     """Drives the avatar via OSC to fill in `nav.graph` reference style.
 
     Call `tick(pose)` at ~20Hz from the same loop that calls
@@ -285,6 +286,14 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin):
         else:
             forward = 0.0
 
+        # raycast-assisted smoothing: only while following an A* path so the
+        # avatar flows around door frames/furniture instead of ramming them
+        # and stalling into a replan. frontier mapping deliberately skips this
+        # so it can still approach geometry to learn it.
+        ra_clearance = None
+        if self._follow_active:
+            turn, forward, ra_clearance = self._apply_raycast_assist(turn, forward, mag)
+
         # speed mode controls Run (sprint) + walk-mode dampener. we keep
         # the proportional forward scaling so the avatar doesnt overshoot
         # short single-cell hops and spin around to recover.
@@ -296,6 +305,9 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin):
             run = True
         else:  # "fast" (default)
             run = mag >= 2.0 or bool(getattr(self, "force_run", False))
+        # dont sprint straight into something close even if the cell is far
+        if ra_clearance is not None and ra_clearance < self.RA_RUN_MIN_CLEAR:
+            run = False
         self._send_osc(forward, turn, run=run)
 
         # --- eCount bookkeeping (reference WalkToTarget tail) ----------------
