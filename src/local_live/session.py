@@ -766,9 +766,14 @@ class LocalLiveSession:
 
     def _trim_history(self):
         keep = max(2, self.config.local_llm_history_messages)
-        # never drop a tool_calls/tool pair, so trim conservatively
         if len(self._history) > keep:
             self._history = self._history[-keep:]
+        # a blind slice can leave a dangling tool result at the head whose
+        # parent assistant(tool_calls) got cut. openai-compat servers (LM
+        # Studio included) 400 on a 'tool' message that doesn't follow a
+        # matching tool_calls, so drop any orphaned leading tool messages.
+        while self._history and self._history[0].get("role") == "tool":
+            self._history.pop(0)
 
     def _capture_screen_part(self):
         try:
