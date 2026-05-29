@@ -60,6 +60,14 @@ dependencies = [
     "nltk>=3.8.0",
     "chromadb>=1.0.0",
     "protobuf==3.20.3",
+]
+
+[project.optional-dependencies]
+# local LLM backend (LM Studio + Moonshine STT). only needed when
+# backend: "local" in config.yml. install with:  pip install .[local]
+# torch/torchaudio are already core deps (yolo + face tracking), and silero
+# VAD is fetched at runtime via torch.hub, so moonshine is the only extra.
+local = [
     "moonshine-voice==0.0.59",
 ]
 

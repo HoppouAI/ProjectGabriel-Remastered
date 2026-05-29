@@ -109,7 +109,9 @@ class MoonshineSTT:
             from moonshine_voice.transcriber import ModelArch, Transcriber
         except ImportError as e:
             self._load_error = (
-                "moonshine-voice not installed. run: pip install moonshine-voice==0.0.59"
+                "moonshine-voice not installed (it's an optional dep for the local "
+                "backend). run: pip install .[local]   or   "
+                "pip install moonshine-voice==0.0.59"
             )
             logger.error(self._load_error)
             raise RuntimeError(self._load_error) from e
