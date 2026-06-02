@@ -6,12 +6,13 @@ import json
 import logging
 import math
 import threading
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
 from .coords import Node, NodeType, Serial, serial_to_center, world_to_serial
 from .graph import Graph
-from .pathfinding import VoxelPathResult, find_path_astar
+from .pathfinding import VoxelPathResult, _neighbors, find_path_astar
 
 
 logger = logging.getLogger(__name__)
@@ -264,36 +265,50 @@ class VoxelNavManager:
     def check_stack(self, forward_xz: tuple[float, float],
                     blacklist: Optional[set[Serial]] = None,
                     ) -> Optional[tuple[Serial, Node]]:
-        """reference CheckStack: scan all Reachable nodes, find the one with the
-        closest-to-current unexplored cardinal neighbor. Returns
-        (target_serial, source_node) or None. `blacklist` skips candidate
-        target cells the caller has temporarily given up on."""
+        """Find the graph-nearest reachable cell that still has an unexplored
+        cardinal neighbor. BFS outward from `_current` over the actual
+        pathable graph using the same neighbor rules as the planner. This
+        gives vacuum-like coverage (finish the connected region you're in
+        before walking to a far-off pocket) instead of the old euclidean
+        scoring which would happily pick a frontier across a wall just
+        because it was closer in straight-line 3D."""
         if self._current is None:
             return None
-        cur_cx, cur_cy, cur_cz = serial_to_center(self._current.serial)
+        start = self._current.serial
+        cur_cx, cur_cy, cur_cz = serial_to_center(start)
+        visited: set[Serial] = {start}
+        queue: deque[tuple[Serial, int]] = deque([(start, 0)])
+        max_visits = 10000
         best: Optional[tuple[Serial, Node]] = None
+        best_steps = math.inf
         best_d = math.inf
-        with self.graph._lock:  # noqa: SLF001
-            items = list(self.graph.nodes.values())
-        for src in items:
-            if src.node_type != NodeType.REACHABLE:
+        while queue:
+            serial, steps = queue.popleft()
+            node = self.graph.get(serial)
+            if node is None or node.node_type != NodeType.REACHABLE:
                 continue
-            cand = self.choose_discovery_target(src, forward_xz)
-            if cand is None:
+            cand = self.choose_discovery_target(node, forward_xz)
+            if cand is not None and (blacklist is None or cand not in blacklist):
+                cx, cy, cz = serial_to_center(cand)
+                dx = cx - cur_cx
+                dy = cy - cur_cy
+                dz = cz - cur_cz
+                d = dx * dx + dy * dy + dz * dz
+                if steps < best_steps or (steps == best_steps and d < best_d):
+                    best_steps = steps
+                    best_d = d
+                    best = (cand, node)
+                # once we've found a frontier at depth N, finish draining
+                # depth N for the euclidean tie-break and then stop.
+                if best_steps < math.inf and steps > best_steps:
+                    break
+            if len(visited) >= max_visits:
                 continue
-            if blacklist is not None and cand in blacklist:
-                continue
-            cx, cy, cz = serial_to_center(cand)
-            dx = cx - cur_cx
-            dy = cy - cur_cy
-            dz = cz - cur_cz
-            # full 3d distance so floors above/below dont look closer than a
-            # cell that's actually walkable to from where we are. matches the
-            # reference NodeManager.CheckStack scoring.
-            d = dx * dx + dy * dy + dz * dz
-            if d < best_d:
-                best_d = d
-                best = (cand, src)
+            for nb, _cost in _neighbors(self.graph, serial):
+                if nb in visited:
+                    continue
+                visited.add(nb)
+                queue.append((nb, steps + 1))
         return best
 
     def is_pathable_neighbor(self, a: Serial, b: Serial) -> bool:
