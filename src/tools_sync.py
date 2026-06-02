@@ -67,8 +67,8 @@ Examples:
   tools:
     vrchatJump: false        # disables a single built-in tool
   plugin_tools:
-    suno:
-      generateSong: false    # plugin still loads, but this tool is hidden
+    example_plugin:
+      someTool: false        # plugin still loads, but this tool is hidden
 """
 
 
@@ -76,7 +76,7 @@ class _PermissiveCfg:
     """A stand in config that says yes to everything.
 
     Lots of tools self-gate inside `declarations()` based on whether some
-    config flag is on (discord, social, suno, vrchat api, etc). For the
+    config flag is on (discord, social, vrchat api, etc). For the
     purpose of enumerating what tools EXIST so we can list them in
     tools.yml we want them all to show up. So we hand them this stub
     instead of the real Config.

@@ -156,7 +156,7 @@ class AudioManager:
         )
 
     def is_music_playing(self) -> bool:
-        """Check if music is currently playing (pygame or external like Suno)."""
+        """Check if music is currently playing (pygame or an external source)."""
         if self._external_music_active:
             return True
         if not self._pygame_ready:
@@ -164,7 +164,7 @@ class AudioManager:
         return pygame.mixer.music.get_busy() or pygame.mixer.get_busy()
 
     def set_external_music_active(self, active: bool):
-        """Mark that an external music source (e.g. Suno) is producing audio.
+        """Mark that an external music source is producing audio.
         This makes is_music_playing() return True so the voice fade applies
         and other systems (idle chatbox, animations) yield."""
         if active and not self._external_music_active:
@@ -466,11 +466,11 @@ class AudioManager:
         
         Returns:
             dict with keys: name, position, duration, progress (0.0-1.0)
-            or None if no music playing (or only external source like Suno)
+            or None if no music playing (or only an external source)
         """
         if self._music_start_time is None:
             return None
-        # External-only music (Suno) reports progress via its own manager
+        # External-only music reports progress via its own manager
         if self._external_music_active and self._current_song_name is None:
             return None
         

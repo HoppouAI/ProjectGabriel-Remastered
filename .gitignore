@@ -215,7 +215,7 @@ sfx/music/*.ogg
 sfx/music/*.flac
 sfx/music/*.m4a
 !sfx/music/.gitkeep
-/sfx/music/suno
+/sfx/music/generated
 /old_stuff
 
 # Plugins: only the authoring guide stays in this repo. Actual plugins

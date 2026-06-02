@@ -24,8 +24,8 @@
 #   tools:
 #     vrchatJump: false      # disables a single built-in tool
 #   plugin_tools:
-#     suno:
-#       generateSong: false  # plugin still loads, but this tool is hidden
+#     example_plugin:
+#       someTool: false      # plugin still loads, but this tool is hidden
 
 tools: {}
 plugin_tools: {}

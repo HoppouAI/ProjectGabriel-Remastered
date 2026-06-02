@@ -70,7 +70,7 @@ def discover_tool_registry() -> dict:
         pm = None
 
     # A stub config that says "yes" to everything so tools that gate
-    # their own declarations() (discord, social, suno, etc.) still
+    # their own declarations() (discord, social, etc.) still
     # show up in the WebUI for the operator to toggle.
     class _StubCfg:
         def get(self, *keys, default=None):
