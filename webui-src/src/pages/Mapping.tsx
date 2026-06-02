@@ -1208,7 +1208,7 @@ const _dummy = new THREE.Object3D()
 function packCells(
   mesh: THREE.InstancedMesh | undefined,
   cells: [number, number, number][],
-  scene?: THREE.Scene,
+  _scene?: THREE.Scene,
 ): THREE.InstancedMesh | undefined {
   if (!mesh) return mesh
   let target = mesh
@@ -1220,9 +1220,12 @@ function packCells(
     const grown = new THREE.InstancedMesh(mesh.geometry, mesh.material, newCap)
     grown.frustumCulled = mesh.frustumCulled
     grown.count = 0
-    if (scene) {
-      scene.add(grown)
-      scene.remove(mesh)
+    // reparent to whatever group the old mesh lived in (worldGroup, not
+    // scene root) so the Z-flip and any future transforms still apply.
+    const parent = mesh.parent
+    if (parent) {
+      parent.add(grown)
+      parent.remove(mesh)
     }
     mesh.dispose()
     target = grown
