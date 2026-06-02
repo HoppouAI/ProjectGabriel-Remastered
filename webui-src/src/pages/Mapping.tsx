@@ -129,16 +129,28 @@ export default function Mapping({ onToast }: Props) {
     dir.position.set(5, 10, 5)
     scene.add(dir)
 
+    // unity is left-handed (X right, Y up, Z forward) but three.js is
+    // right-handed (Z is toward the camera, so unity-forward is -Z here).
+    // wrap every world-space object in a group with scale.z = -1 so the
+    // displayed map matches what you see in VRChat without having to
+    // orbit underneath and spin 180. anything outside this group (camera,
+    // lights, axes helper) stays in pure three.js space.
+    const worldGroup = new THREE.Group()
+    worldGroup.scale.z = -1
+    scene.add(worldGroup)
+
     const grid = new THREE.GridHelper(60, 120, 0x223344, 0x152128)
     ;(grid.material as THREE.Material).transparent = true
     ;(grid.material as THREE.Material).opacity = 0.55
-    scene.add(grid)
+    worldGroup.add(grid)
     scene.add(new THREE.AxesHelper(1.2))
 
     const geo = new THREE.BoxGeometry(CELL * 0.95, CELL * 0.95, CELL * 0.95)
-    const matReach = new THREE.MeshLambertMaterial({ color: 0x4ade80, transparent: true, opacity: 0.85 })
-    const matWall = new THREE.MeshLambertMaterial({ color: 0xf87171, transparent: true, opacity: 0.55 })
-    const matIffy = new THREE.MeshLambertMaterial({ color: 0xfacc15, transparent: true, opacity: 0.7 })
+    // DoubleSide because the parent group's negative Z scale flips the
+    // box face winding, default FrontSide would render the cubes inside-out
+    const matReach = new THREE.MeshLambertMaterial({ color: 0x4ade80, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+    const matWall = new THREE.MeshLambertMaterial({ color: 0xf87171, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+    const matIffy = new THREE.MeshLambertMaterial({ color: 0xfacc15, transparent: true, opacity: 0.7, side: THREE.DoubleSide })
     const meshReach = new THREE.InstancedMesh(geo, matReach, CAP)
     const meshWall = new THREE.InstancedMesh(geo, matWall, CAP)
     const meshIffy = new THREE.InstancedMesh(geo, matIffy, CAP)
@@ -150,35 +162,35 @@ export default function Mapping({ onToast }: Props) {
     meshReach.frustumCulled = false
     meshWall.frustumCulled = false
     meshIffy.frustumCulled = false
-    scene.add(meshReach, meshWall, meshIffy)
+    worldGroup.add(meshReach, meshWall, meshIffy)
 
     const playerGeo = new THREE.ConeGeometry(0.18, 0.5, 12)
     playerGeo.rotateX(Math.PI / 2)
     const player = new THREE.Mesh(playerGeo, new THREE.MeshBasicMaterial({ color: 0x38bdf8 }))
     player.visible = false
-    scene.add(player)
+    worldGroup.add(player)
 
     const target = new THREE.Mesh(
       new THREE.BoxGeometry(CELL, CELL, CELL),
       new THREE.MeshBasicMaterial({ color: 0xfb923c, wireframe: true }),
     )
     target.visible = false
-    scene.add(target)
+    worldGroup.add(target)
 
     // invisible ground plane for raycasting clicks into the world
     const plane = new THREE.Mesh(
       new THREE.PlaneGeometry(200, 200),
-      new THREE.MeshBasicMaterial({ visible: false }),
+      new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }),
     )
     plane.rotation.x = -Math.PI / 2
-    scene.add(plane)
+    worldGroup.add(plane)
 
     // path line geometry, updated dynamically
     const pathGeo = new THREE.BufferGeometry()
     pathGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
     const pathMat = new THREE.LineBasicMaterial({ color: 0xa78bfa, linewidth: 3 })
     const pathLine = new THREE.Line(pathGeo, pathMat)
-    scene.add(pathLine)
+    worldGroup.add(pathLine)
 
     let raf = 0
     const animate = () => {
@@ -240,15 +252,19 @@ export default function Mapping({ onToast }: Props) {
         if (refs.player && s.pose) {
           refs.player.visible = true
           refs.player.position.set(s.pose.x, s.pose.y + 0.5, s.pose.z)
-          // unity yaw is atan2(forward.x, forward.z) in a left handed space.
-          // we plug unity x/z straight into three.js (right handed), so the
-          // Y rotation reads positive, not negated. cone geometry was
-          // pre-rotated so its tip points along +Z at yaw=0.
+          // player sits inside worldGroup (scale.z = -1). the cone tip was
+          // pre-rotated to local +Z, so applying yaw about Y in local space
+          // and then letting the parent flip Z gives the correct visible
+          // facing for left-handed unity yaw without negating here.
           refs.player.rotation.y = s.pose.yaw * Math.PI / 180
           if (!refs.firstPose && refs.camera && refs.controls) {
             refs.firstPose = true
-            refs.controls.target.set(s.pose.x, s.pose.y, s.pose.z)
-            refs.camera.position.set(s.pose.x + 5, s.pose.y + 6, s.pose.z + 5)
+            // camera and controls live at scene root (NOT inside worldGroup),
+            // so we negate Z to match the post-flip visual position of the
+            // player. otherwise the first frame puts the camera looking at
+            // empty space on the opposite side of the map.
+            refs.controls.target.set(s.pose.x, s.pose.y, -s.pose.z)
+            refs.camera.position.set(s.pose.x + 5, s.pose.y + 6, -s.pose.z + 5)
           }
         } else if (refs.player) {
           refs.player.visible = false
@@ -416,8 +432,11 @@ export default function Mapping({ onToast }: Props) {
     const hit = refs.raycaster.intersectObject(refs.plane)[0]
     if (!hit) return
     try {
+      // hit.point is three.js world space, but the plane lives inside the
+      // Z-flipped worldGroup so its visible position matches voxels. the
+      // server expects unity coordinates (un-flipped Z), so negate.
       const res = await api<PathResult>('/api/mapping/pathfind', 'POST', {
-        x: hit.point.x, y: hit.point.y, z: hit.point.z,
+        x: hit.point.x, y: hit.point.y, z: -hit.point.z,
       })
       setPath(res)
       if (!res.found) onToast(`pathfind: ${res.reason ?? 'no path'}`, 'warn')
@@ -484,15 +503,19 @@ export default function Mapping({ onToast }: Props) {
       for (let i = 0; i < n; i++) {
         mesh.getMatrixAt(i, tmp)
         pos.setFromMatrixPosition(tmp)
-        ndc.copy(pos).project(refs.camera)
+        // serial is read from the unscaled local matrix translation, so this
+        // is still correct after moving meshes into the Z-flipped worldGroup.
+        const cx = Math.floor(pos.x / CELL)
+        const cy = Math.floor(pos.y / CELL)
+        const cz = Math.floor(pos.z / CELL)
+        // projection needs world space though, so apply the mesh's world
+        // matrix (which now includes the parent's Z flip) before project().
+        ndc.copy(pos).applyMatrix4(mesh.matrixWorld).project(refs.camera)
         // behind the camera
         if (ndc.z < -1 || ndc.z > 1) continue
         const sx_px = (ndc.x * 0.5 + 0.5) * rect.width
         const sy_px = (-ndc.y * 0.5 + 0.5) * rect.height
         if (sx_px < minX || sx_px > maxX || sy_px < minY || sy_px > maxY) continue
-        const cx = Math.floor(pos.x / CELL)
-        const cy = Math.floor(pos.y / CELL)
-        const cz = Math.floor(pos.z / CELL)
         const key = `${cx},${cy},${cz}`
         if (seen.has(key)) continue
         seen.add(key)
