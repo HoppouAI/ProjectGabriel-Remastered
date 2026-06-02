@@ -233,10 +233,25 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
                     return
             if s.target is None:
                 if current.node_type != NodeType.REACHABLE:
+                    # avatar is grounded and standing inside this cell, so
+                    # by definition it isnt a wall. observe() intentionally
+                    # doesnt re-promote walls because pose noise can land
+                    # us "inside" geometry for a frame, but if we sit here
+                    # for a couple seconds its a real standing position
+                    # and leaving it tagged stalls exploration forever.
+                    if s.wait_reachable_since == 0.0:
+                        s.wait_reachable_since = time.time()
+                    elif time.time() - s.wait_reachable_since > 2.0:
+                        logger.info("voxel_explorer: promoting current cell %s "
+                                    "to REACHABLE after standing on it (was %s)",
+                                    current.serial, current.node_type.name)
+                        self.nav.set_cell_type(current.serial, NodeType.REACHABLE)
+                        s.wait_reachable_since = 0.0
                     self._send_osc(0.0, 0.0, run=False)
                     s.action = "wait_reachable"
                     self._last_pose = (pose_x, pose_z, fx, fz)
                     return
+                s.wait_reachable_since = 0.0
                 self._choose_target(current, (fx, fz))
                 if s.target is None:
                     self._send_osc(0.0, 0.0, run=False)

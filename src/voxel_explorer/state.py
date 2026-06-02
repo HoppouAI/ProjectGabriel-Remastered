@@ -25,3 +25,8 @@ class ExplorerState:
     # picking a frontier further away.
     consec_giveups_in_cell: int = 0
     giveup_cell: Optional[Serial] = None
+    # wallclock when we first noticed the avatar standing in a non-reachable
+    # cell with no target. used to time out and promote the cell to REACHABLE
+    # so we dont sit in wait_reachable forever after walking into a stale
+    # UnReachable mark.
+    wait_reachable_since: float = 0.0
