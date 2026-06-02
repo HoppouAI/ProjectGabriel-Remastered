@@ -39,9 +39,10 @@ interface SavedWorld { world: string; size_kb: number; is_current: boolean }
 
 const CELL = 0.25
 const HALF = CELL / 2
-// starting capacity per InstancedMesh. packCells grows past this on demand
-// (big worlds can easily blow past 12k cells per type).
-const CAP = 16000
+// starting capacity per InstancedMesh. packCells grows past this on demand,
+// this is just the headroom for first paint. set high enough that most
+// medium worlds never hit a reallocation while mapping.
+const CAP = 65536
 
 interface Props {
   onToast: (msg: string, level?: string) => void
