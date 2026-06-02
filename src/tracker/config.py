@@ -10,7 +10,7 @@ DEFAULT_CFG = {
     "confidence_threshold": 0.40,
     "iou_threshold": 0.45,
     "target_area": 0.04,
-    "sprint_area": 0.015,
+    "sprint_area": 0.025,
     "deadzone": 0.07,
     "smoothing_alpha": 0.40,
     "turn_gain": 1.8,
@@ -22,6 +22,11 @@ DEFAULT_CFG = {
     "max_detections": 10,
     "forward_scale_min": 0.5,
     "forward_scale_max": 0.7,
+    # full forward axis while actively sprinting so VRChat doesnt cap us at walk
+    "sprint_forward_axis": 1.0,
+    # hysteresis: must drop below sprint_area to start, must climb back above
+    # this fraction of target_area to stop. avoids on/off flicker at the edge.
+    "sprint_release_area_ratio": 0.6,
     "strafe_threshold": 0.25,
     "strafe_scale": 0.6,
     "too_close_area": 0.072,

@@ -21,6 +21,7 @@ _YOLO_CFG_KEYS = {
     "deadzone", "smoothing_alpha", "turn_gain", "max_turn_rate",
     "center_distance_weight", "area_weight", "lock_timeout", "reacquire_threshold",
     "max_detections", "forward_scale_min", "forward_scale_max",
+    "sprint_forward_axis", "sprint_release_area_ratio",
     "strafe_threshold", "strafe_scale", "too_close_area", "backup_scale",
 }
 

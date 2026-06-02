@@ -152,8 +152,20 @@ class DetectionMixin:
         else:
             raw_forward = 0.0
 
-        # sprint when target is very far away
-        self._sprinting = target["area"] < sprint_area and raw_forward > 0.3
+        # sprint when target is far away. hysteresis so we dont flicker:
+        # drop below sprint_area to engage, climb above release_area to drop.
+        release_ratio = cfg.get("sprint_release_area_ratio", 0.6)
+        release_area = target_area * release_ratio
+        if not self._sprinting:
+            if target["area"] < sprint_area and raw_forward > 0.3:
+                self._sprinting = True
+        else:
+            if target["area"] >= release_area or raw_forward <= 0.0:
+                self._sprinting = False
+        # while actively sprinting, push the forward axis to its sprint value
+        # so VRChat actually runs instead of capping at the walk-speed scale.
+        if self._sprinting and raw_forward > 0.0:
+            raw_forward = float(cfg.get("sprint_forward_axis", 1.0))
 
         new_look_h = self._smoothed_look_h * (1 - alpha) + raw_look_h * alpha
         new_look_v = self._smoothed_look_v * (1 - alpha) + raw_look_v * alpha
