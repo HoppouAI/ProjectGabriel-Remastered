@@ -267,6 +267,12 @@ async def main(save_audio=False):
                 # let the wanderer use the voxel map for curiosity exploration
                 if wanderer:
                     wanderer._mapping_service_ref = shared_state["mapping_service"]
+                # idle chatbox shows live mapping stats when its running
+                try:
+                    if getattr(session, "_idle_chatbox", None):
+                        session._idle_chatbox.set_mapping_service(shared_state["mapping_service"])
+                except Exception:
+                    pass
             except Exception as _e:
                 logger.warning(f"mapping service unavailable: {_e}")
         except ImportError:
