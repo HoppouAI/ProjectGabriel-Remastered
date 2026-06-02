@@ -95,6 +95,37 @@ class TargetingMixin:
         s = self.state
         failed = s.target
         cur = self.nav.current
+        # track consecutive give-ups while parked in the same voxel. when
+        # this climbs we are perched somewhere with unreachable frontier
+        # cells in every direction (top of an obstacle, narrow ledge, etc).
+        # blacklisting a radius of nearby cells forces the BFS frontier
+        # picker to find work further away so the AI walks off the perch
+        # instead of marking every adjacent cell unreachable forever.
+        if cur is not None:
+            if s.giveup_cell == cur.serial:
+                s.consec_giveups_in_cell += 1
+            else:
+                s.giveup_cell = cur.serial
+                s.consec_giveups_in_cell = 1
+        if cur is not None and s.consec_giveups_in_cell >= 3:
+            cx, cy, cz = cur.serial
+            now_m = time.monotonic()
+            radius = 2
+            count = 0
+            for ddx in range(-radius, radius + 1):
+                for ddy in range(-radius, radius + 1):
+                    for ddz in range(-radius, radius + 1):
+                        if ddx == 0 and ddy == 0 and ddz == 0:
+                            continue
+                        cand = (cx + ddx, cy + ddy, cz + ddz)
+                        if self.nav.graph.get(cand) is not None:
+                            continue
+                        self._abandoned[cand] = now_m + self._abandon_ttl
+                        count += 1
+            logger.info("voxel_explorer: stuck on %s for %d give-ups, "
+                        "blacklisting %d nearby unmapped cells (%s)",
+                        cur.serial, s.consec_giveups_in_cell, count, why)
+            s.consec_giveups_in_cell = 0
         if failed is not None and self.learning_mode:
             is_neighbor = (cur is not None
                            and self.nav.is_pathable_neighbor(cur.serial, failed))

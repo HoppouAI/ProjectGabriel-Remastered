@@ -330,6 +330,10 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
         if s.last_cell is None or s.last_cell != cur_serial:
             s.last_cell = cur_serial  # reuse field, stores serial now
             s.last_progress_t = now
+            # we actually moved between voxels, so the perch-stuck counter
+            # should reset; the next give-up here is unrelated to the last.
+            s.consec_giveups_in_cell = 0
+            s.giveup_cell = None
         stuck_for = now - s.last_progress_t
 
         s.action = (f"walk d={mag:.2f} e={s.e_count:.0f} "
