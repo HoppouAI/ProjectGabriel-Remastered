@@ -71,7 +71,21 @@ class StateMixin:
 
     def get_world_cells(self) -> dict:
         """Return all cells split by type. Heavy -- caller should poll
-        slowly. Each cell is [sx, sy, sz]."""
+        slowly. Each cell is [sx, sy, sz].
+
+        The payload is cached and only rebuilt when the graph revision (or
+        the active world) actually changes, so idle polling over a 100k+
+        cell map is basically free instead of re-iterating every node and
+        re-encoding a multi-megabyte response several times a second."""
+        try:
+            rev = self._nav.graph.revision
+        except Exception:
+            rev = -1
+        world = self._world_id
+        cache = getattr(self, "_world_cells_cache", None)
+        if (cache is not None and cache[0] == world and cache[1] == rev):
+            return cache[2]
+
         reach: list[list[int]] = []
         wall: list[list[int]] = []
         iffy: list[list[int]] = []
@@ -87,8 +101,10 @@ class StateMixin:
                         iffy.append(item)
         except Exception:
             logger.exception("mapping: get_world_cells failed")
-        return {"world": self._world_id, "reach": reach,
-                "wall": wall, "iffy": iffy}
+        payload = {"world": world, "rev": rev, "reach": reach,
+                   "wall": wall, "iffy": iffy}
+        self._world_cells_cache = (world, rev, payload)
+        return payload
 
     def follow_status(self) -> dict:
         if self._explorer is None:

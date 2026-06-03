@@ -23,6 +23,7 @@ interface MappingState {
 }
 interface WorldCells {
   world: string
+  rev?: number
   reach: [number, number, number][]
   wall: [number, number, number][]
   iffy: [number, number, number][]
@@ -95,6 +96,8 @@ export default function Mapping({ onToast }: Props) {
     grid?: THREE.GridHelper
     raycaster?: THREE.Raycaster
     firstPose?: boolean
+    lastRev?: number
+    lastWorld?: string
     dispose?: () => void
   }>({})
 
@@ -297,6 +300,17 @@ export default function Mapping({ onToast }: Props) {
       try {
         const w = await api<WorldCells>('/api/mapping/world')
         if (!alive) return
+        // skip the heavy InstancedMesh repack when the map hasnt changed
+        // since the last poll. on a 100k+ cell world this is the difference
+        // between a smooth panel and one that hitches every poll.
+        const rev = w.rev
+        const refsRev = sceneRefs.current
+        if (rev !== undefined && rev === refsRev.lastRev
+            && w.world === refsRev.lastWorld) {
+          return
+        }
+        refsRev.lastRev = rev ?? -1
+        refsRev.lastWorld = w.world
         const refs = sceneRefs.current
         refs.meshReach = packCells(refs.meshReach, w.reach, refs.scene)
         refs.meshWall = packCells(refs.meshWall, w.wall, refs.scene)

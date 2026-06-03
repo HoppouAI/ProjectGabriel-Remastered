@@ -181,6 +181,7 @@ class VoxelNavManager:
                 self.graph.add_node(node)
             else:
                 node.node_type = NodeType.UNREACHABLE
+                self.graph.bump()
             self._dirty = True
 
     def mark_iffy(self, serial: Serial) -> None:
@@ -195,6 +196,7 @@ class VoxelNavManager:
                 self.graph.add_node(node)
             elif node.node_type == NodeType.REACHABLE:
                 node.node_type = NodeType.IFFY
+                self.graph.bump()
             self._dirty = True
 
     def set_cell_type(self, serial: Serial, node_type: NodeType) -> Node:
@@ -207,6 +209,7 @@ class VoxelNavManager:
                 self.graph.add_node(node)
             else:
                 node.node_type = node_type
+                self.graph.bump()
             self._dirty = True
             return node
 

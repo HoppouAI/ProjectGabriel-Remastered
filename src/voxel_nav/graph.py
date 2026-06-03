@@ -15,18 +15,34 @@ class Graph:
     def __init__(self):
         self._nodes: dict[Serial, Node] = {}
         self._lock = threading.RLock()
+        # monotonic change counter, bumped on any mutation. lets the WebUI
+        # state layer cache the heavy world-cells payload and skip rebuilding
+        # it (and re-iterating 100k+ nodes) when nothing actually changed.
+        self._rev = 0
 
     @property
     def nodes(self) -> dict[Serial, Node]:
         return self._nodes
 
+    @property
+    def revision(self) -> int:
+        return self._rev
+
+    def bump(self) -> None:
+        """Mark the graph as changed without adding/removing a node, e.g.
+        when a node's type is flipped in place."""
+        with self._lock:
+            self._rev += 1
+
     def add_node(self, node: Node) -> None:
         with self._lock:
             self._nodes[node.serial] = node
+            self._rev += 1
 
     def remove_node(self, serial: Serial) -> None:
         with self._lock:
             self._nodes.pop(serial, None)
+            self._rev += 1
 
     def find_node(self, x: float, y: float, z: float) -> Optional[Node]:
         s = world_to_serial(x, y, z)

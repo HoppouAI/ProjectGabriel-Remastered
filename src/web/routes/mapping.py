@@ -32,12 +32,12 @@ def _get_mapping():
 
 @router.get("/api/mapping/state")
 async def mapping_state():
-    return _get_mapping().get_state()
+    return await asyncio.to_thread(_get_mapping().get_state)
 
 
 @router.get("/api/mapping/world")
 async def mapping_world():
-    return _get_mapping().get_world_cells()
+    return await asyncio.to_thread(_get_mapping().get_world_cells)
 
 
 @router.post("/api/mapping/start")
