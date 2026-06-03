@@ -210,6 +210,68 @@ class VoxelNavManager:
             self._dirty = True
             return node
 
+    def fill_interior_gaps(self, *, min_support: int = 3,
+                           max_fill: int = 5000) -> int:
+        """Morphological hole-fill. The map is built passively from where
+        the avatar physically walks, so it's impossible to step on every
+        0.25m voxel and the floor ends up speckled with single-cell holes.
+
+        An empty cell (not in the graph at all, so neither floor nor a
+        known wall) that is hemmed in on `min_support` of its 4 cardinal
+        XZ sides by Reachable floor is almost certainly walkable floor we
+        just never landed on. Promote it.
+
+        Conservative on purpose:
+          - only truly empty cells, never touches walls/iffy
+          - needs >= min_support (default 3 of 4) cardinal reachable
+            neighbors, so it closes interior holes and pinches but won't
+            bridge a 1-wide gap across open space or punch through a wall
+            line (a wall side reads as not-reachable)
+          - +/-1 Y tolerance per side so uneven floors / stair lips still
+            count as support
+        Returns the number of cells filled."""
+        with self._lock:
+            with self.graph._lock:  # noqa: SLF001
+                reach = [s for s, n in self.graph.nodes.items()
+                         if n.node_type == NodeType.REACHABLE]
+                present = set(self.graph.nodes.keys())
+
+            def support_y(cell: Serial) -> Optional[int]:
+                """Reachable at this XZ within +/-1 Y? return the matching Y."""
+                cx, cy, cz = cell
+                for ddy in (0, 1, -1):
+                    n = self.graph.get((cx, cy + ddy, cz))
+                    if n is not None and n.node_type == NodeType.REACHABLE:
+                        return cy + ddy
+                return None
+
+            # candidate empty cells = cardinal neighbors of reachable floor
+            candidates: set[Serial] = set()
+            for sx, sy, sz in reach:
+                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    cand = (sx + dx, sy, sz + dz)
+                    if cand not in present:
+                        candidates.add(cand)
+
+            to_fill: list[Serial] = []
+            for cand in candidates:
+                cx, cy, cz = cand
+                support = 0
+                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    if support_y((cx + dx, cy, cz + dz)) is not None:
+                        support += 1
+                if support >= min_support:
+                    to_fill.append(cand)
+                    if len(to_fill) >= max_fill:
+                        break
+
+            for cell in to_fill:
+                self.graph.add_node(Node(serial=cell,
+                                         node_type=NodeType.REACHABLE))
+            if to_fill:
+                self._dirty = True
+            return len(to_fill)
+
     def delete_cell(self, serial: Serial) -> bool:
         """Manual delete from the WebUI editor. Returns True if a cell was
         actually removed."""

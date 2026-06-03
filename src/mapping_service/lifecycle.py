@@ -205,6 +205,7 @@ class LifecycleMixin:
     def _run(self) -> None:
         last_flush = time.time()
         last_world_check = 0.0
+        last_gap_fill = time.time()
         while not self._stop_evt.is_set():
             reader = self._reader
             if reader is None:
@@ -266,6 +267,20 @@ class LifecycleMixin:
                 if now - last_flush >= 5.0:
                     self._nav.flush()
                     last_flush = now
+                # periodic interior hole-fill while actively exploring. the
+                # passive footstep map always speckles the floor with single
+                # cell gaps; close them every 20s so coverage looks solid and
+                # the frontier picker stops chasing un-walkable interior holes.
+                if (self._explore_enabled and self._explorer is not None
+                        and now - last_gap_fill >= 20.0):
+                    last_gap_fill = now
+                    try:
+                        filled = self._nav.fill_interior_gaps()
+                        if filled:
+                            logger.info("mapping: hole-fill closed %d interior "
+                                        "gap cells", filled)
+                    except Exception:
+                        logger.exception("mapping: hole-fill failed")
             except Exception:
                 logger.exception("mapping: tick failed")
             interval = 1.0 / max(1.0, min(self._tick_hz, 120.0))

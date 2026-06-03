@@ -179,5 +179,40 @@ class TestManagerLearningAndPersistence(unittest.TestCase):
         self.assertEqual(result.serials[-1], (0, 0, 0))
 
 
+class TestFillInteriorGaps(unittest.TestCase):
+    def test_fills_single_cell_hole(self):
+        mgr = VoxelNavManager(data_dir=tempfile.mkdtemp(), learning_mode=True)
+        mgr.load_world("wrld_gap")
+        # 3x3 floor patch with the center cell missing
+        for x in range(3):
+            for z in range(3):
+                if (x, z) == (1, 1):
+                    continue
+                mgr.graph.add_node(Node(serial=(x, 0, z),
+                                        node_type=NodeType.REACHABLE))
+        filled = mgr.fill_interior_gaps()
+        self.assertEqual(filled, 1)
+        self.assertIn((1, 0, 1), mgr.graph)
+
+    def test_skips_edge_and_walls(self):
+        mgr = VoxelNavManager(data_dir=tempfile.mkdtemp(), learning_mode=True)
+        mgr.load_world("wrld_gap2")
+        # straight line of floor: the empty cells beside it only have 1
+        # cardinal reachable neighbor, so nothing should be filled
+        for x in range(4):
+            mgr.graph.add_node(Node(serial=(x, 0, 0),
+                                    node_type=NodeType.REACHABLE))
+        # an explicit wall hole should never be promoted
+        mgr.graph.add_node(Node(serial=(1, 0, 1),
+                                node_type=NodeType.UNREACHABLE))
+        before = len(mgr.graph)
+        filled = mgr.fill_interior_gaps()
+        self.assertEqual(filled, 0)
+        self.assertEqual(len(mgr.graph), before)
+        self.assertEqual(mgr.graph.get((1, 0, 1)).node_type,
+                         NodeType.UNREACHABLE)
+
+
 if __name__ == "__main__":
     unittest.main()
+
