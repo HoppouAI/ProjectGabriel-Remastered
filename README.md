@@ -46,11 +46,11 @@ Most of the well known VRChat AI companions out there are either closed source, 
     <td>🌐</td>
     <td><strong>WebUI dashboard</strong><br>A clean browser dashboard with live console output, memory management, vision controls, mapping view, waypoints, and OBS overlay support.</td>
     <td>🔌</td>
-    <td><strong>Plugin system</strong><br>Extend Gabriel with drop-in plugins. Add new tools, custom voices, chatbox widgets, or hook into events. Official plugins in a separate repo.</td>
+    <td><strong>Plugin system</strong><br>Extend Gabriel with drop-in plugins. Add new tools, custom voices, chatbox widgets, or hook into events. [Official Plugins](https://github.com/HoppouAI/ProjectGabriel-Plugins) in a separate repo.</td>
   </tr>
   <tr>
     <td>💬</td>
-    <td><strong>Discord bot</strong><br>Gabriel hangs out in your Discord server too, with his own voice session. Reads messages, replies naturally, and keeps track of each channel separately.</td>
+    <td><strong>Discord bot</strong><br>Gabriel hangs out in your Discord server too, with his own Gemini session. Reads messages, replies naturally, and keeps track of each channel separately.</td>
     <td>🔗</td>
     <td><strong>VRChat API</strong><br>Search and switch avatars, look up friends, find worlds, update your status, send friend requests, and invite people to your instance.</td>
   </tr>
@@ -187,7 +187,7 @@ Add backup API keys under `gemini` &rarr; `backup_keys` in `config.yml`. Gabriel
 <details>
 <summary><strong>"The AI can't hear me" / "It never responds"</strong></summary>
 
-Check your audio routing in the Windows Volume Mixer. Python's output should go to `CABLE Input`, and VRChat's microphone should be set to `CABLE Output`. Also make sure the correct microphone is selected in the WebUI audio device dropdown (it's the Hi-Fi Cable for your mic input).
+Check your audio routing in the Windows Volume Mixer. Python's output should go to `CABLE Input`, and VRChat's microphone should be set to `CABLE Output`.
 
 If routing looks right, try lowering `silence_duration_ms` under `gemini` &rarr; `vad`. 200ms is the default and works well for natural conversation.
 
@@ -214,10 +214,10 @@ If you're on an ARM machine (Snapdragon X, etc), some packages like `pyaudio` ma
 <details>
 <summary><strong>"How do I enable the GPU for faster vision/YOLO?"</strong></summary>
 
-Run `setup.bat` and choose option 2 (NVIDIA GPU) or manually swap in CUDA PyTorch:
+Run `setup.bat` and choose option 2 (NVIDIA GPU ONLY) or manually swap in CUDA PyTorch:
 
 ```bash
-.venv\Scripts\python.exe -m uv pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision torchaudio --reinstall
+.\bin\uv.exe pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision torchaudio --reinstall
 ```
 
 </details>
@@ -225,7 +225,7 @@ Run `setup.bat` and choose option 2 (NVIDIA GPU) or manually swap in CUDA PyTorc
 <details>
 <summary><strong>"The chatbox shows garbled text or cuts off"</strong></summary>
 
-VRChat's chatbox has a 144 character hard limit. Gabriel auto-paginates with `(1/N)` prefixes, but if you're seeing issues, try adjusting `chatbox_page_delay` under `vrchat` in `config.yml` (default is 3 seconds). Lower values cycle pages faster but might look jittery.
+VRChat's chatbox has a 144 character hard limit. Gabriel auto-paginates with `(1/N)` prefixes, but if you're seeing issues, try adjusting `chatbox_page_delay` under `vrchat` in `config.yml` (default is 3 seconds).
 
 </details>
 
@@ -239,14 +239,14 @@ The project targets Windows first. Some things will work on Linux (Python code, 
 <details>
 <summary><strong>"Where do I put my music/SFX files?"</strong></summary>
 
-Drop them in `sfx/music/`. Gabriel can play them via the soundboard tool.
+Drop them in `sfx/music/`. Gabriel can play them via the soundboard & play music tool(s).
 
 </details>
 
 <details>
 <summary><strong>"How do I add a custom TTS voice?"</strong></summary>
 
-Gabriel supports several TTS providers out of the box: Qwen3, Hoppou AI cloud, Google Chirp 3 HD, and TikTok TTS. To add your own, write a plugin that registers a TTS provider. Check out the [OmniVoice plugin](https://github.com/HoppouAI/ProjectGabriel-Plugins/tree/main/omnivoice) as a reference (600+ languages, voice cloning from a wav file).
+Gabriel supports several TTS providers out of the box: Hoppou AI cloud, Google Chirp 3 HD, and TikTok TTS.
 
 </details>
 
