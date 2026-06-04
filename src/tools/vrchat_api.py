@@ -153,6 +153,42 @@ class VRChatAPITools(BaseTool):
                     "required": ["player"],
                 },
             ),
+            types.FunctionDeclaration(
+                name="listFriendRequests",
+                description="List the incoming VRChat friend requests waiting for YOU. Returns each requester's display name. Use the exact name with acceptFriendRequest or declineFriendRequest.\n**Invocation Condition:** Call when asked who sent you a friend request, if you have any pending friend requests, or before accepting/declining one.",
+                parameters={"type": "OBJECT", "properties": {}},
+            ),
+            types.FunctionDeclaration(
+                name="acceptFriendRequest",
+                description="Accept an incoming VRChat friend request from a specific person by their display name. If only one request is pending you can omit the name. Use listFriendRequests first if unsure who sent requests.\n**Invocation Condition:** Call when asked to accept, approve, or say yes to a friend request.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "player": {"type": "STRING", "description": "Display name of the person whose friend request to accept. Optional if only one request is pending."},
+                    },
+                },
+            ),
+            types.FunctionDeclaration(
+                name="declineFriendRequest",
+                description="Decline (reject) an incoming VRChat friend request from a specific person by their display name. If only one request is pending you can omit the name. Use listFriendRequests first if unsure who sent requests.\n**Invocation Condition:** Call when asked to decline, reject, deny, or say no to a friend request.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "player": {"type": "STRING", "description": "Display name of the person whose friend request to decline. Optional if only one request is pending."},
+                    },
+                },
+            ),
+            types.FunctionDeclaration(
+                name="sendFriendRequest",
+                description="Send a VRChat friend request to a player. Resolves the display name from the current instance player list or your friend cache. You can also pass a raw user ID (usr_xxx).\n**Invocation Condition:** Call when asked to friend someone, add someone as a friend, or send a friend request.",
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "player": {"type": "STRING", "description": "Player's display name (or usr_ ID) to send a friend request to"},
+                    },
+                    "required": ["player"],
+                },
+            ),
         ]
 
     async def handle(self, name, args):
@@ -194,6 +230,14 @@ class VRChatAPITools(BaseTool):
             return await self._get_mutual_friends(args["name"])
         elif name == "boopPlayer":
             return await self._boop_player(args["player"])
+        elif name == "listFriendRequests":
+            return await self._list_friend_requests()
+        elif name == "acceptFriendRequest":
+            return await self._accept_friend_request(args.get("player"))
+        elif name == "declineFriendRequest":
+            return await self._decline_friend_request(args.get("player"))
+        elif name == "sendFriendRequest":
+            return await self._send_friend_request(args["player"])
         return None
 
     async def _search_avatars(self, query):
@@ -467,3 +511,83 @@ class VRChatAPITools(BaseTool):
             return {"result": "error", "message": f"Could not find player '{player}' in the instance or friends list"}
         api = self.handler._get_vrchat_api()
         return await api.boop_user(user_id)
+
+    async def _fetch_friend_requests(self, api):
+        """Return (requests, error). requests is a list of dicts with
+        notification id and sender display name."""
+        data = await api.get_notifications("friendRequest")
+        if isinstance(data, dict) and "error" in data:
+            return None, data["error"]
+        requests = []
+        for n in data or []:
+            requests.append({
+                "id": n.get("id", ""),
+                "senderUserId": n.get("senderUserId", ""),
+                "senderUsername": n.get("senderUsername", "") or n.get("title", ""),
+            })
+        return requests, None
+
+    def _match_friend_request(self, requests, player):
+        """Resolve a pending friend request by sender display name.
+        Returns (request, error_message)."""
+        if not requests:
+            return None, "You have no pending friend requests."
+        if not player:
+            if len(requests) == 1:
+                return requests[0], None
+            names = [r["senderUsername"] for r in requests if r["senderUsername"]]
+            return None, f"Multiple friend requests pending: {', '.join(names)}. Specify whose request."
+        player_lower = player.lower()
+        exact = [r for r in requests if r["senderUsername"].lower() == player_lower]
+        if len(exact) == 1:
+            return exact[0], None
+        partial = [r for r in requests if player_lower in r["senderUsername"].lower()]
+        if len(partial) == 1:
+            return partial[0], None
+        if len(partial) > 1:
+            names = [r["senderUsername"] for r in partial]
+            return None, f"Multiple friend requests match '{player}': {', '.join(names)}"
+        return None, f"No pending friend request from '{player}'."
+
+    async def _list_friend_requests(self):
+        api = self.handler._get_vrchat_api()
+        requests, error = await self._fetch_friend_requests(api)
+        if error:
+            return {"result": "error", "message": error}
+        if not requests:
+            return {"result": "ok", "count": 0, "requests": [], "message": "No pending friend requests."}
+        names = [r["senderUsername"] for r in requests if r["senderUsername"]]
+        return {"result": "ok", "count": len(requests), "requests": names}
+
+    async def _accept_friend_request(self, player):
+        api = self.handler._get_vrchat_api()
+        requests, error = await self._fetch_friend_requests(api)
+        if error:
+            return {"result": "error", "message": error}
+        match, msg = self._match_friend_request(requests, player)
+        if match is None:
+            return {"result": "error", "message": msg}
+        result = await api.accept_friend_request(match["id"])
+        if isinstance(result, dict) and result.get("result") == "ok":
+            result["player"] = match["senderUsername"]
+        return result
+
+    async def _decline_friend_request(self, player):
+        api = self.handler._get_vrchat_api()
+        requests, error = await self._fetch_friend_requests(api)
+        if error:
+            return {"result": "error", "message": error}
+        match, msg = self._match_friend_request(requests, player)
+        if match is None:
+            return {"result": "error", "message": msg}
+        result = await api.decline_friend_request(match["id"])
+        if isinstance(result, dict) and result.get("result") == "ok":
+            result["player"] = match["senderUsername"]
+        return result
+
+    async def _send_friend_request(self, player):
+        user_id = self._resolve_player_id(player)
+        if not user_id:
+            return {"result": "error", "message": f"Could not find player '{player}' in the instance or friends list. Pass a usr_ ID if they are not nearby."}
+        api = self.handler._get_vrchat_api()
+        return await api.send_friend_request(user_id)

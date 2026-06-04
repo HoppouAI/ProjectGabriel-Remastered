@@ -650,3 +650,105 @@ class VRChatAPI:
                 text = await resp.text()
                 return {"error": f"Boop failed: HTTP {resp.status} - {text}"}
             return {"result": "ok", "message": "Boop sent!"}
+
+    async def get_notifications(self, notification_type: str = None):
+        """List the current user's notifications. Optionally filter by type
+        (e.g. 'friendRequest')."""
+        logged_in = await self.ensure_logged_in()
+        if not logged_in:
+            return {"error": "Not logged in to VRChat API"}
+
+        session = await self._get_session()
+        headers = self._headers()
+        params = ""
+        if notification_type:
+            params = f"?type={quote(notification_type)}"
+        async with session.get(
+            f"{BASE_URL}/auth/user/notifications{params}",
+            headers=headers,
+        ) as resp:
+            self._extract_cookies(resp)
+            if resp.status == 401:
+                self._logged_in = False
+                return {"error": "Auth expired, please retry"}
+            if resp.status != 200:
+                text = await resp.text()
+                return {"error": f"Failed to get notifications: HTTP {resp.status} - {text}"}
+            data = await resp.json()
+            if notification_type:
+                data = [n for n in data if n.get("type") == notification_type]
+            return data
+
+    async def accept_friend_request(self, notification_id: str):
+        """Accept an incoming friend request by its notification (frq_) ID."""
+        logged_in = await self.ensure_logged_in()
+        if not logged_in:
+            return {"error": "Not logged in to VRChat API"}
+
+        session = await self._get_session()
+        headers = self._headers()
+        async with session.put(
+            f"{BASE_URL}/auth/user/notifications/{notification_id}/accept",
+            headers=headers,
+        ) as resp:
+            self._extract_cookies(resp)
+            if resp.status == 401:
+                self._logged_in = False
+                return {"error": "Auth expired, please retry"}
+            if resp.status == 404:
+                return {"error": f"Friend request '{notification_id}' not found"}
+            if resp.status != 200:
+                text = await resp.text()
+                return {"error": f"Failed to accept friend request: HTTP {resp.status} - {text}"}
+            return {"result": "ok", "message": "Friend request accepted"}
+
+    async def decline_friend_request(self, notification_id: str):
+        """Decline an incoming friend request by hiding its notification."""
+        logged_in = await self.ensure_logged_in()
+        if not logged_in:
+            return {"error": "Not logged in to VRChat API"}
+
+        session = await self._get_session()
+        headers = self._headers()
+        async with session.put(
+            f"{BASE_URL}/auth/user/notifications/{notification_id}/hide",
+            headers=headers,
+        ) as resp:
+            self._extract_cookies(resp)
+            if resp.status == 401:
+                self._logged_in = False
+                return {"error": "Auth expired, please retry"}
+            if resp.status == 404:
+                return {"error": f"Friend request '{notification_id}' not found"}
+            if resp.status != 200:
+                text = await resp.text()
+                return {"error": f"Failed to decline friend request: HTTP {resp.status} - {text}"}
+            return {"result": "ok", "message": "Friend request declined"}
+
+    async def send_friend_request(self, user_id: str):
+        """Send a friend request to another user by their user ID."""
+        logged_in = await self.ensure_logged_in()
+        if not logged_in:
+            return {"error": "Not logged in to VRChat API"}
+
+        session = await self._get_session()
+        headers = self._headers()
+        headers["Content-Type"] = "application/json"
+        async with session.post(
+            f"{BASE_URL}/user/{user_id}/friendRequest",
+            headers=headers,
+            json={},
+        ) as resp:
+            self._extract_cookies(resp)
+            if resp.status == 401:
+                self._logged_in = False
+                return {"error": "Auth expired, please retry"}
+            if resp.status == 400:
+                text = await resp.text()
+                return {"error": f"Cannot send friend request (already friends or pending?): {text}"}
+            if resp.status == 404:
+                return {"error": f"User '{user_id}' not found"}
+            if resp.status != 200:
+                text = await resp.text()
+                return {"error": f"Failed to send friend request: HTTP {resp.status} - {text}"}
+            return {"result": "ok", "message": "Friend request sent"}
