@@ -52,10 +52,13 @@ class MapModeMixin:
         except Exception:
             r_cells = 4
         with nav.graph._lock:  # noqa: SLF001
-            for serial in nav.graph.nodes.keys():
-                vx, vy, vz = serial
-                if abs(vx - cx) + abs(vz - cz) <= r_cells and abs(vy - cy) <= 2:
-                    self._map_visits[serial] = now
+            serials = list(nav.graph.nodes.keys())
+        for i, serial in enumerate(serials):
+            vx, vy, vz = serial
+            if abs(vx - cx) + abs(vz - cz) <= r_cells and abs(vy - cy) <= 2:
+                self._map_visits[serial] = now
+            if i % 3000 == 0:
+                time.sleep(0)
 
     def _score_candidate(self, serial, node, cur_xyz, now):
         """Higher score = better wander target. Combines recency-of-visit,
@@ -115,8 +118,13 @@ class MapModeMixin:
         now = time.monotonic()
         sample_n = int(self._cfg["map_mode_sample_count"])
         with nav.graph._lock:  # noqa: SLF001
-            all_nodes = [(s, n) for s, n in nav.graph.nodes.items()
-                         if n.node_type == NodeType.REACHABLE]
+            items = list(nav.graph.nodes.items())
+        all_nodes = []
+        for i, (s, n) in enumerate(items):
+            if n.node_type == NodeType.REACHABLE:
+                all_nodes.append((s, n))
+            if i % 3000 == 0:
+                time.sleep(0)
         if not all_nodes:
             return None
         if len(all_nodes) > sample_n:

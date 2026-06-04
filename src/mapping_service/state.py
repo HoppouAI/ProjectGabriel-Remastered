@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from src.voxel_nav import NodeType
 
@@ -17,13 +18,15 @@ class StateMixin:
             reach = wall = iffy = 0
             try:
                 with self._nav.graph._lock:  # noqa: SLF001
-                    for n in self._nav.graph.nodes.values():
+                    for i, n in enumerate(self._nav.graph.nodes.values()):
                         if n.node_type == NodeType.REACHABLE:
                             reach += 1
                         elif n.node_type == NodeType.UNREACHABLE:
                             wall += 1
                         else:
                             iffy += 1
+                        if i % 2000 == 0:
+                            time.sleep(0)
             except Exception:
                 pass
 
@@ -91,7 +94,7 @@ class StateMixin:
         iffy: list[list[int]] = []
         try:
             with self._nav.graph._lock:  # noqa: SLF001
-                for serial, node in self._nav.graph.nodes.items():
+                for i, (serial, node) in enumerate(self._nav.graph.nodes.items()):
                     item = [serial[0], serial[1], serial[2]]
                     if node.node_type == NodeType.REACHABLE:
                         reach.append(item)
@@ -99,6 +102,8 @@ class StateMixin:
                         wall.append(item)
                     else:
                         iffy.append(item)
+                    if i % 2000 == 0:
+                        time.sleep(0)
         except Exception:
             logger.exception("mapping: get_world_cells failed")
         payload = {"world": world, "rev": rev, "reach": reach,

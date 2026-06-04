@@ -9,11 +9,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from .coords import (
-    NodeType,
     Serial,
-    _SQRT2,
-    _SQRT3,
-    _VERTICAL_PENALTY,
     serial_to_center,
 )
 from .graph import Graph
@@ -22,43 +18,11 @@ from .graph import Graph
 logger = logging.getLogger(__name__)
 
 
-def _is_pathable(graph: Graph, s: Serial) -> bool:
-    n = graph.get(s)
-    return n is not None and n.node_type == NodeType.REACHABLE
-
-
-def _corner_unreachable(graph: Graph, a: Serial, b: Serial) -> bool:
-    """A diagonal step from a->b is blocked if BOTH orthogonal neighbors
-    that share the corner are not reachable. Prevents wall clipping."""
-    dx = b[0] - a[0]
-    dz = b[2] - a[2]
-    if _is_pathable(graph, (a[0] + dx, a[1], a[2])):
-        return False
-    if _is_pathable(graph, (a[0], a[1], a[2] + dz)):
-        return False
-    return True
-
-
 def _neighbors(graph: Graph, serial: Serial) -> Iterable[tuple[Serial, float]]:
-    sx, sy, sz = serial
-    for dy in (-1, 0, 1):
-        ny = sy + dy
-        same_layer = (dy == 0)
-        # orthogonal XZ moves
-        ortho_cost = 1.0 if same_layer else _SQRT2
-        for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            cand = (sx + dx, ny, sz + dz)
-            if _is_pathable(graph, cand):
-                yield cand, ortho_cost + abs(dy) * _VERTICAL_PENALTY
-        # diagonal XZ moves
-        diag_cost = _SQRT2 if same_layer else _SQRT3
-        for dx, dz in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
-            cand = (sx + dx, ny, sz + dz)
-            if not _is_pathable(graph, cand):
-                continue
-            if _corner_unreachable(graph, serial, cand):
-                continue
-            yield cand, diag_cost + abs(dy) * _VERTICAL_PENALTY
+    """Returns (neighbor_serial, edge_cost) for every REACHABLE 26-connected
+    neighbor. Uses Graph.get_pathable_neighbors which acquires the lock once
+    for all 26 lookups instead of thrashing it per candidate."""
+    return graph.get_pathable_neighbors(serial)
 
 
 def _heuristic(a: Serial, b: Serial) -> float:

@@ -6,13 +6,14 @@ import json
 import logging
 import math
 import threading
+import time
 from collections import deque
 from pathlib import Path
 from typing import Optional
 
 from .coords import Node, NodeType, Serial, serial_to_center, world_to_serial
 from .graph import Graph
-from .pathfinding import VoxelPathResult, _neighbors, find_path_astar
+from .pathfinding import VoxelPathResult, find_path_astar
 
 
 logger = logging.getLogger(__name__)
@@ -250,14 +251,16 @@ class VoxelNavManager:
 
             # candidate empty cells = cardinal neighbors of reachable floor
             candidates: set[Serial] = set()
-            for sx, sy, sz in reach:
+            for i, (sx, sy, sz) in enumerate(reach):
                 for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                     cand = (sx + dx, sy, sz + dz)
                     if cand not in present:
                         candidates.add(cand)
+                if i % 2000 == 0:
+                    time.sleep(0)
 
             to_fill: list[Serial] = []
-            for cand in candidates:
+            for i, cand in enumerate(candidates):
                 cx, cy, cz = cand
                 support = 0
                 for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -267,6 +270,8 @@ class VoxelNavManager:
                     to_fill.append(cand)
                     if len(to_fill) >= max_fill:
                         break
+                if i % 2000 == 0:
+                    time.sleep(0)
 
             for cell in to_fill:
                 self.graph.add_node(Node(serial=cell,
@@ -347,6 +352,7 @@ class VoxelNavManager:
         best: Optional[tuple[Serial, Node]] = None
         best_steps = math.inf
         best_d = math.inf
+        gil_yield_counter = 0
         while queue:
             serial, steps = queue.popleft()
             node = self.graph.get(serial)
@@ -369,11 +375,14 @@ class VoxelNavManager:
                     break
             if len(visited) >= max_visits:
                 continue
-            for nb, _cost in _neighbors(self.graph, serial):
+            for nb, _cost in self.graph.get_pathable_neighbors(serial):
                 if nb in visited:
                     continue
                 visited.add(nb)
                 queue.append((nb, steps + 1))
+            gil_yield_counter += 1
+            if gil_yield_counter % 2000 == 0:
+                time.sleep(0)
         return best
 
     def is_pathable_neighbor(self, a: Serial, b: Serial) -> bool:

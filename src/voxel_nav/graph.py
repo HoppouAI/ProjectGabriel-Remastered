@@ -4,9 +4,23 @@ from __future__ import annotations
 
 import math
 import threading
-from typing import Optional
+import time
+from typing import Iterable, Optional
 
-from .coords import CELL_SIZE, Node, NodeType, Serial, serial_to_center, world_to_serial
+from .coords import (
+    CELL_SIZE,
+    Node,
+    NodeType,
+    Serial,
+    _SQRT2,
+    _SQRT3,
+    _VERTICAL_PENALTY,
+    serial_to_center,
+    world_to_serial,
+)
+
+# how often to yield the GIL during O(n) scans, in node count.
+_GIL_YIELD_EVERY = 2000
 
 
 class Graph:
@@ -61,6 +75,57 @@ class Graph:
         with self._lock:
             return len(self._nodes)
 
+    # ------------------------------------------------------------------
+    # batch pathable neighbor lookup (single lock for 26 candidates)
+    # ------------------------------------------------------------------
+    def get_pathable_neighbors(
+        self, serial: Serial,
+    ) -> Iterable[tuple[Serial, float]]:
+        """26-connected neighbors that are REACHABLE, with A* edge costs.
+        Acquires the graph lock exactly once for all 26 lookups so A* and
+        BFS callers dont thrash the lock 1.3M times per pathfind."""
+        sx, sy, sz = serial
+        # collect every candidate serial first so we can batch-lookup under
+        # one lock. the cost is the same regardless of whether the cell
+        # exists so we precompute costs too.
+        items: list[tuple[Serial, float, bool]] = []
+        for dy in (-1, 0, 1):
+            ny = sy + dy
+            same_layer = dy == 0
+            ortho_cost = 1.0 if same_layer else _SQRT2
+            for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                items.append(((sx + dx, ny, sz + dz),
+                              ortho_cost + abs(dy) * _VERTICAL_PENALTY, False))
+            diag_cost = _SQRT2 if same_layer else _SQRT3
+            for dx, dz in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
+                items.append(((sx + dx, ny, sz + dz),
+                              diag_cost + abs(dy) * _VERTICAL_PENALTY, True))
+        with self._lock:
+            nodes = self._nodes
+            for cand, cost, is_diag in items:
+                n = nodes.get(cand)
+                if n is None or n.node_type != NodeType.REACHABLE:
+                    continue
+                if is_diag and self._corner_blocked(nodes, serial, cand):
+                    continue
+                yield cand, cost
+
+    @staticmethod
+    def _corner_blocked(
+        nodes: dict[Serial, Node], a: Serial, b: Serial,
+    ) -> bool:
+        """True if the diagonal step a->b is blocked by both orthogonal
+        corner cells being unreachable. Must be called with the lock held."""
+        dx = b[0] - a[0]
+        dz = b[2] - a[2]
+        o1 = nodes.get((a[0] + dx, a[1], a[2]))
+        if o1 is not None and o1.node_type == NodeType.REACHABLE:
+            return False
+        o2 = nodes.get((a[0], a[1], a[2] + dz))
+        if o2 is not None and o2.node_type == NodeType.REACHABLE:
+            return False
+        return True
+
     def find_closest(self, x: float, y: float, z: float,
                      only_reachable: bool = True,
                      max_distance: float | None = None) -> Optional[Node]:
@@ -73,7 +138,7 @@ class Graph:
         best_d = math.inf
         limit_sq = math.inf if max_distance is None else max_distance * max_distance
         with self._lock:
-            for node in self._nodes.values():
+            for i, node in enumerate(self._nodes.values()):
                 if only_reachable and node.node_type != NodeType.REACHABLE:
                     continue
                 cx, cy, cz = serial_to_center(node.serial)
@@ -82,6 +147,8 @@ class Graph:
                 if d < best_d and d <= limit_sq:
                     best_d = d
                     best = node
+                if i % _GIL_YIELD_EVERY == 0:
+                    time.sleep(0)
         return best
 
     def find_nearest_reachable(self, x: float, y: float, z: float,
@@ -94,7 +161,7 @@ class Graph:
         limit_sq = max_distance * max_distance
         cands: list[tuple[float, Node]] = []
         with self._lock:
-            for node in self._nodes.values():
+            for i, node in enumerate(self._nodes.values()):
                 if node.node_type != NodeType.REACHABLE:
                     continue
                 cx, cy, cz = serial_to_center(node.serial)
@@ -102,18 +169,25 @@ class Graph:
                 d = dx*dx + dy*dy + dz*dz
                 if d <= limit_sq:
                     cands.append((d, node))
+                if i % _GIL_YIELD_EVERY == 0:
+                    time.sleep(0)
         cands.sort(key=lambda t: t[0])
         return [n for _, n in cands[:k]]
 
     def to_dict(self) -> dict:
         with self._lock:
+            nodes_out = []
+            for i, n in enumerate(self._nodes.values()):
+                nodes_out.append({
+                    "s": list(n.serial), "t": int(n.node_type),
+                    "l": n.label,
+                })
+                if i % _GIL_YIELD_EVERY == 0:
+                    time.sleep(0)
             return {
                 "version": 1,
                 "cell_size": CELL_SIZE,
-                "nodes": [
-                    {"s": list(n.serial), "t": int(n.node_type),
-                     "l": n.label} for n in self._nodes.values()
-                ],
+                "nodes": nodes_out,
             }
 
     @classmethod

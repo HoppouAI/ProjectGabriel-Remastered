@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 
 from src.voxel_nav import NodeType
@@ -106,6 +107,7 @@ class EditingMixin:
             # BFS connected components
             unseen = set(serials)
             components: list[set[tuple[int, int, int]]] = []
+            bfs_counter = 0
             while unseen:
                 start = next(iter(unseen))
                 comp: set[tuple[int, int, int]] = set()
@@ -121,6 +123,9 @@ class EditingMixin:
                         n = (sx + dx, sy + dy, sz + dz)
                         if n in unseen:
                             stack.append(n)
+                    bfs_counter += 1
+                    if bfs_counter % 2000 == 0:
+                        time.sleep(0)
                 components.append(comp)
 
             largest_size = max(len(c) for c in components) if components else 0
@@ -167,8 +172,10 @@ class EditingMixin:
                 removed_components += 1
 
             if not dry_run and to_remove:
-                for s in to_remove:
+                for i, s in enumerate(to_remove):
                     self._nav.delete_cell(s)
+                    if i % 3000 == 0:
+                        time.sleep(0)
                 self._nav.flush()
 
             logger.info("mapping: cleanup_strays components=%d removed=%d cells_removed=%d "
