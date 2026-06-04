@@ -46,7 +46,7 @@ Most of the well known VRChat AI companions out there are either closed source, 
     <td>🌐</td>
     <td><strong>WebUI dashboard</strong><br>A clean browser dashboard with live console output, memory management, vision controls, mapping view, waypoints, and OBS overlay support.</td>
     <td>🔌</td>
-    <td><strong>Plugin system</strong><br>Extend Gabriel with drop-in plugins. Add new tools, custom voices, chatbox widgets, or hook into events. [Official Plugins](https://github.com/HoppouAI/ProjectGabriel-Plugins) in a separate repo.</td>
+    <td><strong>Plugin system</strong><br>Extend Gabriel with drop-in plugins. Add new tools, custom voices, chatbox widgets, or hook into events. Official Plugins: https://github.com/HoppouAI/ProjectGabriel-Plugins</td>
   </tr>
   <tr>
     <td>💬</td>
