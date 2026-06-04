@@ -590,4 +590,12 @@ class VRChatAPITools(BaseTool):
         if not user_id:
             return {"result": "error", "message": f"Could not find player '{player}' in the instance or friends list. Pass a usr_ ID if they are not nearby."}
         api = self.handler._get_vrchat_api()
+        status = await api.get_friend_status(user_id)
+        if isinstance(status, dict) and "error" not in status:
+            if status.get("isFriend"):
+                return {"result": "error", "message": f"You are already friends with {player}."}
+            if status.get("outgoingRequest"):
+                return {"result": "error", "message": f"You already have a pending friend request sent to {player}."}
+            if status.get("incomingRequest"):
+                return {"result": "error", "message": f"{player} already sent YOU a friend request. Use acceptFriendRequest to accept it instead."}
         return await api.send_friend_request(user_id)

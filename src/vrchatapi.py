@@ -725,6 +725,30 @@ class VRChatAPI:
                 return {"error": f"Failed to decline friend request: HTTP {resp.status} - {text}"}
             return {"result": "ok", "message": "Friend request declined"}
 
+    async def get_friend_status(self, user_id: str):
+        """Check friendship status with a user. Returns the API dict with
+        isFriend / outgoingRequest / incomingRequest booleans."""
+        logged_in = await self.ensure_logged_in()
+        if not logged_in:
+            return {"error": "Not logged in to VRChat API"}
+
+        session = await self._get_session()
+        headers = self._headers()
+        async with session.get(
+            f"{BASE_URL}/user/{user_id}/friendStatus",
+            headers=headers,
+        ) as resp:
+            self._extract_cookies(resp)
+            if resp.status == 401:
+                self._logged_in = False
+                return {"error": "Auth expired, please retry"}
+            if resp.status == 404:
+                return {"error": f"User '{user_id}' not found"}
+            if resp.status != 200:
+                text = await resp.text()
+                return {"error": f"Failed to get friend status: HTTP {resp.status} - {text}"}
+            return await resp.json()
+
     async def send_friend_request(self, user_id: str):
         """Send a friend request to another user by their user ID."""
         logged_in = await self.ensure_logged_in()
