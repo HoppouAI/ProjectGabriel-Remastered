@@ -21,39 +21,39 @@ A real-time AI companion for VRChat. Gabriel walks around, talks to people, reme
 
 <table>
   <tr>
-    <td><img alt="audio" src="https://img.shields.io/badge/🎙️-5b5b5b?style=flat-square"></td>
+    <td>🎙️</td>
     <td><strong>Gemini Live audio</strong><br>Real-time voice conversations powered by Gemini. Gabriel talks naturally with one of eight built-in voices, no robotic TTS middleware needed.</td>
-    <td><img alt="vision" src="https://img.shields.io/badge/👁️-5b5b5b?style=flat-square"></td>
+    <td>👁️</td>
     <td><strong>Computer vision</strong><br>Sees the game world through screen capture. Finds people in the room, and can follow them around.</td>
   </tr>
   <tr>
-    <td><img alt="osc" src="https://img.shields.io/badge/🎮-5b5b5b?style=flat-square"></td>
+    <td>🎮</td>
     <td><strong>Full OSC control</strong><br>Walks, turns, jumps, crouches, grabs objects, and types into the chatbox. Everything you can do with a keyboard and mouse, Gabriel does through VRChat's OSC interface.</td>
-    <td><img alt="memory" src="https://img.shields.io/badge/🧠-5b5b5b?style=flat-square"></td>
+    <td>🧠</td>
     <td><strong>Persistent memory</strong><br>Remembers people, places, and conversations across sessions. Stores long term facts, short term context, and quick notes with smart semantic search.</td>
   </tr>
   <tr>
-    <td><img alt="personality" src="https://img.shields.io/badge/🎭-5b5b5b?style=flat-square"></td>
+    <td>🎭</td>
     <td><strong>Switchable personalities</strong><br>Define different personas for Gabriel and let him switch between them on the fly. He can change his whole vibe mid-conversation based on context.</td>
-    <td><img alt="nav" src="https://img.shields.io/badge/🧭-5b5b5b?style=flat-square"></td>
+    <td>🧭</td>
     <td><strong>Spatial navigation</strong><br>Maps out VRChat worlds and finds his way around. Saves waypoints, explores on his own, and remembers the layout of every world he visits.</td>
   </tr>
   <tr>
-    <td><img alt="webui" src="https://img.shields.io/badge/🌐-5b5b5b?style=flat-square"></td>
+    <td>🌐</td>
     <td><strong>WebUI dashboard</strong><br>A clean browser dashboard with live console output, memory management, vision controls, mapping view, waypoints, and OBS overlay support.</td>
-    <td><img alt="plugins" src="https://img.shields.io/badge/🔌-5b5b5b?style=flat-square"></td>
+    <td>🔌</td>
     <td><strong>Plugin system</strong><br>Extend Gabriel with drop-in plugins. Add new tools, custom voices, chatbox widgets, or hook into events. Official plugins in a separate repo.</td>
   </tr>
   <tr>
-    <td><img alt="discord" src="https://img.shields.io/badge/💬-5b5b5b?style=flat-square"></td>
+    <td>💬</td>
     <td><strong>Discord bot</strong><br>Gabriel hangs out in your Discord server too, with his own voice session. Reads messages, replies naturally, and keeps track of each channel separately.</td>
-    <td><img alt="vrchat" src="https://img.shields.io/badge/🔗-5b5b5b?style=flat-square"></td>
+    <td>🔗</td>
     <td><strong>VRChat API</strong><br>Search and switch avatars, look up friends, find worlds, update your status, send friend requests, and invite people to your instance.</td>
   </tr>
   <tr>
-    <td><img alt="key" src="https://img.shields.io/badge/🔑-5b5b5b?style=flat-square"></td>
+    <td>🔑</td>
     <td><strong>API key rotation</strong><br>Add backup Gemini API keys and Gabriel cycles through them automatically when he hits a rate limit. No downtime, no manual intervention.</td>
-    <td><img alt="local" src="https://img.shields.io/badge/🏠-5b5b5b?style=flat-square"></td>
+    <td>🏠</td>
     <td><strong>Local backend</strong><br>Optionally run everything on your own machine with LM Studio, Moonshine speech recognition, and any TTS provider. Nothing leaves your computer.</td>
   </tr>
 </table>
