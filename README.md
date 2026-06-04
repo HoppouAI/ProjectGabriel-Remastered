@@ -66,19 +66,9 @@ Most of the well known VRChat AI companions out there are either closed source, 
 
 ## Quick Start
 
-```bash
-# 1. Clone
-git clone https://github.com/HoppouAI/ProjectGabriel-Remastered.git
-cd ProjectGabriel-Remastered
-
-# 2. Run setup
-setup.bat
-
-# 3. Start
-run.bat
-```
-
-That's it. The setup script downloads Python 3.12, installs all packages, detects your GPU, and launches the configuration wizard in your browser.
+1. Download the **latest release** from the [Releases page](https://github.com/HoppouAI/ProjectGabriel-Remastered/releases) and extract it.
+2. Open the folder and run `setup.bat`. It downloads Python 3.12, installs everything, and asks about GPU support.
+3. When setup finishes, run `run.bat` to start Gabriel.
 
 The WebUI is at **http://localhost:8766** once running.
 
