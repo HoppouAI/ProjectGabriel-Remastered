@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import WebSocket
 
-SESSION_HANDLE_FILE = Path("session_handle.txt")
+SESSION_HANDLE_FILE = Path("data/session_handle.txt")
 MUSIC_DIR = Path("sfx/music")
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
 SUBTITLE_EXTENSIONS = {".srt", ".lrc"}

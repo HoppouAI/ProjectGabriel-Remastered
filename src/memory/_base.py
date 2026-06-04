@@ -43,7 +43,7 @@ class MemorySystemBase:
         self.mongo_collection_name = os.environ.get("GABRIEL_MONGO_COLLECTION", self.config.get("mongo_collection", "memories"))
 
         # SQLite settings
-        self.sqlite_path = self.config.get("sqlite_path", "gabriel_memories.sqlite")
+        self.sqlite_path = self.config.get("sqlite_path", "data/gabriel_memories.sqlite")
 
         # TTL settings
         self.quick_note_ttl_hours = float(self.config.get("quick_note_ttl_hours", 6))
@@ -87,7 +87,7 @@ class MemorySystemBase:
         self._local_embedding_model = self.config.get("local_embedding_model", "text-embedding-embeddinggemma-300m-qat")
         self._chroma_client = None
         self._chroma_collection = None
-        self._chroma_path = self.config.get("chroma_dir", "gabriel_chroma_db")
+        self._chroma_path = self.config.get("chroma_dir", "data/gabriel_chroma_db")
         self._httpx_client = None
 
         self._connect()

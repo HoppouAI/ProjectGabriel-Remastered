@@ -548,7 +548,7 @@ memory:
   backend: "sqlite"
 
   # SQLite settings (used if backend is "sqlite")
-  sqlite_path: "gabriel_memories.sqlite"
+  sqlite_path: "data/gabriel_memories.sqlite"
 
   # MongoDB settings (used if backend is "mongo")
   # Set GABRIEL_MONGO_URI environment variable, or configure below
@@ -587,7 +587,7 @@ memory:
   # See README for setup instructions.
   lm_studio_url: "http://localhost:1234"          # LM Studio server URL
   local_embedding_model: "text-embedding-embeddinggemma-300m-qat"  # Model loaded in LM Studio
-  chroma_dir: "gabriel_chroma_db"                 # ChromaDB storage directory
+  chroma_dir: "data/gabriel_chroma_db"                 # ChromaDB storage directory
 
   # Vector similarity thresholds (per-provider, since local models score lower)
   vector_min_score_gemini: 0.82               # Gemini embeddings: higher scores, stricter threshold

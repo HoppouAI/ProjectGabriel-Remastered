@@ -21,7 +21,7 @@ from .leak_filter import strip_tool_call_leaks
 
 logger = logging.getLogger(__name__)
 
-SESSION_HANDLE_FILE = Path("session_handle.txt")
+SESSION_HANDLE_FILE = Path("data/session_handle.txt")
 SESSION_EXPIRY_HOURS = 2
 IDLE_ENGAGEMENT_SECONDS = 3600  # 1 hour
 
