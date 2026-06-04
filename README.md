@@ -70,6 +70,8 @@ Most of the well known VRChat AI companions out there are either closed source, 
 2. Open the folder and run `setup.bat`. It downloads Python 3.12, installs everything, and asks about GPU support.
 3. When setup finishes, run `run.bat` to start Gabriel.
 
+If Windows is hiding file extensions, the files will just say `setup` and `run` without the `.bat`. Same thing.
+
 The WebUI is at **http://localhost:8766** once running.
 
 ---
@@ -102,7 +104,7 @@ Then in VRChat Settings &rarr; Audio &rarr; Microphone:
 
 ## Configuration
 
-Everything lives in `config.yml`, Key sections:
+Everything lives in `config.yml`. Key sections:
 
 | Section | What it does |
 |:---|:---|
