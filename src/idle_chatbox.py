@@ -77,10 +77,17 @@ class IdleChatbox:
 
     def _get_mapping_snapshot(self):
         """Pull mapping state with a 10s cache so we dont touch the
-        graph lock more than necessary. Returns None if mapping isnt
-        running. Tracks the local start timestamp the first time we see
-        it active so the elapsed counter survives state-dict shape
-        changes."""
+        graph lock more than necessary. Returns None when theres nothing
+        special to show. Otherwise a dict with "kind":
+
+            "navigate" -> {"waypoint": str}  (driving to a saved waypoint)
+            "explore"  -> {"world", "voxels", "started_at"}  (auto mapping)
+
+        We only surface the mapping banner when the explorer is actually
+        exploring on its own (state["explore"]). Mapping merely being
+        "running" (e.g. passive trail recording, or a one-off goto) does
+        not count. Waypoint navigation takes priority over the explore
+        banner."""
         ms = self._mapping_service
         if ms is None:
             return None
@@ -91,23 +98,38 @@ class IdleChatbox:
             state = ms.get_state()
         except Exception:
             return self._mapping_cache  # serve stale on transient failure
+
         running = bool(state.get("running"))
-        if not running:
+        follow = state.get("follow") or {}
+        label = str(follow.get("label") or "")
+        # waypoint navigation: follow active with a "wp:<name>" label
+        if running and follow.get("active") and label.startswith("wp:"):
             self._mapping_started_at = None
-            self._mapping_cache = None
+            snap = {"kind": "navigate", "waypoint": label[3:] or "waypoint"}
+            self._mapping_cache = snap
             self._mapping_cache_at = now
-            return None
-        if self._mapping_started_at is None:
-            self._mapping_started_at = now
-        counts = state.get("counts") or {}
-        snap = {
-            "world": state.get("world_name") or state.get("world") or "unknown world",
-            "voxels": int(counts.get("total", 0)),
-            "started_at": self._mapping_started_at,
-        }
-        self._mapping_cache = snap
+            return snap
+
+        # autonomous exploration banner only when the explorer is self-driving
+        if running and bool(state.get("explore")):
+            if self._mapping_started_at is None:
+                self._mapping_started_at = now
+            counts = state.get("counts") or {}
+            snap = {
+                "kind": "explore",
+                "world": state.get("world_name") or state.get("world") or "unknown world",
+                "voxels": int(counts.get("total", 0)),
+                "started_at": self._mapping_started_at,
+            }
+            self._mapping_cache = snap
+            self._mapping_cache_at = now
+            return snap
+
+        # nothing special to show
+        self._mapping_started_at = None
+        self._mapping_cache = None
         self._mapping_cache_at = now
-        return snap
+        return None
 
     def _format_banner(self):
         cfg = self._config
@@ -124,7 +146,9 @@ class IdleChatbox:
             parts.append(str(banner))
         parts.append(divider)
 
-        if mapping is not None:
+        if mapping is not None and mapping.get("kind") == "navigate":
+            parts.append(f"Navigating to: {mapping['waypoint']}")
+        elif mapping is not None and mapping.get("kind") == "explore":
             elapsed = self._format_elapsed(time.time() - mapping["started_at"])
             parts.append(f"Mapping: {mapping['world']}")
             parts.append(f"{mapping['voxels']} voxels, {elapsed}")
