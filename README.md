@@ -13,7 +13,11 @@
 
 # Project Gabriel
 
-A real-time AI companion for VRChat. Gabriel walks around, talks to people, remembers who they are, and has his own personality. He listens through Gemini Live's native audio streaming, sees through YOLOv8 computer vision, and controls his avatar through OSC. Built by [Hoppou AI](https://hoppou.ai).
+A real-time AI companion built for VRChat. Gabriel walks around, talks to people, remembers who they are, and has his own personality. He listens through Gemini Live's native audio streaming, sees through computer vision, and controls his avatar through OSC. Built by [Hoppou AI](https://hoppou.ai).
+
+**VRChat is completely optional.** Gabriel runs just fine without it: you can talk to him through Discord, the WebUI, or any other interface. He was designed around VRChat and that's where he shines brightest, but nothing locks you into it. The Discord bot, social server, and local backend all work standalone.
+
+Most of the well known VRChat AI companions out there are either closed source, locked behind a paywall, or both. Gabriel breaks that pattern. He is free, open source, and designed so anyone with a Gemini API key and a Windows machine can have their own AI companion without paying a cent or signing up for someone else's service. That's the whole point.
 
 ---
 
