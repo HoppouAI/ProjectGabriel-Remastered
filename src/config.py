@@ -591,6 +591,10 @@ class Config:
         return self.get("vrchat_api", "allow_bio_edit", default=False)
 
     @property
+    def vrchat_group_id(self):
+        return self.get("vrchat_api", "group_id", default="")
+
+    @property
     def tts_switchable_providers(self):
         return self.get("tts", "switchable_providers", default=["gemini"])
 

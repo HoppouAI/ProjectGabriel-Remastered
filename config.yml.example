@@ -453,6 +453,11 @@ vrchat_api:
   # Allow the model to edit your VRChat profile bio via updateStatus tool.
   # When false (default), only status and statusDescription can be changed.
   allow_bio_edit: false
+  # Group ID for the inviteToGroup tool. The model can invite people to this
+  # group when asked. Format: grp_00000000-0000-0000-0000-000000000000
+  # Leave empty to disable the inviteToGroup tool. You must have invite
+  # permissions in the group (usually group owner or roles with that power).
+  group_id: ""
 
 music:
   # Folder containing local music files (.mp3, .wav, .ogg, .flac)
