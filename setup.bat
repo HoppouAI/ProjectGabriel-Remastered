@@ -8,165 +8,121 @@ cls
 
 echo.
 echo   ====================================================
-echo        Project Gabriel - Remaster Setup Wizard
+echo        Project Gabriel - Setup
 echo   ====================================================
 echo.
-echo   This will set up a virtual environment and install
-echo   all dependencies for you.
-echo.
-echo  Press any key to start...
-pause > nul
-echo.
 
-:: =======================================================
-:: Step 1 - UV
-:: =======================================================
-echo   [1/5] Setting up UV package manager...
-echo.
+:: ---- Step 1: UV ----
+echo   [1/4] UV package manager...
 
 if not exist "bin" mkdir "bin"
 
-if exist "bin\uv.exe" (
-    echo        UV already installed in bin\
-) else (
-    echo        Installing UV to local bin folder...
+if not exist "bin\uv.exe" (
+    echo        Downloading UV...
     set "UV_INSTALL_DIR=%~dp0bin"
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
     if not exist "bin\uv.exe" (
-        echo.
-        echo   Error: UV download failed. Check your internet connection and try again.
-        echo.
+        echo   ERROR: UV download failed. Check your internet and try again.
         pause
         exit /b 1
     )
-    echo        UV installed.
 )
-
 set "PATH=%~dp0bin;%PATH%"
+echo        OK
 echo.
 
-:: =======================================================
-:: Step 2 - Virtual environment
-:: =======================================================
-echo   [2/5] Creating Python 3.12 virtual environment...
-echo.
+:: ---- Step 2: venv ----
+echo   [2/4] Creating Python 3.12 environment...
 
 uv venv --python 3.12
 if %errorlevel% neq 0 (
     echo.
-    echo   Error: Could not create virtual environment.
-    echo   Make sure Python 3.12 is installed: https://www.python.org/downloads/
+    echo   ERROR: Could not create venv. UV will auto-download
+    echo   Python 3.12 if you have it in your PATH or py launcher.
+    echo   Otherwise install it from https://www.python.org/downloads/
     echo.
     pause
     exit /b 1
 )
+echo        OK
 echo.
 
-:: =======================================================
-:: Step 3 - Hardware selection
-:: =======================================================
-echo   [3/5] Hardware selection...
+:: ---- Step 3: hardware ----
+echo   [3/4] Hardware selection
 echo.
-echo        Select your hardware:
+echo        1. CPU only
+echo        2. NVIDIA GPU ^(CUDA 12.6^)
 echo.
-echo          1.  NVIDIA GPU - installs CUDA PyTorch for better vision performance
-echo          2.  CPU Only
-echo.
-choice /C 12 /M "        Enter your choice"
-set "GPU_CHOICE=%errorlevel%"
+choice /C 12 /M "        Choice"
+set "GPU=%errorlevel%"
 echo.
 
-:: =======================================================
-:: Step 4 - Install dependencies
-:: =======================================================
-echo   [4/5] Installing dependencies...
-echo        This can take a few minutes the first time.
-echo.
+:: ---- Step 4: deps ----
+echo   [4/4] Installing dependencies...
+echo        This takes a few minutes the first time.
 
-uv pip install -r requirements.txt
+uv sync
 if %errorlevel% neq 0 (
     echo.
-    echo   Error: Package installation failed. See output above for details.
-    echo.
+    echo   ERROR: Package install failed. See output above.
     pause
     exit /b 1
 )
-echo.
-echo        All packages installed.
-echo.
 
-if "%GPU_CHOICE%"=="1" goto install_cuda
-goto setup_config
-
-:install_cuda
-echo        Uninstalling default CPU torch...
-uv pip uninstall torch torchvision torchaudio
-echo.
-echo        Installing CUDA PyTorch, this will take a few minutes...
-echo.
-uv pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision torchaudio
-if %errorlevel% neq 0 (
+if "%GPU%"=="2" (
     echo.
-    echo        CUDA install failed. You can retry manually later:
-    echo        .venv\Scripts\activate
-    echo        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-) else (
-    echo.
-    echo        CUDA PyTorch installed.
+    echo        Swapping in CUDA PyTorch...
+    uv pip install --index-url https://download.pytorch.org/whl/cu126 ^
+        torch torchvision torchaudio --reinstall
+    if %errorlevel% neq 0 (
+        echo        WARNING: CUDA torch failed, CPU torch will be used.
+    ) else (
+        echo        CUDA PyTorch installed.
+    )
 )
-echo.
 
-:setup_config
-:: =======================================================
-:: Step 5 - Config files
-:: =======================================================
-echo   [5/5] Setting up config files...
+:: ---- config files ----
 echo.
+echo        Setting up config files...
+
+if not exist "data" mkdir "data"
 
 for %%f in (prompts appends personalities) do (
     if not exist "config\prompts\%%f.yml" (
         if exist "config\prompts\%%f.yml.example" (
             copy /y "config\prompts\%%f.yml.example" "config\prompts\%%f.yml" > nul
-            echo        Created config\prompts\%%f.yml
+            echo           config\prompts\%%f.yml
         )
     )
 )
-
 if not exist "config\voices.yml" (
     if exist "config\voices.yml.example" (
         copy /y "config\voices.yml.example" "config\voices.yml" > nul
-        echo        Created config\voices.yml
+        echo           config\voices.yml
     )
 )
-echo.
 
-:: =======================================================
-:: Configuration Wizard
-:: =======================================================
+:: ---- done ----
+echo.
 echo   ====================================================
-echo           Setup complete!
+echo        Setup complete
 echo   ====================================================
 echo.
 
 if exist "config.yml" (
-    echo   config.yml already exists.
+    echo   config.yml already exists, skipping wizard.
     echo.
-    choice /C YN /M "  Launch the configuration wizard anyway?"
-    if errorlevel 2 goto done
+    echo   Run:  run.bat
+    echo.
+    pause
+    exit /b 0
 )
 
-echo.
 echo   Launching configuration wizard...
-echo   A browser window will open. Fill in your settings and click Save.
-echo.
+uv run python configurator.py
 
-.venv\Scripts\python.exe configurator.py
-
-:done
 echo.
-echo   To run Gabriel:
-echo     run.bat
+echo   Run:  run.bat
 echo.
 pause
-
 exit /b 0
