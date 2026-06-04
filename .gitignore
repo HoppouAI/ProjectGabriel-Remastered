@@ -1,4 +1,8 @@
 # Byte-compiled / optimized / DLL files
+
+# music files -- keep the folder but not the tracks
+sfx/music/*
+!sfx/music/.gitkeep
 __pycache__/
 *.py[cod]
 *$py.class
