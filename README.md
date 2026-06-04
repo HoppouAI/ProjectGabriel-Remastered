@@ -141,6 +141,34 @@ Delete `data/vrchat_cookies.json` and restart Gabriel. The auth cookies can get 
 </details>
 
 <details>
+<summary><strong>"Is VRChat required?"</strong></summary>
+
+Not at all. Gabriel runs just fine as a standalone voice AI. You can talk to him through Discord, the WebUI at `http://localhost:8766`, or any other interface. The Discord bot, social server, and local backend all work without VRChat even installed. He was designed with VRChat in mind and that's where all the OSC, vision, and navigation features live, but nothing forces you to use it.
+
+</details>
+
+<details>
+<summary><strong>"Does the AI have to be named Gabriel?"</strong></summary>
+
+No. Gabriel is just the project name and the default app name. Change it in `config.yml` under `app_name` and update your prompt files in `config/prompts/`. You can give him any name, personality, or backstory you want. Everything is configurable.
+
+</details>
+
+<details>
+<summary><strong>"How do I change the AI's voice?"</strong></summary>
+
+Set `gemini.voice` in `config.yml` to any of the eight built-in names: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, or Zephyr. Puck and Kore are the most popular. You can also use external TTS providers like Qwen3 or Chirp 3 HD through the local backend, or install the OmniVoice plugin for voice cloning from a wav file.
+
+</details>
+
+<details>
+<summary><strong>"Does the AI have to be male?"</strong></summary>
+
+Not at all. Gabriel is fully customizable. Pick a female voice like Aoede or Zephyr, write a prompt that describes a female persona, and that's who your AI is. The project name is just a name. Everything from voice to personality to gender is defined by your config and prompt files.
+
+</details>
+
+<details>
 <summary><strong>"Gemini Live disconnects with error 1007 or 1008"</strong></summary>
 
 These are precondition failures, usually caused by sending audio while the model is mid-turn or sending text before the model is ready. Try switching VAD to `silero` mode in `config.yml` since it gates audio during tool calls and model speech and is generally more stable on 3.1 models.
