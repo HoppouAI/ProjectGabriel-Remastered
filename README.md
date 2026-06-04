@@ -22,39 +22,39 @@ A real-time AI companion for VRChat. Gabriel walks around, talks to people, reme
 <table>
   <tr>
     <td><img alt="audio" src="https://img.shields.io/badge/🎙️-5b5b5b?style=flat-square"></td>
-    <td><strong>Gemini Live audio</strong><br>Real-time bidirectional audio streaming with native voice output. No TTS middleware, no latency tricks, just raw PCM at 16kHz.</td>
+    <td><strong>Gemini Live audio</strong><br>Real-time voice conversations powered by Gemini. Gabriel talks naturally with one of eight built-in voices, no robotic TTS middleware needed.</td>
     <td><img alt="vision" src="https://img.shields.io/badge/👁️-5b5b5b?style=flat-square"></td>
-    <td><strong>Computer vision</strong><br>YOLOv8 person following and YOLOv8 face tracking over an ndi/screen-capture feed. Finds people, follows them, recognizes faces.</td>
+    <td><strong>Computer vision</strong><br>Sees the game world through screen capture. Finds people in the room, and can follow them around.</td>
   </tr>
   <tr>
     <td><img alt="osc" src="https://img.shields.io/badge/🎮-5b5b5b?style=flat-square"></td>
-    <td><strong>Full OSC control</strong><br>Movement, chatbox, voice toggle, grab/drop, jump, crouch, smooth look with EMA ramp. 144-char chatbox with auto pagination.</td>
+    <td><strong>Full OSC control</strong><br>Walks, turns, jumps, crouches, grabs objects, and types into the chatbox. Everything you can do with a keyboard and mouse, Gabriel does through VRChat's OSC interface.</td>
     <td><img alt="memory" src="https://img.shields.io/badge/🧠-5b5b5b?style=flat-square"></td>
-    <td><strong>Persistent memory</strong><br>Long-term, short-term, and quick notes backed by MongoDB Atlas or SQLite. Vector search via Gemini embeddings or local LM Studio + ChromaDB.</td>
+    <td><strong>Persistent memory</strong><br>Remembers people, places, and conversations across sessions. Stores long term facts, short term context, and quick notes with smart semantic search.</td>
   </tr>
   <tr>
     <td><img alt="personality" src="https://img.shields.io/badge/🎭-5b5b5b?style=flat-square"></td>
-    <td><strong>Switchable personalities</strong><br>Define multiple personas in YAML. The model can switch between them at runtime via function calling.</td>
+    <td><strong>Switchable personalities</strong><br>Define different personas for Gabriel and let him switch between them on the fly. He can change his whole vibe mid-conversation based on context.</td>
     <td><img alt="nav" src="https://img.shields.io/badge/🧭-5b5b5b?style=flat-square"></td>
-    <td><strong>Spatial navigation</strong><br>Raycast sensors, voxel grid pathfinding, autonomous exploration, per-world waypoints. Gabriel knows where he is and how to get where he's going.</td>
+    <td><strong>Spatial navigation</strong><br>Maps out VRChat worlds and finds his way around. Saves waypoints, explores on his own, and remembers the layout of every world he visits.</td>
   </tr>
   <tr>
     <td><img alt="webui" src="https://img.shields.io/badge/🌐-5b5b5b?style=flat-square"></td>
-    <td><strong>WebUI dashboard</strong><br>FastAPI on port 8766 with console output, memory manager, YOLO vision controls, mapping grid, waypoints, and OBS overlay endpoints.</td>
+    <td><strong>WebUI dashboard</strong><br>A clean browser dashboard with live console output, memory management, vision controls, mapping view, waypoints, and OBS overlay support.</td>
     <td><img alt="plugins" src="https://img.shields.io/badge/🔌-5b5b5b?style=flat-square"></td>
-    <td><strong>Plugin system</strong><br>Drop-in plugins register tools, TTS providers, chatbox sources, prompt contributors, and event hooks. Separate repo with official plugins.</td>
+    <td><strong>Plugin system</strong><br>Extend Gabriel with drop-in plugins. Add new tools, custom voices, chatbox widgets, or hook into events. Official plugins in a separate repo.</td>
   </tr>
   <tr>
     <td><img alt="discord" src="https://img.shields.io/badge/💬-5b5b5b?style=flat-square"></td>
-    <td><strong>Discord bot</strong><br>Separate Gemini Live session for Discord. Reads messages, replies with voice, keeps per-channel context.</td>
+    <td><strong>Discord bot</strong><br>Gabriel hangs out in your Discord server too, with his own voice session. Reads messages, replies naturally, and keeps track of each channel separately.</td>
     <td><img alt="vrchat" src="https://img.shields.io/badge/🔗-5b5b5b?style=flat-square"></td>
-    <td><strong>VRChat API</strong><br>Avatar search and switching, friend info, world search, status updates, friend requests, instance invites, and more.</td>
+    <td><strong>VRChat API</strong><br>Search and switch avatars, look up friends, find worlds, update your status, send friend requests, and invite people to your instance.</td>
   </tr>
   <tr>
     <td><img alt="key" src="https://img.shields.io/badge/🔑-5b5b5b?style=flat-square"></td>
-    <td><strong>API key rotation</strong><br>Primary key plus backup keys. Hits a 429? Automatically cycles to the next key and reconnects.</td>
+    <td><strong>API key rotation</strong><br>Add backup Gemini API keys and Gabriel cycles through them automatically when he hits a rate limit. No downtime, no manual intervention.</td>
     <td><img alt="local" src="https://img.shields.io/badge/🏠-5b5b5b?style=flat-square"></td>
-    <td><strong>Local backend</strong><br>Fully offline pipeline with LM Studio, Moonshine STT, and any external TTS. No audio or text leaves your machine.</td>
+    <td><strong>Local backend</strong><br>Optionally run everything on your own machine with LM Studio, Moonshine speech recognition, and any TTS provider. Nothing leaves your computer.</td>
   </tr>
 </table>
 
@@ -139,7 +139,7 @@ Delete `data/vrchat_cookies.json` and restart Gabriel. The auth cookies can get 
 <details>
 <summary><strong>"Gemini Live disconnects with error 1007 or 1008"</strong></summary>
 
-These are precondition failures, usually caused by sending audio while the model is mid-turn or sending text before the model is ready. Try switching VAD to `silero` mode in `config.yml` -- it gates audio during tool calls and model speech and is generally more stable on 3.1 models.
+These are precondition failures, usually caused by sending audio while the model is mid-turn or sending text before the model is ready. Try switching VAD to `silero` mode in `config.yml` since it gates audio during tool calls and model speech and is generally more stable on 3.1 models.
 
 If you're on a 2.5 model, make sure `context_window_compression.enabled` is `true` to prevent the session from hitting the token limit.
 
@@ -157,7 +157,7 @@ Add backup API keys under `gemini.backup_keys` in `config.yml`. Gabriel rotates 
 
 Check your audio routing in the Windows Volume Mixer. Python's output should go to `CABLE Input`, and VRChat's microphone should be set to `CABLE Output`. Also make sure the correct microphone is selected in the WebUI audio device dropdown (it's the Hi-Fi Cable for your mic input).
 
-If routing looks right, try lowering `silence_duration_ms` in the VAD config -- 200ms is the default and works well for natural conversation.
+If routing looks right, try lowering `silence_duration_ms` in the VAD config. 200ms is the default and works well for natural conversation.
 
 </details>
 
@@ -214,14 +214,14 @@ Drop them in `sfx/music/`. Gabriel can play them via the soundboard tool. For [m
 <details>
 <summary><strong>"How do I add a custom TTS voice?"</strong></summary>
 
-Gabriel supports several TTS providers out of the box: Qwen3, Hoppou AI cloud, Google Chirp 3 HD, and TikTok TTS. To add your own, write a plugin that registers a TTS provider -- see the [OmniVoice plugin](https://github.com/HoppouAI/ProjectGabriel-Plugins/tree/main/omnivoice) as a reference (600+ languages, voice cloning from a wav file).
+Gabriel supports several TTS providers out of the box: Qwen3, Hoppou AI cloud, Google Chirp 3 HD, and TikTok TTS. To add your own, write a plugin that registers a TTS provider. Check out the [OmniVoice plugin](https://github.com/HoppouAI/ProjectGabriel-Plugins/tree/main/omnivoice) as a reference (600+ languages, voice cloning from a wav file).
 
 </details>
 
 <details>
 <summary><strong>"My config.yml got corrupted / things are acting weird"</strong></summary>
 
-Don't panic. Compare your `config.yml` against `config.yml.example` -- the example file always reflects the current schema. Look for missing keys, wrong indentation, or leftover values from an older version. If you recently upgraded, new fields may have been added that you're missing.
+Don't panic. Compare your `config.yml` against `config.yml.example`. The example file always reflects the current schema. Look for missing keys, wrong indentation, or leftover values from an older version. If you recently upgraded, new fields may have been added that you're missing.
 
 </details>
 
