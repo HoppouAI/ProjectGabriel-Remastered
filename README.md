@@ -112,20 +112,20 @@ Then in VRChat Settings &rarr; Audio &rarr; Microphone:
 
 ## Configuration
 
-Everything lives in `config.yml` (gitignored, never committed). Key sections:
+Everything lives in `config.yml`, Key sections:
 
 | Section | What it does |
 |:---|:---|
-| `gemini.api_key` | Your Gemini API key (required) |
-| `gemini.model` | Which Gemini Live model to use |
-| `gemini.voice` | Prebuilt voice: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr |
-| `gemini.vad` | Voice Activity Detection: `auto` (server-side) or `silero` (local) |
-| `gemini.thinking` | Thinking budget/config for the model's inner monologue |
-| `vrchat.osc_*` | OSC IP and ports |
-| `vrchat_api.*` | VRChat account credentials for avatar switching, friends, etc |
-| `yolo.enabled` | Toggle person/face tracking |
-| `memory.*` | Memory backend settings |
-| `plugins.*` | Plugin loader and trust settings |
+| `gemini` &rarr; `api_key` | Your Gemini API key (required) |
+| `gemini` &rarr; `model` | Which Gemini Live model to use |
+| `gemini` &rarr; `voice` | Prebuilt voice: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr |
+| `gemini` &rarr; `vad` &rarr; `mode` | Voice Activity Detection: `auto` (server-side) or `silero` (local) |
+| `gemini` &rarr; `thinking` | Thinking budget/config for the model's inner monologue |
+| `vrchat` &rarr; `osc_ip`, `osc_send_port`, `osc_receive_port` | OSC IP and ports |
+| `vrchat_api` | VRChat account credentials for avatar switching, friends, etc |
+| `yolo` &rarr; `enabled` | Toggle person/face tracking |
+| `memory` | Memory backend settings |
+| `plugins` | Plugin loader and trust settings |
 
 Prompt files live in `config/prompts/`. Personalities live in `config/prompts/personalities.yml`.
 
@@ -136,7 +136,7 @@ Prompt files live in `config/prompts/`. Personalities live in `config/prompts/pe
 <details>
 <summary><strong>"I can't log into VRChat" / "VRChat API calls fail with 401"</strong></summary>
 
-Delete `data/vrchat_cookies.json` and restart Gabriel. The auth cookies can get stale or corrupted, and deleting them forces a fresh login on next attempt. If it still fails, double-check your `vrchat_api.username` and `vrchat_api.password` in `config.yml`.
+Delete `data/vrchat_cookies.json` and restart Gabriel. The auth cookies can get stale or corrupted, and deleting them forces a fresh login on next attempt. If it still fails, double-check the `username` and `password` fields under the `vrchat_api` section in `config.yml`.
 
 </details>
 
@@ -157,7 +157,7 @@ No. Gabriel is just the project name and the default app name. Change it in `con
 <details>
 <summary><strong>"How do I change the AI's voice?"</strong></summary>
 
-Set `gemini.voice` in `config.yml` to any of the eight built-in names: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, or Zephyr. Puck and Kore are the most popular. You can also use external TTS providers like Qwen3 or Chirp 3 HD through the local backend, or install the OmniVoice plugin for voice cloning from a wav file.
+Set the `voice` field under `gemini` in `config.yml` to any of the eight built-in names: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, or Zephyr. Puck and Kore are the most popular. You can also use external TTS providers like Qwen3 or Chirp 3 HD through the local backend.
 
 </details>
 
@@ -171,16 +171,16 @@ Not at all. Gabriel is fully customizable. Pick a female voice like Aoede or Zep
 <details>
 <summary><strong>"Gemini Live disconnects with error 1007 or 1008"</strong></summary>
 
-These are precondition failures, usually caused by sending audio while the model is mid-turn or sending text before the model is ready. Try switching VAD to `silero` mode in `config.yml` since it gates audio during tool calls and model speech and is generally more stable on 3.1 models.
+These are precondition failures, usually caused by sending audio while the model is mid-turn or sending text before the model is ready. Try switching `mode` under `gemini` &rarr; `vad` to `silero` since it gates audio during tool calls and model speech and is generally more stable on 3.1 models.
 
-If you're on a 2.5 model, make sure `context_window_compression.enabled` is `true` to prevent the session from hitting the token limit.
+If you're on a 2.5 model, make sure `context_window_compression` is set to `enabled: true` under `gemini` to prevent the session from hitting the token limit.
 
 </details>
 
 <details>
 <summary><strong>"I'm getting 429 rate limit errors"</strong></summary>
 
-Add backup API keys under `gemini.backup_keys` in `config.yml`. Gabriel rotates keys automatically when he hits a quota limit. Each free API key has its own quota, so having a few on hand keeps things running.
+Add backup API keys under `gemini` &rarr; `backup_keys` in `config.yml`. Gabriel rotates keys automatically when he hits a quota limit. Each free API key has its own quota, so having a few on hand keeps things running.
 
 </details>
 
@@ -189,7 +189,7 @@ Add backup API keys under `gemini.backup_keys` in `config.yml`. Gabriel rotates 
 
 Check your audio routing in the Windows Volume Mixer. Python's output should go to `CABLE Input`, and VRChat's microphone should be set to `CABLE Output`. Also make sure the correct microphone is selected in the WebUI audio device dropdown (it's the Hi-Fi Cable for your mic input).
 
-If routing looks right, try lowering `silence_duration_ms` in the VAD config. 200ms is the default and works well for natural conversation.
+If routing looks right, try lowering `silence_duration_ms` under `gemini` &rarr; `vad`. 200ms is the default and works well for natural conversation.
 
 </details>
 
@@ -225,7 +225,7 @@ Run `setup.bat` and choose option 2 (NVIDIA GPU) or manually swap in CUDA PyTorc
 <details>
 <summary><strong>"The chatbox shows garbled text or cuts off"</strong></summary>
 
-VRChat's chatbox has a 144 character hard limit. Gabriel auto-paginates with `(1/N)` prefixes, but if you're seeing issues, try adjusting `chatbox_page_delay` in `config.yml` (default is 3 seconds). Lower values cycle pages faster but might look jittery.
+VRChat's chatbox has a 144 character hard limit. Gabriel auto-paginates with `(1/N)` prefixes, but if you're seeing issues, try adjusting `chatbox_page_delay` under `vrchat` in `config.yml` (default is 3 seconds). Lower values cycle pages faster but might look jittery.
 
 </details>
 
@@ -239,7 +239,7 @@ The project targets Windows first. Some things will work on Linux (Python code, 
 <details>
 <summary><strong>"Where do I put my music/SFX files?"</strong></summary>
 
-Drop them in `sfx/music/`. Gabriel can play them via the soundboard tool. For [myinstants](https://www.myinstants.com/) sound effects, point `sfx.myinstants_dir` in `config.yml` to your collection folder.
+Drop them in `sfx/music/`. Gabriel can play them via the soundboard tool.
 
 </details>
 
