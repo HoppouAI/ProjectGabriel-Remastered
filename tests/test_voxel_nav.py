@@ -212,6 +212,72 @@ class TestFillInteriorGaps(unittest.TestCase):
         self.assertEqual(mgr.graph.get((1, 0, 1)).node_type,
                          NodeType.UNREACHABLE)
 
+    def test_does_not_stack_double_layer(self):
+        mgr = VoxelNavManager(data_dir=tempfile.mkdtemp(), learning_mode=True)
+        mgr.load_world("wrld_gap_dl")
+        # solid 3x3 floor at y=0, plus a single floor cell up at y=1 in the
+        # center. the hole beside that upper cell must NOT be filled, since
+        # filling it would stack a second floor right on top of y=0 floor.
+        for x in range(3):
+            for z in range(3):
+                mgr.graph.add_node(Node(serial=(x, 0, z),
+                                        node_type=NodeType.REACHABLE))
+        mgr.graph.add_node(Node(serial=(1, 1, 1),
+                                node_type=NodeType.REACHABLE))
+        before = len(mgr.graph)
+        mgr.fill_interior_gaps()
+        # nothing at y=1 next to the lone upper cell should appear above the
+        # y=0 floor
+        for x in range(3):
+            for z in range(3):
+                if (x, z) == (1, 1):
+                    continue
+                self.assertNotIn((x, 1, z), mgr.graph)
+        self.assertEqual(len(mgr.graph), before)
+
+    def test_does_not_climb_stairs(self):
+        mgr = VoxelNavManager(data_dir=tempfile.mkdtemp(), learning_mode=True)
+        mgr.load_world("wrld_gap_stairs")
+        # a staircase: each step one cell up and one cell along +x. the open
+        # wedge under/beside the steps must stay empty.
+        for i in range(5):
+            mgr.graph.add_node(Node(serial=(i, i, 0),
+                                    node_type=NodeType.REACHABLE))
+        filled = mgr.fill_interior_gaps()
+        self.assertEqual(filled, 0)
+
+    def test_skips_large_void(self):
+        mgr = VoxelNavManager(data_dir=tempfile.mkdtemp(), learning_mode=True)
+        mgr.load_world("wrld_gap_void")
+        # an 8x8 ring of floor with a big 6x6 empty middle. that middle is a
+        # void (balcony opening / pit), not a speckle hole, so leave it empty.
+        for x in range(8):
+            for z in range(8):
+                if 1 <= x <= 6 and 1 <= z <= 6:
+                    continue
+                mgr.graph.add_node(Node(serial=(x, 0, z),
+                                        node_type=NodeType.REACHABLE))
+        filled = mgr.fill_interior_gaps()
+        self.assertEqual(filled, 0)
+        self.assertNotIn((3, 0, 3), mgr.graph)
+
+    def test_fills_small_pocket(self):
+        mgr = VoxelNavManager(data_dir=tempfile.mkdtemp(), learning_mode=True)
+        mgr.load_world("wrld_gap_pocket")
+        # 4x4 floor with a 2x2 hole in the middle -> small enclosed pocket,
+        # should be fully closed.
+        hole = {(1, 1), (2, 1), (1, 2), (2, 2)}
+        for x in range(4):
+            for z in range(4):
+                if (x, z) in hole:
+                    continue
+                mgr.graph.add_node(Node(serial=(x, 0, z),
+                                        node_type=NodeType.REACHABLE))
+        filled = mgr.fill_interior_gaps()
+        self.assertEqual(filled, 4)
+        for x, z in hole:
+            self.assertIn((x, 0, z), mgr.graph)
+
 
 if __name__ == "__main__":
     unittest.main()

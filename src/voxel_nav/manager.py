@@ -214,64 +214,89 @@ class VoxelNavManager:
             self._dirty = True
             return node
 
-    def fill_interior_gaps(self, *, min_support: int = 3,
-                           max_fill: int = 5000) -> int:
-        """Morphological hole-fill. The map is built passively from where
-        the avatar physically walks, so it's impossible to step on every
-        0.25m voxel and the floor ends up speckled with single-cell holes.
+    def fill_interior_gaps(self, *, max_fill: int = 5000,
+                           max_hole_size: int = 8) -> int:
+        """Close small enclosed holes in the walkable floor.
 
-        An empty cell (not in the graph at all, so neither floor nor a
-        known wall) that is hemmed in on `min_support` of its 4 cardinal
-        XZ sides by Reachable floor is almost certainly walkable floor we
-        just never landed on. Promote it.
+        The map is built passively from where the avatar physically walks,
+        so the floor ends up speckled with little holes we never landed on.
+        This promotes empty cells that sit inside a SMALL pocket fully
+        ringed by Reachable floor at the SAME height.
 
-        Conservative on purpose:
-          - only truly empty cells, never touches walls/iffy
-          - needs >= min_support (default 3 of 4) cardinal reachable
-            neighbors, so it closes interior holes and pinches but won't
-            bridge a 1-wide gap across open space or punch through a wall
-            line (a wall side reads as not-reachable)
-          - +/-1 Y tolerance per side so uneven floors / stair lips still
-            count as support
+        Deliberately strict to avoid the classic over-fill failures:
+          - same-Y only, no vertical tolerance, so it never climbs stairs
+            or ramps and never stacks a second floor layer on a slope
+          - never fills a cell that already has Reachable floor directly
+            above or below it in the same column (anti double-layer)
+          - only fills pockets up to `max_hole_size` cells that are fully
+            enclosed by existing cells. big open voids (pits, balcony
+            openings, the space under stairs) overrun the cap and are left
+            alone instead of being flooded
         Returns the number of cells filled."""
+        cardinals = ((1, 0), (-1, 0), (0, 1), (0, -1))
         with self._lock:
             with self.graph._lock:  # noqa: SLF001
                 reach = [s for s, n in self.graph.nodes.items()
                          if n.node_type == NodeType.REACHABLE]
                 present = set(self.graph.nodes.keys())
 
-            def support_y(cell: Serial) -> Optional[int]:
-                """Reachable at this XZ within +/-1 Y? return the matching Y."""
-                cx, cy, cz = cell
-                for ddy in (0, 1, -1):
-                    n = self.graph.get((cx, cy + ddy, cz))
-                    if n is not None and n.node_type == NodeType.REACHABLE:
-                        return cy + ddy
-                return None
+            def is_reach_at(cell: Serial) -> bool:
+                n = self.graph.get(cell)
+                return n is not None and n.node_type == NodeType.REACHABLE
 
-            # candidate empty cells = cardinal neighbors of reachable floor
-            candidates: set[Serial] = set()
+            # seed empty cells that sit directly beside reachable floor
+            seeds: set[Serial] = set()
             for i, (sx, sy, sz) in enumerate(reach):
-                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                for dx, dz in cardinals:
                     cand = (sx + dx, sy, sz + dz)
                     if cand not in present:
-                        candidates.add(cand)
+                        seeds.add(cand)
                 if i % 2000 == 0:
                     time.sleep(0)
 
             to_fill: list[Serial] = []
-            for i, cand in enumerate(candidates):
-                cx, cy, cz = cand
-                support = 0
-                for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                    if support_y((cx + dx, cy, cz + dz)) is not None:
-                        support += 1
-                if support >= min_support:
-                    to_fill.append(cand)
+            decided: set[Serial] = set()  # empty cells already classified
+            for seed in seeds:
+                if seed in decided:
+                    continue
+                # bounded flood over empty same-Y cells. if it terminates
+                # within the cap it's a small enclosed hole; if it overruns
+                # the cap it's open space and we bail without filling.
+                pocket: list[Serial] = []
+                queue = [seed]
+                seen = {seed}
+                enclosed = True
+                touches_floor = False
+                while queue:
+                    cell = queue.pop()
+                    pocket.append(cell)
+                    if len(pocket) > max_hole_size:
+                        enclosed = False
+                        break
+                    cx, cy, cz = cell
+                    for dx, dz in cardinals:
+                        nb = (cx + dx, cy, cz + dz)
+                        if nb in present:
+                            if is_reach_at(nb):
+                                touches_floor = True
+                            continue  # boundary cell, stop the flood here
+                        if nb not in seen:
+                            seen.add(nb)
+                            queue.append(nb)
+                decided |= seen
+                if not enclosed or not touches_floor:
+                    continue
+                for cx, cy, cz in pocket:
+                    # anti double-layer: leave it empty if there's already
+                    # walkable floor one cell up or down this column
+                    if is_reach_at((cx, cy + 1, cz)) or is_reach_at((cx, cy - 1, cz)):
+                        continue
+                    to_fill.append((cx, cy, cz))
                     if len(to_fill) >= max_fill:
                         break
-                if i % 2000 == 0:
-                    time.sleep(0)
+                if len(to_fill) >= max_fill:
+                    break
+                time.sleep(0)
 
             for cell in to_fill:
                 self.graph.add_node(Node(serial=cell,
