@@ -1,6 +1,6 @@
 [project]
 name = "projectgabriel"
-version = "2.0.0"
+version = "2.0.1"
 description = "Real-time VRChat AI powered by Gemini Live with voice interaction, OSC control, and YOLOv8n person tracking"
 requires-python = ">=3.11,<3.13"
 license = {file = "LICENSE"}
