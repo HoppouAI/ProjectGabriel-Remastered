@@ -93,6 +93,77 @@ class _PitchShifter:
         return np.zeros(n, dtype=np.float32)
 
 
+class _ResamplingInputStream:
+    """Wraps a PyAudio input stream open at native_rate so callers can read at
+    target_rate. Used when the device wont open at the rate Gemini wants
+    (typically 16000 Hz), eg headsets that windows locks to 44100/48000."""
+
+    def __init__(self, stream, native_rate, target_rate):
+        self._stream = stream
+        self._native_rate = native_rate
+        self._target_rate = target_rate
+
+    def read(self, num_frames, exception_on_overflow=False):
+        native_frames = int(round(num_frames * self._native_rate / self._target_rate))
+        data = self._stream.read(native_frames, exception_on_overflow=exception_on_overflow)
+        samples = np.frombuffer(data, dtype=np.int16)
+        if self._native_rate == self._target_rate or len(samples) == 0:
+            return data
+        new_len = max(1, int(round(len(samples) * self._target_rate / self._native_rate)))
+        x_old = np.arange(len(samples))
+        x_new = np.linspace(0, len(samples) - 1, new_len)
+        out = np.interp(x_new, x_old, samples).astype(np.int16)
+        return out.tobytes()
+
+    def stop_stream(self):
+        return self._stream.stop_stream()
+
+    def close(self):
+        return self._stream.close()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+class _ResamplingOutputStream:
+    """Wraps a PyAudio output stream open at native_rate so callers can write
+    target_rate audio. Mirror of _ResamplingInputStream for the speaker side."""
+
+    def __init__(self, stream, native_rate, target_rate):
+        self._stream = stream
+        self._native_rate = native_rate
+        self._target_rate = target_rate
+
+    def write(self, data, *args, **kwargs):
+        if self._native_rate == self._target_rate or not data:
+            return self._stream.write(data, *args, **kwargs)
+        samples = np.frombuffer(data, dtype=np.int16)
+        if len(samples) == 0:
+            return self._stream.write(data, *args, **kwargs)
+        new_len = max(1, int(round(len(samples) * self._native_rate / self._target_rate)))
+        x_old = np.arange(len(samples))
+        x_new = np.linspace(0, len(samples) - 1, new_len)
+        resampled = np.interp(x_new, x_old, samples).astype(np.int16).tobytes()
+        return self._stream.write(resampled, *args, **kwargs)
+
+    def stop_stream(self):
+        return self._stream.stop_stream()
+
+    def close(self):
+        return self._stream.close()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def _is_invalid_sample_rate_error(exc: BaseException) -> bool:
+    """PortAudio reports paInvalidSampleRate as errno -9997. The OSError
+    string typically contains 'Invalid sample rate'. Match either."""
+    if getattr(exc, "errno", None) == -9997:
+        return True
+    return "Invalid sample rate" in str(exc)
+
+
 class AudioManager:
     def __init__(self, config):
         self.config = config
@@ -137,23 +208,81 @@ class AudioManager:
         self._pygame_ready = True
 
     def open_input_stream(self):
-        return self.pya.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=self.config.send_sample_rate,
-            input=True,
-            input_device_index=self.input_device,
-            frames_per_buffer=self.config.chunk_size,
-        )
+        target_rate = self.config.send_sample_rate
+        try:
+            return self.pya.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=target_rate,
+                input=True,
+                input_device_index=self.input_device,
+                frames_per_buffer=self.config.chunk_size,
+            )
+        except OSError as e:
+            if not _is_invalid_sample_rate_error(e):
+                raise
+            try:
+                info = self.pya.get_device_info_by_index(self.input_device)
+                native_rate = int(info.get("defaultSampleRate", 48000))
+                dev_name = info.get("name", f"#{self.input_device}")
+            except Exception:
+                native_rate = 48000
+                dev_name = f"#{self.input_device}"
+            if native_rate == target_rate:
+                native_rate = 48000
+            native_chunk = int(round(self.config.chunk_size * native_rate / target_rate))
+            logger.warning(
+                f"Mic '{dev_name}' wont open at {target_rate} Hz, "
+                f"falling back to {native_rate} Hz with software resampling. "
+                f"If audio sounds bad, set audio.input_device in config.yml to a "
+                f"device that natively supports {target_rate} Hz."
+            )
+            stream = self.pya.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=native_rate,
+                input=True,
+                input_device_index=self.input_device,
+                frames_per_buffer=native_chunk,
+            )
+            return _ResamplingInputStream(stream, native_rate, target_rate)
 
     def open_output_stream(self):
-        return self.pya.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=self.config.receive_sample_rate,
-            output=True,
-            output_device_index=self.output_device,
-        )
+        target_rate = self.config.receive_sample_rate
+        try:
+            return self.pya.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=target_rate,
+                output=True,
+                output_device_index=self.output_device,
+            )
+        except OSError as e:
+            if not _is_invalid_sample_rate_error(e):
+                raise
+            try:
+                info = self.pya.get_device_info_by_index(self.output_device)
+                native_rate = int(info.get("defaultSampleRate", 48000))
+                dev_name = info.get("name", f"#{self.output_device}")
+            except Exception:
+                native_rate = 48000
+                dev_name = f"#{self.output_device}"
+            if native_rate == target_rate:
+                native_rate = 48000
+            logger.warning(
+                f"Speaker '{dev_name}' wont open at {target_rate} Hz, "
+                f"falling back to {native_rate} Hz with software resampling. "
+                f"If audio sounds bad, set audio.output_device in config.yml to a "
+                f"device that natively supports {target_rate} Hz."
+            )
+            stream = self.pya.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=native_rate,
+                output=True,
+                output_device_index=self.output_device,
+            )
+            return _ResamplingOutputStream(stream, native_rate, target_rate)
 
     def is_music_playing(self) -> bool:
         """Check if music is currently playing (pygame or an external source)."""

@@ -868,6 +868,24 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                 continue
 
             except (ConnectionError, OSError, TimeoutError) as e:
+                # PortAudio paInvalidSampleRate is -9997. Not a network problem,
+                # the user's mic or speaker doesnt support the configured rate
+                # and even the fallback path in audio.py couldnt rescue it.
+                if getattr(e, "errno", None) == -9997 or "Invalid sample rate" in str(e):
+                    logger.error(
+                        "Audio device rejected the configured sample rate. "
+                        "This is your mic or speaker, not the network. "
+                        "Pick a different device in config.yml under "
+                        "audio.input_device / audio.output_device, or change "
+                        "the device's default format in Windows sound settings. "
+                        f"({e})"
+                    )
+                    _broadcast_console(
+                        "error",
+                        "Audio device rejected sample rate. Check input_device / output_device in config.yml."
+                    )
+                    self._notify_chatbox_error()
+                    raise
                 # Network-level errors - keep handle, just retry
                 logger.warning(f"Network error: {e}, reconnecting in 3s...")
                 _broadcast_console("error", f"Network error: {str(e)[:80]}")
