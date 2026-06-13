@@ -8,7 +8,17 @@ This folder is mostly gitignored so personal plugins stay local. The
 ships with `enabled: false` so a fresh checkout doesn't load it. flip
 that to `true` if you want to see it in action.
 
-## Quick start
+## Installing prebuilt plugins
+
+Run `plugins.bat` from the project root to open the plugin installer.
+It pulls the latest list from
+[HoppouAI/ProjectGabriel-Plugins](https://github.com/HoppouAI/ProjectGabriel-Plugins),
+shows what's available + already installed, and one keypress installs the
+folder plus runs `bin\uv.exe pip install` for any python deps the
+plugin needs. Press `L` inside the TUI to install from a local folder
+instead, or `G` to point it at a fork.
+
+## Quick start (writing your own)
 
 1. Make a folder: `plugins/my_thing/`
 2. Add `plugins/my_thing/plugin.yml`:

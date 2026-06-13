@@ -263,6 +263,14 @@ Gabriel has a drop-in plugin system. Create a folder under `plugins/<name>/` wit
 
 Official plugins live at **[HoppouAI/ProjectGabriel-Plugins](https://github.com/HoppouAI/ProjectGabriel-Plugins)**. The author guide is in [plugins/README.md](plugins/README.md).
 
+### Installing plugins
+
+Run **`plugins.bat`** for an interactive TUI that pulls the latest plugin
+list from the official repo, shows what's already installed, and one
+keypress installs a plugin folder plus runs `bin\uv.exe pip install` for
+any dependencies it needs. Press `L` inside the TUI to install from a
+local folder or `G` to point it at a fork instead.
+
 ---
 
 ## Project Structure
@@ -271,6 +279,7 @@ Official plugins live at **[HoppouAI/ProjectGabriel-Plugins](https://github.com/
 main.py              Entry point
 supervisor.py        Auto-restart on crash
 configurator.py      Interactive setup wizard
+plugin_installer.py  Interactive plugin installer (TUI)
 src/
   audio.py           Audio I/O, effects, music/SFX
   vrchat.py          VRChat OSC client (movement, chatbox, voice)
