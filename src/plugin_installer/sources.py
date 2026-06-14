@@ -67,8 +67,9 @@ class PluginSource:
 
     def materialize(self, info: PluginInfo, dest_root: Path) -> Path:
         """Copy the plugin folder for `info` into `dest_root` and return
-        the resulting plugin folder path. Overwrites if it already
-        exists, the caller is responsible for confirming that.
+        the resulting plugin folder path. Overlays files on top of any
+        existing install so user data (configs, caches, sqlite dbs,
+        downloaded models, etc) is preserved across upgrades.
         """
         raise NotImplementedError
 
@@ -161,14 +162,15 @@ class GitHubSource(PluginSource):
         return out
 
     def materialize(self, info: PluginInfo, dest_root: Path) -> Path:
+        # Overlays the new files on top of any existing install instead
+        # of wiping the folder, so user data (configs, caches, sqlite
+        # dbs, downloaded models, etc) survives an upgrade.
         self._ensure_loaded()
         assert self._zip is not None
         prefix = info.locator
         if not prefix.endswith("/"):
             prefix += "/"
         dest_dir = dest_root / info.name
-        if dest_dir.exists():
-            shutil.rmtree(dest_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         for name in self._zip.namelist():
@@ -179,9 +181,13 @@ class GitHubSource(PluginSource):
                 continue
             target = dest_dir / rel
             if name.endswith("/"):
+                if target.exists() and not target.is_dir():
+                    target.unlink()
                 target.mkdir(parents=True, exist_ok=True)
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists() and target.is_dir():
+                shutil.rmtree(target)
             with self._zip.open(name) as src, open(target, "wb") as dst:
                 shutil.copyfileobj(src, dst)
         return dest_dir
@@ -248,13 +254,14 @@ class LocalSource(PluginSource):
         return out
 
     def materialize(self, info: PluginInfo, dest_root: Path) -> Path:
+        # Overlay onto any existing install rather than wiping. Same
+        # rationale as GitHubSource: keep the user's data and configs.
         src = Path(info.locator)
         if not src.is_dir():
             raise SourceError(f"source folder vanished: {src}")
         dest = dest_root / info.name
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(src, dest, ignore=_local_ignore)
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dest, ignore=_local_ignore, dirs_exist_ok=True)
         return dest
 
 

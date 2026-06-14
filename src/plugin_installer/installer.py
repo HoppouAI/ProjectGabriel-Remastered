@@ -319,6 +319,7 @@ def install_plugin(
             on_line(line)
 
     PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
+    dest_existed = (PLUGINS_DIR / info.name).is_dir()
 
     emit(f"copying {info.name} v{info.version} from {info.source_label}")
     try:
@@ -329,6 +330,8 @@ def install_plugin(
         return res
     res.copied = True
     emit(f"  -> {dest}")
+    if dest_existed:
+        emit("  updating in place, your local data and configs are kept")
 
     seeded, merged = seed_example_configs(dest, on_line=emit)
     res.seeded_configs = seeded
