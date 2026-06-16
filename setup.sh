@@ -12,19 +12,21 @@ echo "  ===================================================="
 echo
 
 # ---- preflight: native libs the python wheels link against ----
-# pyaudio builds against portaudio, opencv needs libGL at runtime, etc. we cant
-# install these for you (needs sudo and varies by distro) so just show the hint.
+# pyaudio compiles a C extension (needs a compiler) and links against portaudio,
+# opencv wants libGL at runtime, etc. we cant install these for you (needs sudo
+# and varies by distro) so just show the hint. build-essential / base-devel pull
+# in gcc+make, without them pyaudio dies with "command 'cc' failed".
 pkg_hint() {
     if command -v apt-get >/dev/null 2>&1; then
-        echo "sudo apt install -y portaudio19-dev libsndfile1 libgl1 ffmpeg python3-dev"
+        echo "sudo apt install -y build-essential portaudio19-dev libsndfile1 libgl1 ffmpeg python3-dev"
     elif command -v dnf >/dev/null 2>&1; then
-        echo "sudo dnf install -y portaudio-devel libsndfile mesa-libGL ffmpeg python3-devel"
+        echo "sudo dnf install -y gcc gcc-c++ make portaudio-devel libsndfile mesa-libGL ffmpeg python3-devel"
     elif command -v pacman >/dev/null 2>&1; then
-        echo "sudo pacman -S --needed portaudio libsndfile mesa ffmpeg"
+        echo "sudo pacman -S --needed base-devel portaudio libsndfile mesa ffmpeg"
     elif command -v zypper >/dev/null 2>&1; then
-        echo "sudo zypper install -y portaudio-devel libsndfile Mesa-libGL1 ffmpeg python3-devel"
+        echo "sudo zypper install -y gcc gcc-c++ make portaudio-devel libsndfile Mesa-libGL1 ffmpeg python3-devel"
     else
-        echo "(install portaudio, libsndfile, libGL and ffmpeg dev packages for your distro)"
+        echo "(install a C compiler plus portaudio, libsndfile, libGL and ffmpeg dev packages for your distro)"
     fi
 }
 
