@@ -15,6 +15,10 @@ mss
 aiohttp
 beautifulsoup4
 Pillow
+# torch: defaults to the CUDA build on linux (large) or cpu on win/mac. to force
+# a build, install it first from the matching index, then run this file:
+#   cpu:   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   cuda:  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 torch
 torchvision
 torchaudio

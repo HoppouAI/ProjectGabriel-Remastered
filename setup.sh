@@ -89,36 +89,19 @@ read -rp "        Choice [1/2]: " GPU
 echo
 
 # ---- Step 4: deps ----
-echo "  [4/4] Installing dependencies..."
+if [ "${GPU:-1}" = "2" ]; then
+    TORCH_EXTRA="cu126"
+    echo "  [4/4] Installing dependencies (CUDA PyTorch)..."
+else
+    TORCH_EXTRA="cpu"
+    echo "  [4/4] Installing dependencies (CPU PyTorch)..."
+fi
 echo "        This takes a few minutes the first time."
-if ! "$UV" sync; then
+if ! "$UV" sync --extra "$TORCH_EXTRA"; then
     echo
     echo "  ERROR: Package install failed. See output above."
     echo "  A native lib is often the cause:  $(pkg_hint)"
     exit 1
-fi
-
-# uv sync pulls the CUDA build of torch (see [tool.uv.sources] in pyproject).
-# thats what NVIDIA folks want, but a CPU-only box shouldnt haul down ~2.5GB of
-# cuda libs it cant use, so swap in the cpu wheels when they pick option 1.
-if [ "${GPU:-1}" = "2" ]; then
-    echo
-    echo "        Making sure CUDA PyTorch is in place..."
-    if "$UV" pip install --index-url https://download.pytorch.org/whl/cu126 \
-        torch torchvision torchaudio --reinstall; then
-        echo "        CUDA PyTorch installed."
-    else
-        echo "        WARNING: CUDA torch failed, the synced build stays."
-    fi
-else
-    echo
-    echo "        Swapping in CPU-only PyTorch (smaller, no CUDA)..."
-    if "$UV" pip install --index-url https://download.pytorch.org/whl/cpu \
-        torch torchvision torchaudio --reinstall; then
-        echo "        CPU PyTorch installed."
-    else
-        echo "        WARNING: CPU torch swap failed, the synced build stays."
-    fi
 fi
 
 # ---- config files ----
@@ -153,7 +136,9 @@ if [ -f "config.yml" ]; then
 fi
 
 echo "  Launching configuration wizard..."
-"$UV" run python configurator.py
+# use the venv python directly, not `uv run`, which would re-sync the default
+# (extra-less) env and uninstall the torch build we just selected.
+.venv/bin/python configurator.py
 
 echo
 echo "  Run:  ./run.sh"

@@ -48,9 +48,8 @@ dependencies = [
     "pymongo>=4.6.0",
     "pynput>=1.7.0",
     "pyotp>=2.9.0",
-    "torch>=2.1.0",
-    "torchvision>=0.16.0",
-    "torchaudio>=2.1.0",
+    # torch/torchvision/torchaudio live in the cpu / cu126 extras below so the
+    # build (cpu vs cuda) gets picked at install time. always sync with an extra.
     "requests>=2.31.0",
     "soundfile>=0.12.0",
     "stream2sentence>=0.3.0",
@@ -67,10 +66,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# pick exactly one torch build. cpu is the lightweight default; cu126 grabs the
+# CUDA 12.6 wheels for NVIDIA GPUs. setup.sh / setup.bat pass one of these to
+# `uv sync --extra ...`. theyre declared conflicting in [tool.uv] below so uv
+# resolves cleanly instead of trying to merge the two builds.
+cpu = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "torchaudio>=2.1.0",
+]
+cu126 = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "torchaudio>=2.1.0",
+]
 # local LLM backend (LM Studio + Moonshine STT). only needed when
 # backend: "local" in config.yml. install with:  pip install .[local]
-# torch/torchaudio are already core deps (yolo + face tracking), and silero
-# VAD is fetched at runtime via torch.hub, so moonshine is the only extra.
+# silero VAD is fetched at runtime via torch.hub, so moonshine is the only extra.
 local = [
     "moonshine-voice==0.0.59",
 ]
@@ -96,8 +108,24 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
+[tool.uv]
+# cpu and cu126 ship the same packages from different indexes, so they cant both
+# be installed at once. declaring the conflict lets `uv sync --extra cpu` (or
+# cu126) resolve cleanly instead of trying to merge the two torch builds.
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cu126" },
+    ],
+]
+
 [tool.uv.pip]
 index-url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cu126"
@@ -105,9 +133,18 @@ url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu126" }
-torchvision = { index = "pytorch-cu126" }
-torchaudio = { index = "pytorch-cu126" }
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cu126" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cu126" },
+]
+torchaudio = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cu126" },
+]
 
 [tool.ruff]
 line-length = 120

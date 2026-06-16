@@ -61,24 +61,20 @@ echo.
 echo   [4/4] Installing dependencies...
 echo        This takes a few minutes the first time.
 
-uv sync
+if "%GPU%"=="2" (
+    set "TORCH_EXTRA=cu126"
+    echo        Using CUDA ^(NVIDIA GPU^) PyTorch.
+) else (
+    set "TORCH_EXTRA=cpu"
+    echo        Using CPU PyTorch.
+)
+
+uv sync --extra !TORCH_EXTRA!
 if %errorlevel% neq 0 (
     echo.
     echo   ERROR: Package install failed. See output above.
     pause
     exit /b 1
-)
-
-if "%GPU%"=="2" (
-    echo.
-    echo        Swapping in CUDA PyTorch...
-    uv pip install --index-url https://download.pytorch.org/whl/cu126 ^
-        torch torchvision torchaudio --reinstall
-    if %errorlevel% neq 0 (
-        echo        WARNING: CUDA torch failed, CPU torch will be used.
-    ) else (
-        echo        CUDA PyTorch installed.
-    )
 )
 
 :: ---- config files ----
@@ -119,7 +115,7 @@ if exist "config.yml" (
 )
 
 echo   Launching configuration wizard...
-uv run python configurator.py
+.venv\Scripts\python.exe configurator.py
 
 echo.
 echo   Run:  run.bat
