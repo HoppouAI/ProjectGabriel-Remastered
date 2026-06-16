@@ -226,21 +226,58 @@ VRChat's chatbox has a 144 character hard limit. Gabriel auto-paginates with `(1
 <details>
 <summary><strong>"Can I run this on Linux?"</strong></summary>
 
-Yes, experimentally. Gabriel still targets Windows first, but there's a working Linux path now:
+Yes. Gabriel still targets Windows first, but Linux is a working path now (tested on Ubuntu 22.04 and similar). A machine with no GPU is fine as long as you leave the vision features off.
 
-1. Install the native libraries your distro needs. The setup script prints the exact command for apt, dnf, pacman, or zypper. These cover PyAudio, OpenCV, and friends.
-2. Run `./setup.sh` instead of `setup.bat`. It bootstraps `uv` into `bin/`, builds the Python 3.12 environment, asks about GPU support, and seeds your config files.
-3. Start him with `./run.sh`.
+**Setup**
 
-For audio, PipeWire replaces the VB-Audio cables. Run `scripts/pipewire-setup.sh up` to create two virtual sinks named `Gabriel_Mic` and `Gabriel_Ears`:
+1. Install the native libraries your distro needs. `./setup.sh` prints the exact command for apt, dnf, pacman, or zypper. These cover PyAudio, OpenCV, a C compiler, and friends.
+2. Run `./setup.sh` (the Linux equivalent of `setup.bat`). It bootstraps `uv` into `bin/`, builds the Python 3.12 environment, and asks whether you want GPU support. CPU is the default, so just press Enter unless you have an NVIDIA card and want the CUDA build of PyTorch. It then seeds your config files.
+3. Open `config.yml`, drop in your API key (and tweak anything else you want), then start him with `./run.sh`.
 
-- In `pavucontrol`, point VRChat's recording at the monitor of `Gabriel_Mic`, and its playback at `Gabriel_Ears`.
-- PortAudio only exposes `pipewire`, `pulse`, and `default` on Linux, never the individual sinks, so you cannot select `Gabriel_Mic` by index. Instead open `config.yml`, find the `audio:` section, and set both `input_device` and `output_device` to the index of the `pulse` device (the setup script prints a command that lists them).
-- Then start Gabriel with the sinks selected: `PULSE_SOURCE=Gabriel_Ears.monitor PULSE_SINK=Gabriel_Mic ./run.sh`. `./run.sh` already sets those two variables for you whenever the `pipewire-setup.sh` sinks are loaded, so a plain `./run.sh` works too.
+**Audio routing with PipeWire**
 
-PyAudio reaches PipeWire through its PulseAudio compatibility layer, so nothing in the code has to change there. OSC, the WebUI, the Discord bot, vision, and YOLO tracking all work. The tracker automatically falls back from bettercam to `mss` screen capture on Linux.
+PipeWire stands in for the VB-Audio virtual cables Windows uses. Run `./scripts/pipewire-setup.sh up` to create two virtual sinks:
 
-Two rough edges remain. Crouch and crawl use simulated key presses, which only work on an X11 session or through `ydotool` on Wayland. GPU vision still wants an NVIDIA card with CUDA. Everything else should behave, and bug reports from Linux users are very welcome.
+- `Gabriel_Mic` is his mouth. His voice comes out here.
+- `Gabriel_Ears` is his ears. Anything played into this is what he hears.
+
+The sinks disappear on reboot, so re-run that command after a restart. Pass `down` to remove them or `status` to see what is loaded.
+
+PortAudio on Linux only ever shows three devices: `pipewire`, `pulse`, and `default`. It never lists the individual sinks, so you cannot pick `Gabriel_Mic` by index. Instead:
+
+- Open `config.yml`, find the `audio:` section, and set both `input_device` and `output_device` to the index of the `pulse` device. To find that index, run the lister command that `./scripts/pipewire-setup.sh up` prints (it imports pyaudio and prints every device next to its number).
+- Start him with `./run.sh`. When the Gabriel sinks are loaded, `run.sh` automatically routes his mouth to `Gabriel_Mic` and his ears to `Gabriel_Ears` for you, and prints a line confirming it. So a plain `./run.sh` is all you need.
+
+PyAudio reaches PipeWire through its PulseAudio compatibility layer, so nothing in the code changes. OSC, the WebUI, the Discord bot, vision, and YOLO tracking all work the same as on Windows.
+
+**Testing without VRChat (Discord or any voice app)**
+
+You do not need VRChat to try him out. Any voice call app can take its place, which is handy on a VM or a headless box. The trick is to make the app use his mouth as its microphone and his ears as its speaker, so a call becomes a conversation with him.
+
+Using Discord as the example, open its Voice settings on the machine running Gabriel and set:
+
+| Discord setting | Set to |
+| --- | --- |
+| Input Device (microphone) | Monitor of Gabriel_Mic |
+| Output Device (speaker) | Gabriel_Ears |
+
+Then turn off Echo Cancellation, Noise Suppression, and Automatic Gain Control, since they mangle his TTS. Set the input mode to Voice Activity with the sensitivity at minimum so it always transmits, and join a call from a different account on another machine. Talk, and he answers back through the call.
+
+Two things to watch:
+
+- Wear headphones on your end. If his voice plays out of your speakers and your real microphone picks it up, it loops back into the call and he ends up talking to himself.
+- While he is running, open `pavucontrol` to confirm the routing. The Playback tab should show a stream feeding `Gabriel_Mic`, and the Recording tab should show him capturing from Monitor of `Gabriel_Ears`. You can also override the routing per application right there if anything looks off.
+
+**That wall of ALSA errors is normal**
+
+On startup you will see a block of red `ALSA lib ... cannot find card '0'` lines, especially in a VM. They are harmless. ALSA probes physical sound cards that do not exist, then everything falls through to PipeWire and works fine. Ignore them.
+
+**Known rough edges**
+
+- Crouch and crawl use simulated key presses. Those work on an X11 session, or through `ydotool` on Wayland (start the `ydotoold` daemon first).
+- GPU vision (person following, face tracking) still wants an NVIDIA card with CUDA. On a machine without a GPU, leave the tracker and vision off. Everything else (voice, memory, OSC, the WebUI, and the Discord bot) runs without one. When the tracker is on, it falls back from bettercam to `mss` screen capture on Linux.
+
+Bug reports from Linux users are very welcome.
 
 </details>
 
