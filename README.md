@@ -232,10 +232,11 @@ Yes, experimentally. Gabriel still targets Windows first, but there's a working 
 2. Run `./setup.sh` instead of `setup.bat`. It bootstraps `uv` into `bin/`, builds the Python 3.12 environment, asks about GPU support, and seeds your config files.
 3. Start him with `./run.sh`.
 
-For audio, PipeWire replaces the VB-Audio cables. Run `scripts/pipewire-setup.sh up` to create two virtual sinks named `Gabriel_Mic` and `Gabriel_Ears`, then route them with `pavucontrol`:
+For audio, PipeWire replaces the VB-Audio cables. Run `scripts/pipewire-setup.sh up` to create two virtual sinks named `Gabriel_Mic` and `Gabriel_Ears`:
 
-- Point VRChat's recording at the monitor of `Gabriel_Mic`, and its playback at `Gabriel_Ears`.
-- Open `config.yml`, find the `audio:` section, set `input_device` to the index of the `Gabriel_Ears` monitor and `output_device` to the index of `Gabriel_Mic`. The script prints a command that lists every device index Gabriel can see.
+- In `pavucontrol`, point VRChat's recording at the monitor of `Gabriel_Mic`, and its playback at `Gabriel_Ears`.
+- PortAudio only exposes `pipewire`, `pulse`, and `default` on Linux, never the individual sinks, so you cannot select `Gabriel_Mic` by index. Instead open `config.yml`, find the `audio:` section, and set both `input_device` and `output_device` to the index of the `pulse` device (the setup script prints a command that lists them).
+- Then start Gabriel with the sinks selected: `PULSE_SOURCE=Gabriel_Ears.monitor PULSE_SINK=Gabriel_Mic ./run.sh`. `./run.sh` already sets those two variables for you whenever the `pipewire-setup.sh` sinks are loaded, so a plain `./run.sh` works too.
 
 PyAudio reaches PipeWire through its PulseAudio compatibility layer, so nothing in the code has to change there. OSC, the WebUI, the Discord bot, vision, and YOLO tracking all work. The tracker automatically falls back from bettercam to `mss` screen capture on Linux.
 

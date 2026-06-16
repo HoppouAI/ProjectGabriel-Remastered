@@ -54,14 +54,23 @@ cmd_up() {
     echo
     echo "Done. Two sinks are live: Gabriel_Mic and Gabriel_Ears."
     echo
-    echo "Now wire things up (pavucontrol makes this painless):"
-    echo "  VRChat  -> Recording: capture from 'Monitor of Gabriel_Mic'"
-    echo "          -> Playback:  output to   'Gabriel_Ears'"
-    echo "  The AI  -> in config.yml point the audio input at 'Gabriel_Ears' monitor"
-    echo "             and the audio output at               'Gabriel_Mic'"
+    echo "VRChat side (pavucontrol makes this painless):"
+    echo "  Recording: capture from 'Monitor of Gabriel_Mic'"
+    echo "  Playback:  output to    'Gabriel_Ears'"
     echo
-    echo "List the device names/indexes the AI sees with:"
+    echo "AI side:"
+    echo "  PortAudio only shows 'pipewire', 'pulse' and 'default' here, not the"
+    echo "  individual sinks, so you cant pick Gabriel_Mic by index. instead set"
+    echo "  BOTH input_device and output_device in config.yml to the 'pulse' index"
+    echo "  (see the lister below), then start with the sinks selected:"
+    echo "    PULSE_SOURCE=Gabriel_Ears.monitor PULSE_SINK=Gabriel_Mic ./run.sh"
+    echo "  ./run.sh already sets those for you when these sinks are loaded."
+    echo
+    echo "List the device indexes PortAudio sees with:"
     echo "  .venv/bin/python -c \"import pyaudio; p=pyaudio.PyAudio(); [print(i, p.get_device_info_by_index(i)['name']) for i in range(p.get_device_count())]\""
+    echo
+    echo "Want to hear the AI's own voice while testing (optional):"
+    echo "  pactl load-module module-loopback source=Gabriel_Mic.monitor latency_msec=60"
     echo
     echo "These sinks vanish on reboot. Re-run '$0 up' after a restart."
 }

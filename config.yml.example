@@ -368,8 +368,12 @@ tts:
     voice: "en_us_001"
 
 audio:
-  # Audio device indices - null uses system default
+  # Audio device indices. null uses the system default.
   # Run `python -c "import pyaudio; p=pyaudio.PyAudio(); [print(i, p.get_device_info_by_index(i)['name']) for i in range(p.get_device_count())]"` to list devices
+  # Linux + PipeWire: PortAudio only shows pipewire/pulse/default here, never the
+  # individual sinks. set BOTH of these to the 'pulse' index, then route to the
+  # Gabriel sinks with the PULSE_SOURCE / PULSE_SINK env vars (./run.sh sets them
+  # automatically when the scripts/pipewire-setup.sh sinks are loaded).
   input_device: null
   output_device: null
 
