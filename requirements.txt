@@ -9,7 +9,7 @@ scipy
 pedalboard
 ultralytics
 lap>=0.5.12
-bettercam
+bettercam; sys_platform == "win32"
 opencv-python
 mss
 aiohttp

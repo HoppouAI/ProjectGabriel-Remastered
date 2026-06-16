@@ -32,7 +32,9 @@ dependencies = [
     "pedalboard>=0.9.0",
     "ultralytics>=8.0.0",
     "lap>=0.5.12",
-    "bettercam>=1.0.0",
+    # bettercam is windows-only (DXGI desktop duplication). on linux the
+    # tracker falls back to mss, so don't even try to install it there.
+    "bettercam>=1.0.0; sys_platform == 'win32'",
     "opencv-python>=4.8.0",
     "mss>=9.0.0",
     "aiohttp>=3.9.0",
