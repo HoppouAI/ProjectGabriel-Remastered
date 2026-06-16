@@ -72,6 +72,8 @@ Most of the well known VRChat AI companions out there are either closed source, 
 
 If Windows is hiding file extensions, the files will just say `setup` and `run` without the `.bat`. Same thing.
 
+On Linux or macOS, run `./setup.sh` and `./run.sh` instead. See the "Can I run this on Linux?" entry in the FAQ for audio routing with PipeWire.
+
 The WebUI is at **http://localhost:8766** once running.
 
 ---
@@ -224,7 +226,20 @@ VRChat's chatbox has a 144 character hard limit. Gabriel auto-paginates with `(1
 <details>
 <summary><strong>"Can I run this on Linux?"</strong></summary>
 
-The project targets Windows first. Some things will work on Linux (Python code, Discord bot, social server) but OSC routing, audio device enumeration, pynput keyboard control, and the screen capture for YOLO are all Windows-specific at the moment. PRs welcome.
+Yes, experimentally. Gabriel still targets Windows first, but there's a working Linux path now:
+
+1. Install the native libraries your distro needs. The setup script prints the exact command for apt, dnf, pacman, or zypper. These cover PyAudio, OpenCV, and friends.
+2. Run `./setup.sh` instead of `setup.bat`. It bootstraps `uv` into `bin/`, builds the Python 3.12 environment, asks about GPU support, and seeds your config files.
+3. Start him with `./run.sh`.
+
+For audio, PipeWire replaces the VB-Audio cables. Run `scripts/pipewire-setup.sh up` to create two virtual sinks named `Gabriel_Mic` and `Gabriel_Ears`, then route them with `pavucontrol`:
+
+- Point VRChat's recording at the monitor of `Gabriel_Mic`, and its playback at `Gabriel_Ears`.
+- Open `config.yml`, find the `audio:` section, set `input_device` to the index of the `Gabriel_Ears` monitor and `output_device` to the index of `Gabriel_Mic`. The script prints a command that lists every device index Gabriel can see.
+
+PyAudio reaches PipeWire through its PulseAudio compatibility layer, so nothing in the code has to change there. OSC, the WebUI, the Discord bot, vision, and YOLO tracking all work. The tracker automatically falls back from bettercam to `mss` screen capture on Linux.
+
+Two rough edges remain. Crouch and crawl use simulated key presses, which only work on an X11 session or through `ydotool` on Wayland. GPU vision still wants an NVIDIA card with CUDA. Everything else should behave, and bug reports from Linux users are very welcome.
 
 </details>
 
