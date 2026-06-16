@@ -96,14 +96,26 @@ if ! "$UV" sync; then
     exit 1
 fi
 
+# uv sync pulls the CUDA build of torch (see [tool.uv.sources] in pyproject).
+# thats what NVIDIA folks want, but a CPU-only box shouldnt haul down ~2.5GB of
+# cuda libs it cant use, so swap in the cpu wheels when they pick option 1.
 if [ "${GPU:-1}" = "2" ]; then
     echo
-    echo "        Swapping in CUDA PyTorch..."
+    echo "        Making sure CUDA PyTorch is in place..."
     if "$UV" pip install --index-url https://download.pytorch.org/whl/cu126 \
         torch torchvision torchaudio --reinstall; then
         echo "        CUDA PyTorch installed."
     else
-        echo "        WARNING: CUDA torch failed, CPU torch will be used."
+        echo "        WARNING: CUDA torch failed, the synced build stays."
+    fi
+else
+    echo
+    echo "        Swapping in CPU-only PyTorch (smaller, no CUDA)..."
+    if "$UV" pip install --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision torchaudio --reinstall; then
+        echo "        CPU PyTorch installed."
+    else
+        echo "        WARNING: CPU torch swap failed, the synced build stays."
     fi
 fi
 
