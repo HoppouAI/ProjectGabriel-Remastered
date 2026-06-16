@@ -15,7 +15,12 @@ from pathlib import Path
 
 # Get the project root directory
 PROJECT_ROOT = Path(__file__).parent.absolute()
-VENV_PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+
+# venv layout differs by platform: Scripts/python.exe on windows, bin/python on posix
+if sys.platform == "win32":
+    VENV_PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+else:
+    VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
 
 # Check if venv exists
 if not VENV_PYTHON.exists():
