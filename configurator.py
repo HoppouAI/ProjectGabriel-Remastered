@@ -534,6 +534,12 @@ def main():
 
     server.server_close()
 
+    # show the right launcher names for the platform the user is actually on
+    if sys.platform == "win32":
+        run_cmd, cfg_cmd = "run.bat", "configurator.bat"
+    else:
+        run_cmd, cfg_cmd = "./run.sh", "./configurator.sh"
+
     if CONFIG_OUTPUT.exists():
         print()
         print("  ====================================================")
@@ -542,12 +548,12 @@ def main():
         print()
         print("  You can close this window now.")
         print()
-        print("  To start Gabriel:    run.bat")
-        print("  To edit config:      configurator.bat")
+        print(f"  To start Gabriel:    {run_cmd}")
+        print(f"  To edit config:      {cfg_cmd}")
         print()
     else:
         print()
-        print("  No config saved. Run configurator.bat again or edit config.yml manually.")
+        print(f"  No config saved. Run {cfg_cmd} again or edit config.yml manually.")
         print()
 
 
