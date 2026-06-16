@@ -2,11 +2,11 @@ import asyncio
 import logging
 import math
 import queue
+import sys
 import threading
 import time
 from collections import deque
 
-from pynput.keyboard import Controller as KeyboardController
 from pythonosc import udp_client
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import ThreadingOSCUDPServer
@@ -23,8 +23,65 @@ CHATBOX_BUCKET_SAFETY_MARGIN_SECONDS = 0.1
 AVATAR_EYE_HEIGHT_MIN_M = 0.1
 AVATAR_EYE_HEIGHT_MAX_M = 100.0
 
-# Keyboard controller for VRChat actions
-_keyboard = KeyboardController()
+# Keyboard backend for VRChat crouch/crawl key taps. pynput covers windows and
+# X11. it cant load on a headless box and cant synth global keys on wayland, so
+# we init it lazily and fall back to ydotool when pynput isnt usable. crouch and
+# crawl are non-critical, so if nothing works we just warn once and move on.
+_keyboard = None
+_keyboard_ready = False
+_keyboard_warned = False
+
+# Linux input-event keycodes for the keys we tap, used by the ydotool fallback.
+_YDOTOOL_KEYCODES = {"c": 46, "z": 44}
+
+
+def _init_keyboard():
+    global _keyboard, _keyboard_ready
+    if _keyboard_ready:
+        return
+    _keyboard_ready = True
+    try:
+        from pynput.keyboard import Controller as KeyboardController
+        _keyboard = KeyboardController()
+    except Exception as e:
+        # no display, wayland, or missing X libs: pynput cant come up here
+        _keyboard = None
+        logger.debug(f"pynput keyboard backend unavailable: {e}")
+
+
+def _tap_key(char: str) -> bool:
+    """Tap a single key for VRChat. Returns True if a backend handled it."""
+    global _keyboard_warned
+    _init_keyboard()
+    if _keyboard is not None:
+        _keyboard.press(char)
+        time.sleep(0.05)
+        _keyboard.release(char)
+        return True
+
+    # wayland fallback: ydotool synthesizes real input events via uinput. needs
+    # the ydotoold daemon running. only used when pynput couldnt load.
+    if sys.platform != "win32":
+        import shutil
+        import subprocess
+        keycode = _YDOTOOL_KEYCODES.get(char)
+        if keycode is not None and shutil.which("ydotool"):
+            try:
+                subprocess.run(
+                    ["ydotool", "key", f"{keycode}:1", f"{keycode}:0"],
+                    check=False, capture_output=True, timeout=2,
+                )
+                return True
+            except Exception as e:
+                logger.debug(f"ydotool key tap failed: {e}")
+
+    if not _keyboard_warned:
+        _keyboard_warned = True
+        logger.warning(
+            "No keyboard backend for crouch/crawl. Use an X11 session, or on "
+            "wayland install ydotool and start ydotoold. Skipping the key tap."
+        )
+    return False
 
 
 class VRChatOSC:
@@ -362,16 +419,12 @@ class VRChatOSC:
 
     def toggle_crouch(self):
         """Toggle crouch in VRChat by pressing C key."""
-        _keyboard.press('c')
-        time.sleep(0.05)
-        _keyboard.release('c')
+        _tap_key('c')
         logger.info("Toggled crouch (C key)")
 
     def toggle_crawl(self):
         """Toggle crawl/prone in VRChat by pressing Z key."""
-        _keyboard.press('z')
-        time.sleep(0.05)
-        _keyboard.release('z')
+        _tap_key('z')
         logger.info("Toggled crawl (Z key)")
 
     # Manual movement methods for AI control
