@@ -242,6 +242,12 @@ local:
     # transcription. Lower = snappier turn-taking but cuts off mid-sentence
     # pauses. Higher = more patient. Falls back to gemini.vad.silence_duration_ms.
     silence_ms: 600
+    # Use a custom STT/ASR backend supplied by a plugin instead of Moonshine.
+    # A plugin registers one with ctx.register_stt("my_asr", factory); set this
+    # to that name to switch the local backend over to it. Leave empty for the
+    # built in Silero VAD + Moonshine pipeline. Cloud (gemini_live) backend
+    # always does STT natively, so this only affects backend: local.
+    external_provider: ""
 
 # ══════════════════════════════════════════════════════════
 # TTS Provider

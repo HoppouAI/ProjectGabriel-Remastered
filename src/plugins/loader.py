@@ -39,7 +39,10 @@ logger = logging.getLogger(__name__)
 #        plugins can't read gemini api key, vrchat creds, mongo
 #        connection strings, discord token, etc. plugin_config() still
 #        sees the plugin's own scoped subtree unfiltered.
-PLUGIN_API_VERSION = 3
+#   4 -- ctx.capture_vision_frame() grabs a screenshot the AI sees as
+#        JPEG bytes, on demand, off the event loop. Works on both the
+#        cloud and local backends.
+PLUGIN_API_VERSION = 4
 
 
 # Per-plugin issue tally so the startup banner can show how many warnings

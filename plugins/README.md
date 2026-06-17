@@ -107,10 +107,70 @@ ctx.register_tts("my_tts", make_my_tts)
 
 ### `ctx.register_stt(name, factory)`
 
-Add an STT provider. The main VRChat loop uses Gemini Live for STT
-natively, so this hook is mainly for plugins that want their own
-pipeline (for example local Whisper inside a Discord plugin). Factory
-shape matches TTS.
+Register a custom STT / ASR provider. The cloud (`gemini_live`) backend
+transcribes natively inside the model, so this hook drives the **local
+backend** (`backend: local`), where it swaps out the built in Silero VAD
+plus Moonshine pipeline for your own.
+
+`factory(config)` is called once by the host and should return an object
+matching `BaseSTTProvider` in `src/local_live/stt.py`. Subclass it for a
+head start, the optional members already have sane defaults:
+
+- `start()` / `stop()` -- load and release your model. `start()` runs
+  before any audio flows. If loading fails, set `ready` False and put a
+  message in `load_error`, the host aborts cleanly.
+- `feed_audio(pcm16_chunk: bytes)` -- one mic chunk, raw int16 mono PCM
+  at 16 kHz. Fires ~16x a second on the loop thread, so keep it cheap
+  and push transcription onto your own worker thread.
+- `await next_transcript(timeout)` -- return the next finalized
+  transcript string, or None on timeout.
+- `speaking` -- flip True while the user is mid-utterance so barge-in
+  and idle detection work, False otherwise.
+- `drain_pending() -> list[str]` -- pop any queued transcripts in order
+  (used to coalesce a backlog and flush stale text after a barge-in).
+- `partial_text` / `ready` / `load_error` -- optional, defaults provided.
+
+Once registered, point `local.stt.external_provider: <name>` at it in
+`config.yml` to make it the active local STT.
+
+```python
+import asyncio
+from src.local_live.stt import BaseSTTProvider
+
+class MyWhisperSTT(BaseSTTProvider):
+    def start(self):
+        self._model = load_whisper()       # your model
+        self._queue: asyncio.Queue[str] = asyncio.Queue()
+
+    def feed_audio(self, pcm16: bytes):
+        # run your own VAD, and when an utterance finishes push the text:
+        # self._loop.call_soon_threadsafe(self._queue.put_nowait, text)
+        ...
+
+    async def next_transcript(self, timeout: float = 0.5):
+        try:
+            return await asyncio.wait_for(self._queue.get(), timeout)
+        except asyncio.TimeoutError:
+            return None
+
+def make_my_stt(config):
+    return MyWhisperSTT(config)
+
+# in setup():
+ctx.register_stt("my_whisper", make_my_stt)
+```
+
+```yaml
+# config.yml
+local:
+  stt:
+    external_provider: my_whisper
+```
+
+If the named provider is not registered, or the factory raises, the host
+logs a warning and falls back to Moonshine so a broken plugin never
+leaves you with no microphone.
+
 
 ### `ctx.register_chatbox_source(name, source, priority=100)`
 
@@ -294,6 +354,43 @@ this in your plugin, dont call it every chunk or youll spam the turn.
 ```python
 await ctx.send_realtime_text(f"[System: current speaker is {name}]")
 ```
+
+### `await ctx.capture_vision_frame(max_size=None, quality=None, monitor=None)` (api v4+)
+
+Grab a single screenshot of the screen the AI sees, returned as raw JPEG
+bytes (mime type `image/jpeg`). The blocking grab runs in a worker thread
+so it never stalls the event loop, which makes this safe to call as a
+background thing from a `register_periodic_task` callback or an event
+handler.
+
+This captures the screen directly, so it does NOT need the live session
+to be up and behaves the same on the cloud and local backends. Defaults
+come from the `vision.*` config (`monitor`, `max_size`, `quality`); pass
+overrides for a sharper or smaller frame. Returns `None` if the capture
+deps (mss / Pillow) are missing or the grab fails.
+
+Feed the bytes straight to a model as an image part:
+
+```python
+from google.genai import types
+
+async def grab_best_frames(self):
+    frame = await self.ctx.capture_vision_frame()      # JPEG bytes or None
+    if frame is None:
+        return
+    # score / dedupe / keep the best few yourself, then later:
+    part = types.Part.from_bytes(data=frame, mime_type="image/jpeg")
+    # ... hand `part` to your sub-agent call
+
+# run it quietly in the background, e.g. one grab every few seconds:
+def setup(self, ctx):
+    self.ctx = ctx
+    ctx.register_periodic_task("frame_grab", 3.0, self.grab_best_frames)
+```
+
+`monitor` follows mss numbering: 0 is the bounding box over all
+monitors, 1 is the primary display, 2+ are extra displays. It defaults
+to whatever `vision.monitor` is set to.
 
 ### `ctx.discord` -- Discord bot integration
 

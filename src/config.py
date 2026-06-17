@@ -215,6 +215,13 @@ class Config:
         return self.get("local", "stt", "pre_roll_ms", default=300)
 
     @property
+    def local_stt_external_provider(self):
+        # name of a plugin-registered STT/ASR provider (ctx.register_stt).
+        # when set, the local backend uses it instead of Moonshine. empty
+        # / unset means the built in Silero VAD + Moonshine pipeline.
+        return self.get("local", "stt", "external_provider", default=None)
+
+    @property
     def conversation_logging_enabled(self):
         # off by default for privacy. flip on in config.yml under
         # privacy.save_conversations: true to write JSON transcripts

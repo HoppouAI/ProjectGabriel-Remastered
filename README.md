@@ -256,7 +256,8 @@ Don't panic. Compare your `config.yml` against `config.yml.example`. The example
 Gabriel has a drop-in plugin system. Create a folder under `plugins/<name>/` with a `plugin.yml` manifest and an `__init__.py` that subclasses `Plugin`. Plugins can:
 
 - Register Gemini function-calling tools
-- Register custom TTS / STT providers
+- Register custom TTS providers, and custom STT / ASR providers for the local backend
+- Grab vision frames the AI sees on demand (`ctx.capture_vision_frame()`)
 - Write to the VRChat chatbox
 - Inject text into the system prompt
 - Subscribe to lifecycle events

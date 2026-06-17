@@ -49,7 +49,77 @@ _ARCH_MAP = {
 }
 
 
-class MoonshineSTT:
+class BaseSTTProvider:
+    """Interface a custom STT / ASR provider has to implement to drop into
+    the local backend.
+
+    Plugins register one with `ctx.register_stt("my_asr", factory)` and
+    point `local.stt.external_provider: my_asr` at it in config.yml. The
+    host then builds it with `factory(config)` and drives it from the
+    local session run loop exactly like the built in Moonshine pipeline.
+
+    Subclass this for a head start (the optional bits already have sane
+    defaults), or just duck-type the same surface. The orchestrator only
+    ever touches the members documented below, so anything matching this
+    shape works.
+
+    Lifecycle / threading contract:
+      - `start()` is called once on the asyncio loop thread before audio
+        flows. Do blocking model loads here. Set `ready` False and put a
+        message in `load_error` if you fail, the host aborts cleanly.
+      - `feed_audio(pcm16)` is called for every mic chunk: raw int16 mono
+        PCM at 16 kHz. It runs on the loop thread and must stay cheap, so
+        push heavy transcription onto your own worker thread.
+      - `next_transcript()` is awaited by the host to pull finished text.
+        Return a finalized utterance string, or None on timeout.
+      - flip `speaking` True while the user is mid-utterance so barge-in
+        and idle detection work. Leave it False otherwise.
+    """
+
+    # True between speech-start and the silence timeout. The session reads
+    # this for barge-in and idle suppression, keep it honest.
+    speaking: bool = False
+    # Best-effort latest partial transcript. Fine to leave as "".
+    partial_text: str = ""
+
+    def __init__(self, config):
+        self.config = config
+
+    def start(self) -> None:
+        """Load models and begin. Called once before audio is fed."""
+        pass
+
+    def stop(self) -> None:
+        """Release models / threads. Called once on shutdown."""
+        pass
+
+    @property
+    def ready(self) -> bool:
+        """True once `start()` succeeded and audio can be fed."""
+        return True
+
+    @property
+    def load_error(self):
+        """Human readable reason `start()` failed, else None."""
+        return None
+
+    def feed_audio(self, pcm16_chunk: bytes) -> None:
+        """Consume a raw int16 mono 16 kHz PCM chunk from the mic. Keep it
+        cheap, this fires ~16x a second on the loop thread."""
+        raise NotImplementedError
+
+    async def next_transcript(self, timeout: float = 0.5):
+        """Return the next finalized transcript string, or None on timeout."""
+        raise NotImplementedError
+
+    def drain_pending(self) -> list[str]:
+        """Pop every transcript currently queued, in order. Used to coalesce
+        backlogged utterances and to flush stale ones after a barge-in.
+        Return [] when nothing is waiting."""
+        return []
+
+
+class MoonshineSTT(BaseSTTProvider):
     """Name kept for backward compat with session.py imports; under the hood
     it's Silero VAD + Moonshine batch transcription."""
 

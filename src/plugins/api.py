@@ -538,6 +538,52 @@ class PluginContext:
             self.logger.error(f"send_realtime_text failed: {e}")
             return False
 
+    # vision ----------------------------------------------------------------
+
+    async def capture_vision_frame(
+        self,
+        max_size: int | None = None,
+        quality: int | None = None,
+        monitor: int | None = None,
+    ) -> bytes | None:
+        """Grab a single screenshot of the screen the AI sees, returned as
+        JPEG bytes (mime type image/jpeg). The blocking capture runs in a
+        worker thread so it won't stall the event loop, which makes this
+        safe to call as a background thing from a periodic task or an
+        event handler.
+
+        Defaults are pulled from the vision.* config (monitor, max_size,
+        quality). Pass overrides for a sharper or smaller frame. Returns
+        None if the capture deps (mss / Pillow) are missing or the grab
+        fails. Does NOT require the live session to be up, and works the
+        same on the cloud and local backends since it captures the screen
+        directly.
+
+        Feed the bytes straight to the model as an image part, e.g.
+        types.Part.from_bytes(data=frame, mime_type="image/jpeg").
+
+        Plugin api v4+.
+        """
+        cfg = self._real_config
+        if monitor is None:
+            monitor = cfg.vision_monitor if cfg is not None else 1
+        if max_size is None:
+            max_size = cfg.vision_max_size if cfg is not None else 1024
+        if quality is None:
+            quality = cfg.vision_quality if cfg is not None else 80
+        try:
+            from src.screen_capture import capture_screen_jpeg
+        except Exception as e:
+            self.logger.error(f"capture_vision_frame: capture helper unavailable: {e}")
+            return None
+        try:
+            return await asyncio.to_thread(
+                capture_screen_jpeg, int(monitor), int(max_size), int(quality)
+            )
+        except Exception as e:
+            self.logger.error(f"capture_vision_frame failed: {e}")
+            return None
+
 def get_tts_factory(name: str):
     return _tts_providers.get(name)
 

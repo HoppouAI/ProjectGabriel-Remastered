@@ -135,8 +135,10 @@ class LocalLiveSession:
             self._chatbox.register_builtin("local_music", self._builtin_local_music)
             self._chatbox.register_builtin("music_gen", self._builtin_music_gen)
 
-        # stt + llm clients
-        self._stt = MoonshineSTT(config)
+        # stt + llm clients. stt is pluggable: a plugin can register its own
+        # ASR via ctx.register_stt and the user points local.stt.external_provider
+        # at it, otherwise we use the built in Silero VAD + Moonshine pipeline.
+        self._stt = self._make_stt_provider(config)
         self._llm = LMStudioClient(config)
 
         # cached prompt + tools so LM Studio's prefix cache actually hits
@@ -154,6 +156,38 @@ class LocalLiveSession:
         # this is the real "ai is talking" signal for barge-in, since the
         # llm text stream finishes long before the audio finishes playing.
         self._audio_playing = False
+
+    def _make_stt_provider(self, config):
+        """Pick the STT/ASR backend. Defaults to the built in Silero VAD +
+        Moonshine pipeline, but a plugin can register its own provider with
+        ctx.register_stt(name, factory) and the user selects it by setting
+        local.stt.external_provider to that name in config.yml. The factory
+        is called as factory(config) and must return something matching the
+        BaseSTTProvider surface in stt.py."""
+        ext_name = config.local_stt_external_provider
+        if not ext_name:
+            return MoonshineSTT(config)
+        try:
+            from src.plugins import get_stt_factory
+        except Exception:
+            get_stt_factory = None
+        factory = get_stt_factory(ext_name) if get_stt_factory else None
+        if factory is None:
+            logger.warning(
+                f"local.stt.external_provider '{ext_name}' is not registered by "
+                f"any plugin, falling back to Moonshine"
+            )
+            return MoonshineSTT(config)
+        try:
+            provider = factory(config)
+            logger.info(f"local STT: using plugin provider '{ext_name}'")
+            return provider
+        except Exception as e:
+            logger.error(
+                f"plugin STT '{ext_name}' failed to construct: {e}, "
+                f"falling back to Moonshine"
+            )
+            return MoonshineSTT(config)
 
     # ── chatbox builtins (parity with gemini session) ────────────────────
 
