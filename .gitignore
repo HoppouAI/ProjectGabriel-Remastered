@@ -3,6 +3,10 @@
 # music files -- keep the folder but not the tracks
 sfx/music/*
 !sfx/music/.gitkeep
+
+# soundfonts -- keep the folder, skip the big .sf2 files
+sfx/soundfonts/*
+!sfx/soundfonts/.gitkeep
 __pycache__/
 *.py[cod]
 *$py.class
