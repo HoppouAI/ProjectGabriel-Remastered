@@ -236,10 +236,10 @@ Yes. Gabriel still targets Windows first, but Linux is a working path now (teste
 
 **nix shell**
 
-The included `shell.nix` gives you a nix shell with the C compiler and native libs the build needs. It works on any Linux distro with nix installed, not just NixOS. It is required on distros that have no system C compiler or `/usr/include` (eg NixOS); elsewhere it is an optional, reproducible alternative to installing the libs through your package manager.
+The included `shell.nix` gives you a nix shell native libs and binaries the build needs. It works on any Linux distro with nix installed, not just NixOS. It is required on distros that have no system C compiler or `/usr/include` (eg NixOS); elsewhere it is an optional, reproducible alternative to installing the libs through your package manager.
 
 1. Enter the shell: `nix-shell shell.nix`
-2. From inside it, run `./setup.sh`. Run it outside the shell on a system with no compiler and it tells you to enter the shell first.
+2. From inside it, run `./setup.sh`.
 3. Start him with `./run.sh`. If `nix-shell` is on your PATH, `run.sh` re-execs itself into the nix shell automatically, so you do not need to be inside it for that step.
 
 The shell pulls in gcc (via stdenv), pkg-config, PortAudio, libsndfile, ffmpeg, libGL (mesa), and the X11 libs the wheels dlopen at runtime. If you picked the CUDA build it also finds the CUDA runtime `.so`s the torch wheels bundle under `.venv/.../nvidia/`. imageio-ffmpeg ships a bundled ffmpeg binary that may not run inside a nix shell, so the shell points `IMAGEIO_FFMPEG_EXE` at the nix ffmpeg instead.
