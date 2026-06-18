@@ -25,12 +25,33 @@ pkg_hint() {
         echo "sudo pacman -S --needed base-devel portaudio libsndfile mesa ffmpeg"
     elif command -v zypper >/dev/null 2>&1; then
         echo "sudo zypper install -y gcc gcc-c++ make portaudio-devel libsndfile Mesa-libGL1 ffmpeg python3-devel"
+    elif command -v nix-shell >/dev/null 2>&1; then
+        echo "nix-shell shell.nix"
     else
         echo "(install a C compiler plus portaudio, libsndfile, libGL and ffmpeg dev packages for your distro)"
     fi
 }
 
 if [ "$(uname -s)" = "Linux" ]; then
+    # the nix shell (shell.nix) bundles the C compiler and native libs the
+    # wheels need. force it when there is no system cc (eg NixOS, or any
+    # minimal distro without build tools) and nix-shell is available. on
+    # normal distros with a compiler, fall through to the package-manager
+    # hint below instead.
+    if ! command -v cc >/dev/null 2>&1 && command -v nix-shell >/dev/null 2>&1 && [ -z "${IN_NIX_SHELL:-}" ]; then
+        echo "  [system] No C compiler found. The nix shell provides one plus the"
+        echo "           native libs (portaudio, libsndfile, ...) the build needs."
+        if [ -f "$SCRIPT_DIR/shell.nix" ]; then
+            echo
+            echo "  Enter the nix shell first, then re-run this script:"
+            echo "    nix-shell shell.nix"
+        else
+            echo
+            echo "  No shell.nix found. See the README for nix shell setup instructions."
+        fi
+        echo
+        exit 1
+    fi
     echo "  [system] If a build fails, you probably need these native libs:"
     echo "           $(pkg_hint)"
     echo

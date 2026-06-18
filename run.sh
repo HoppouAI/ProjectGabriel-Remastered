@@ -5,6 +5,14 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# The native libs (portaudio, libGL, ...) the venv links against are provided
+# by the nix shell (shell.nix). run.sh is non-interactive, so if nix-shell is
+# available and we arent already in one, re-exec into it. IN_NIX_SHELL is set
+# by nix-shell and prevents a re-exec loop. works on any distro with nix.
+if command -v nix-shell >/dev/null 2>&1 && [ -z "${IN_NIX_SHELL:-}" ] && [ -f "$SCRIPT_DIR/shell.nix" ]; then
+    exec nix-shell "$SCRIPT_DIR/shell.nix" --run "cd '$SCRIPT_DIR' && exec '$SCRIPT_DIR/run.sh'"
+fi
+
 if [ ! -x ".venv/bin/python" ]; then
     echo "  Virtual environment not found. Run ./setup.sh first."
     exit 1

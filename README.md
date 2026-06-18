@@ -234,6 +234,16 @@ Yes. Gabriel still targets Windows first, but Linux is a working path now (teste
 2. Run `./setup.sh` (the Linux equivalent of `setup.bat`). It bootstraps `uv` into `bin/`, builds the Python 3.12 environment, and asks whether you want GPU support. CPU is the default, so just press Enter unless you have an NVIDIA card and want the CUDA build of PyTorch. It then seeds your config files.
 3. Open `config.yml`, drop in your API key (and tweak anything else you want), then start him with `./run.sh`.
 
+**nix shell**
+
+The included `shell.nix` gives you a nix shell with the C compiler and native libs the build needs. It works on any Linux distro with nix installed, not just NixOS. It is required on distros that have no system C compiler or `/usr/include` (eg NixOS); elsewhere it is an optional, reproducible alternative to installing the libs through your package manager.
+
+1. Enter the shell: `nix-shell shell.nix`
+2. From inside it, run `./setup.sh`. Run it outside the shell on a system with no compiler and it tells you to enter the shell first.
+3. Start him with `./run.sh`. If `nix-shell` is on your PATH, `run.sh` re-execs itself into the nix shell automatically, so you do not need to be inside it for that step.
+
+The shell pulls in gcc (via stdenv), pkg-config, PortAudio, libsndfile, ffmpeg, libGL (mesa), and the X11 libs the wheels dlopen at runtime. If you picked the CUDA build it also finds the CUDA runtime `.so`s the torch wheels bundle under `.venv/.../nvidia/`. imageio-ffmpeg ships a bundled ffmpeg binary that may not run inside a nix shell, so the shell points `IMAGEIO_FFMPEG_EXE` at the nix ffmpeg instead.
+
 **Audio routing with PipeWire**
 
 PipeWire stands in for the VB-Audio virtual cables Windows uses. Run `./scripts/pipewire-setup.sh up` to create two virtual sinks:
