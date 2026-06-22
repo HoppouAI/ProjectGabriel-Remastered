@@ -55,7 +55,13 @@ SHOW_CURSOR = "\033[?25h"
 ALT_SCREEN_ON = "\033[?1049h"
 ALT_SCREEN_OFF = "\033[?1049l"
 
-HOST_API_VERSION = 3
+# Read the real host api version straight from the loader so this never
+# drifts out of sync when PLUGIN_API_VERSION gets bumped. Falls back to a
+# current default if the host package isnt importable for some reason.
+try:
+    from src.plugins.loader import PLUGIN_API_VERSION as HOST_API_VERSION
+except Exception:
+    HOST_API_VERSION = 4
 
 
 def _enable_ansi() -> None:
