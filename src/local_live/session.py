@@ -56,6 +56,23 @@ _CONCISE_REASONING_NOTE = (
     "short and natural, usually a sentence or two, no padding or over-explaining."
 )
 
+# always-on tools when dynamic tool loading is on. everything else is pulled in
+# per turn by relevance or via findTools.
+_DYNAMIC_CORE_TOOLS = [
+    "emotion", "stopAnimation",
+    "saveMemory", "searchMemories", "recallMemories",
+    "switchPersonality", "enableYapMode",
+]
+
+_DYNAMIC_TOOLS_NOTE = (
+    "\n\n# Tools\n"
+    "You only see a relevant subset of your tools right now. If you want to do "
+    "something and don't have a matching tool (VRChat movement, music, "
+    "soundboard, friends, web search, navigation, avatar, etc), call findTools "
+    "with a short description, then call the tool it returns. Never tell the "
+    "user you lack a tool, just findTools for it."
+)
+
 try:
     from src.gemini_live.conversation_logger import ConversationLogger as _ConvLogger
 except Exception:
@@ -159,6 +176,11 @@ class LocalLiveSession:
         self._system_text: Optional[str] = None
         self._system_personality_id: Optional[str] = None
         self._cached_tools: Optional[list] = None
+        # dynamic tool loading: gate picks a relevant slice per turn, activated
+        # holds names the model pulled in via findTools (persisted for the
+        # session, capped).
+        self._tool_gate = None
+        self._activated_tools: list[str] = []
         # last partial we already broadcast, so we don't spam the WebUI
         self._last_partial_broadcast: str = ""
         # barge-in: set when the user starts speaking while the model is
@@ -260,6 +282,8 @@ class LocalLiveSession:
             text = self.config.build_system_instruction(self.personality)
             if self.config.local_llm_concise_reasoning:
                 text += _CONCISE_REASONING_NOTE
+            if self.config.local_llm_dynamic_tools:
+                text += _DYNAMIC_TOOLS_NOTE
             self._system_text = text
             self._system_personality_id = pid
         return self._system_text
@@ -268,6 +292,24 @@ class LocalLiveSession:
         if self._cached_tools is None:
             self._cached_tools = collect_openai_tools(self.config)
         return self._cached_tools
+
+    def _get_tool_gate(self):
+        """Build the dynamic tool gate lazily over the full tool catalog. None
+        when dynamic tools are disabled."""
+        if not self.config.local_llm_dynamic_tools:
+            return None
+        if self._tool_gate is None:
+            from .tool_gate import ToolGate
+            self._tool_gate = ToolGate(
+                self._get_tools(),
+                core_names=_DYNAMIC_CORE_TOOLS,
+                max_dynamic=self.config.local_llm_dynamic_tools_max,
+            )
+            logger.info(
+                f"dynamic tools on: {len(self._tool_gate.select('', []))}/"
+                f"{self._tool_gate.total} tools sent per turn (rest via findTools)"
+            )
+        return self._tool_gate
 
     async def send_text(self, text: str):
         """Inject a user text message into the next LLM turn."""
@@ -600,7 +642,9 @@ class LocalLiveSession:
         else:
             messages.append(last_user_msg)
 
-        tools = self._get_tools()
+        tool_gate = self._get_tool_gate()
+        if tool_gate is None:
+            tools = self._get_tools()
         max_iter = self.config.local_llm_max_tool_iterations
 
         # prep chatbox / speaking state
@@ -617,6 +661,10 @@ class LocalLiveSession:
         for iteration in range(max_iter):
             tool_calls_this_iter: list[dict] = []
             saw_finish_reason = None
+            if tool_gate is not None:
+                # reselect each iteration so tools the model just pulled in via
+                # findTools show up with full schemas on the next step
+                tools = tool_gate.select(content, self._activated_tools)
             stream = self._llm.stream_turn(messages, tools=tools)
             try:
                 async for event in stream:
@@ -755,6 +803,34 @@ class LocalLiveSession:
                         args = json.loads(args_raw) if args_raw.strip() else {}
                     except json.JSONDecodeError:
                         args = {}
+
+                    # findTools is handled here, not by the tool handler: it
+                    # activates extra tools so they show up on the next step.
+                    if tool_gate is not None and name == "findTools":
+                        q = args.get("query", "") if isinstance(args, dict) else ""
+                        found = tool_gate.search(q, top=self.config.local_llm_dynamic_tools_max)
+                        for n in found:
+                            if n not in self._activated_tools:
+                                self._activated_tools.append(n)
+                        self._activated_tools = tool_gate.cap_activated(self._activated_tools)
+                        result_dict = (
+                            {"activated": found, "note": "now available, call them on your next step"}
+                            if found else
+                            {"activated": [], "note": "nothing matched, try rephrasing"}
+                        )
+                        logger.info(f"findTools({q!r}) -> {found}")
+                        _broadcast_console("tool_call", f"findTools({q!r})")
+                        _broadcast_console("tool_response", f"findTools \u2192 {found}")
+                        tool_msg = {
+                            "role": "tool",
+                            "tool_call_id": tc.get("id") or "call_findTools",
+                            "name": name,
+                            "content": json.dumps(result_dict),
+                        }
+                        messages.append(tool_msg)
+                        self._history.append(tool_msg)
+                        continue
+
                     args_str = json.dumps(args, ensure_ascii=False) if args else ""
                     logger.info(f"tool call: {name}({args_str})")
                     _broadcast_console("tool_call", f"{name}({args_str})")

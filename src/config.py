@@ -182,6 +182,19 @@ class Config:
         return (self.get("local", "llm", "reasoning_effort", default="") or "").strip().lower()
 
     @property
+    def local_llm_dynamic_tools(self):
+        # only send a relevant slice of the ~100 tools each turn instead of all
+        # of them, the model pulls in more on demand via the findTools meta tool.
+        # saves a big chunk of prompt tokens on the local backend.
+        return bool(self.get("local", "llm", "dynamic_tools", default=False))
+
+    @property
+    def local_llm_dynamic_tools_max(self):
+        # how many query-relevant tools to auto-include per turn on top of the
+        # always-on core set.
+        return int(self.get("local", "llm", "dynamic_tools_max", default=8))
+
+    @property
     def local_vision_enabled(self):
         # send a screen capture with every user turn. requires a multimodal
         # model loaded in LM Studio (eg qwen2.5-vl).

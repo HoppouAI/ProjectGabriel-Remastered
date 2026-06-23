@@ -215,6 +215,15 @@ local:
     # (gpt-oss and some LM Studio builds). One of: minimal, low, medium, high.
     # Leave empty to not send it. Models that don't support it ignore it.
     reasoning_effort: ""
+    # Sending all ~100 tools every turn costs a big chunk of prompt tokens
+    # (around 13k here). Turn this on to only send a relevant slice per turn:
+    # a small always-on core plus tools matched to what was just said. The
+    # model pulls in anything else on demand via a findTools meta tool. Saves
+    # a lot of tokens, slightly less reliable on weak models since they have
+    # to ask for tools they can't see.
+    dynamic_tools: false
+    # How many query-matched tools to auto-include each turn on top of core.
+    dynamic_tools_max: 8
 
   vision:
     # When true, captures the screen and attaches an image to every user
