@@ -65,13 +65,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# local LLM backend (LM Studio + Moonshine STT). only needed when
-# backend: "local" in config.yml. install with:  pip install .[local]
-# torch/torchaudio are already core deps (yolo + face tracking), and silero
-# VAD is fetched at runtime via torch.hub, so moonshine is the only extra.
-local = [
-    "moonshine-voice==0.0.59",
-]
+# local LLM backend (LM Studio + parakeet.cpp STT). historically this pulled
+# an extra STT wheel, but parakeet ships as a prebuilt native library that we
+# load with ctypes and fetch at runtime, so there's nothing left to install.
+# torch/torchaudio (yolo + face tracking) and requests are already core deps,
+# and silero VAD is grabbed via torch.hub, so the local extra is now empty.
+# kept around so `pip install .[local]` still works in existing setups.
+local = []
 
 [dependency-groups]
 dev = [

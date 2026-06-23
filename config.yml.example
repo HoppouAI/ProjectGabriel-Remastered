@@ -8,7 +8,7 @@ app_name: "Gabriel"
 
 # Which brain to run. Two options:
 #   gemini_live - cloud Gemini Live websocket (the original setup, native voice)
-#   local       - LM Studio for the LLM + Moonshine v2 for STT + your chosen
+#   local       - LM Studio for the LLM + parakeet.cpp for STT + your chosen
 #                 external TTS provider (hoppou / chirp3hd / tiktok / plugin)
 # Local mode is fully offline aside from a few short flash-lite sub-agents
 # (memory recall, conversation summary). Local mode REQUIRES one of the
@@ -171,7 +171,7 @@ gemini:
     replay_messages: 10
 
 # ══════════════════════════════════════════════════════════
-# Local backend (LM Studio + Moonshine + external TTS)
+# Local backend (LM Studio + parakeet.cpp + external TTS)
 # ══════════════════════════════════════════════════════════
 # Only used when backend: local at the top of this file. Otherwise ignored.
 # Requirements:
@@ -180,8 +180,9 @@ gemini:
 #   2. One of the external TTS providers below (tts.hoppou /
 #      chirp3_hd / tiktok or a plugin) enabled. local mode refuses to
 #      start without a TTS provider since the LLM has no voice of its own.
-#   3. Moonshine Voice installed (pip install moonshine-voice). First
-#      run downloads the chosen streaming arch into the user cache.
+#   3. Nothing to install for STT. The parakeet.cpp runtime (a tiny CPU build
+#      or a vulkan build that runs on any GPU) and the chosen model are
+#      auto downloaded into data/parakeet/ on first run.
 local:
   llm:
     # OpenAI compatible endpoint. LM Studio defaults to localhost:1234.
@@ -214,23 +215,40 @@ local:
     quality: 70
 
   stt:
-    # Moonshine streaming model arch. Picks weights via moonshine_voice.
-    # Options:
-    #   tiny_streaming    34M params, ~69ms TTFT, lowest accuracy
-    #   small_streaming   123M params, ~165ms TTFT, recommended default
-    #   medium_streaming  245M params, ~269ms TTFT, best accuracy
-    model: "small_streaming"
-    # Language tag passed to moonshine_voice.download_model. Only English
-    # has full streaming weights; other languages fall back to base v2.
-    language: "en"
+    # parakeet.cpp model. Downloaded as GGUF from HuggingFace
+    # (mudler/parakeet-cpp-gguf) on first use, or point at a local .gguf path.
+    # Streaming models (name has streaming/eou/realtime) stream text live and
+    # detect end of utterance themselves; the rest are batch transcribed per
+    # Silero VAD segment. Options:
+    #   nemotron-3.5-asr-streaming-0.6b  streaming, multilingual (default)
+    #   realtime_eou_120m-v1             tiny streaming with EOU/backchannel
+    #   tdt-0.6b-v3                      offline TDT, multilingual
+    #   ctc-0.6b / rnnt-0.6b             offline CTC / RNN-T
+    model: "nemotron-3.5-asr-streaming-0.6b"
+    # GGUF quantization. q8_0 is near lossless and the recommended default;
+    # drop to q5_k / q4_k for less disk and RAM. Options: f16, q8_0, q6_k,
+    # q5_k, q4_k.
+    quant: "q8_0"
+    # Which prebuilt runtime to load: auto (vulkan when a GPU driver is
+    # present, otherwise cpu), vulkan, or cpu.
+    compute: "auto"
+    # auto picks streaming vs offline from the model name. Force with
+    # "streaming" or "offline" if you want to override.
+    mode: "auto"
+    # Offline decoder head for tdt/ctc/rnnt models: default, ctc, or tdt.
+    # Ignored by streaming models.
+    decoder: "default"
+    # Locale prompt for multilingual models (nemotron / tdt v3), eg en, de,
+    # ja, auto. "auto" lets the model detect. Ignored by single-language ones.
+    language: "auto"
     # Drop any speech segment shorter than this. Filters out keyboard
-    # clicks, coughs, brief mouth noises.
+    # clicks, coughs, brief mouth noises. (offline mode)
     min_speech_ms: 400
     # Hard cap on a single utterance so a noisy room can't grow the buffer
-    # forever. The utterance is force-finalised at this length.
+    # forever. The utterance is force-finalised at this length. (offline mode)
     max_utterance_ms: 30000
     # Keep this much audio from BEFORE VAD triggered so we never clip the
-    # first phoneme. 200-400ms is the sweet spot.
+    # first phoneme. 200-400ms is the sweet spot. (offline mode)
     pre_roll_ms: 300
     # Silero VAD speech-probability threshold (0.0-1.0). Lower = more
     # sensitive (picks up quieter speech, more false triggers). Higher =
@@ -238,14 +256,15 @@ local:
     # if unset, which itself defaults to 0.5. Try 0.3 if Gabriel keeps
     # missing your voice, 0.6+ if the mic triggers on background noise.
     vad_threshold: 0.4
-    # How many ms of silence before we close the utterance and send it to
-    # transcription. Lower = snappier turn-taking but cuts off mid-sentence
-    # pauses. Higher = more patient. Falls back to gemini.vad.silence_duration_ms.
+    # How many ms of silence before a turn is closed. In streaming mode this
+    # is the fallback turn-end for models that don't emit their own <EOU>;
+    # in offline mode it closes the utterance for transcription. Lower =
+    # snappier turn-taking. Falls back to gemini.vad.silence_duration_ms.
     silence_ms: 600
-    # Use a custom STT/ASR backend supplied by a plugin instead of Moonshine.
+    # Use a custom STT/ASR backend supplied by a plugin instead of parakeet.
     # A plugin registers one with ctx.register_stt("my_asr", factory); set this
     # to that name to switch the local backend over to it. Leave empty for the
-    # built in Silero VAD + Moonshine pipeline. Cloud (gemini_live) backend
+    # built in Silero VAD + parakeet pipeline. Cloud (gemini_live) backend
     # always does STT natively, so this only affects backend: local.
     external_provider: ""
 

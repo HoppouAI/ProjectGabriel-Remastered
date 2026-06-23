@@ -40,7 +40,7 @@ pymongo
 mutagen
 protobuf==3.20.3
 imageio-ffmpeg
-# local backend (only needed if backend: "local" in config.yml). NOT installed
-# by default. grab it with:  .\bin\uv.exe pip install moonshine-voice==0.0.59
-# 0.0.59 is the latest with prebuilt windows wheels; newer releases are
-# linux only. (silero VAD is pulled at runtime via torch.hub, no pip needed.)
+# local backend (only needed if backend: "local" in config.yml). nothing to
+# install anymore: parakeet.cpp ships as a prebuilt native library that gets
+# downloaded into data/parakeet/ on first run, and silero VAD comes from
+# torch.hub at runtime. requests/torch are already listed above.
