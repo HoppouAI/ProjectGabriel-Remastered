@@ -16,6 +16,18 @@ _t = time.perf_counter()
 # Importing is safe even when tracker is disabled in config.
 from src.tracker import PlayerTracker
 
+# Now pull torch in fully, on the main thread, before anything spins up worker
+# threads. A few things load torch lazily from background threads (silero VAD in
+# the parakeet STT, scipy via stream2sentence in some TTS providers). Two threads
+# importing torch at once can trip "partially initialized module 'torch' has no
+# attribute 'Tensor'" circular-import crashes. Doing it here (after the tracker so
+# DXGI still wins the CUDA race) means those later imports just grab the finished
+# module out of sys.modules instead of racing the init.
+try:
+    import torch  # noqa: F401
+except Exception:
+    pass
+
 from src.config import Config
 from src.audio import AudioManager
 from src.vrchat import VRChatOSC
@@ -185,7 +197,7 @@ async def main(save_audio=False):
             )
             raise SystemExit(2)
         from src.local_live import LocalLiveSession
-        logger.info("backend = local (LM Studio + Moonshine)")
+        logger.info("backend = local (LM Studio + parakeet.cpp)")
         session = LocalLiveSession(config, audio, osc, tracker, personality, tts_provider)
     else:
         logger.info("backend = gemini_live")
