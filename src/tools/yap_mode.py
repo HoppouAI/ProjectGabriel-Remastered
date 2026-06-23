@@ -153,10 +153,27 @@ class YapModeTool(BaseTool):
         sess = self.live_session
         if sess is None:
             return
+
+        def _ai_talking() -> bool:
+            # _speaking only tracks the llm, tts audio keeps going after it
+            # stops so peek at playback + the queued pcm aswell
+            if getattr(sess, "_speaking", False):
+                return True
+            if getattr(sess, "_audio_playing", False):
+                return True
+            q = getattr(sess, "_audio_in_queue", None)
+            if q is not None:
+                try:
+                    if not q.empty():
+                        return True
+                except Exception:
+                    pass
+            return False
+
         try:
             # phase 1: wait for speaking to begin (usually nearly instant)
             t0 = time.monotonic()
-            while not getattr(sess, "_speaking", False):
+            while not _ai_talking():
                 if time.monotonic() - t0 > SPEAK_START_TIMEOUT:
                     # model never started talking, bail out gracefully
                     logger.info("yap mode: model never started speaking, auto-disabling")
@@ -168,7 +185,7 @@ class YapModeTool(BaseTool):
             hard_cap_at = time.monotonic() + HARD_CAP_SECONDS
             silent_since = 0.0
             while True:
-                if not getattr(sess, "_speaking", False):
+                if not _ai_talking():
                     now = time.monotonic()
                     if silent_since == 0.0:
                         silent_since = now
