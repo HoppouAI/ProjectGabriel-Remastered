@@ -231,11 +231,11 @@ local:
     # Streaming models (name has streaming/eou/realtime) stream text live and
     # detect end of utterance themselves; the rest are batch transcribed per
     # Silero VAD segment. Options:
-    #   nemotron-3.5-asr-streaming-0.6b  streaming, multilingual (default)
+    #   tdt-0.6b-v3                      offline TDT, multilingual (default)
+    #   nemotron-3.5-asr-streaming-0.6b  streaming, multilingual
     #   realtime_eou_120m-v1             tiny streaming with EOU/backchannel
-    #   tdt-0.6b-v3                      offline TDT, multilingual
     #   ctc-0.6b / rnnt-0.6b             offline CTC / RNN-T
-    model: "nemotron-3.5-asr-streaming-0.6b"
+    model: "tdt-0.6b-v3"
     # GGUF quantization. q8_0 is near lossless and the recommended default;
     # drop to q5_k / q4_k for less disk and RAM. Options: f16, q8_0, q6_k,
     # q5_k, q4_k.

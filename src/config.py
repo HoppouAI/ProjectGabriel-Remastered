@@ -198,9 +198,10 @@ class Config:
     @property
     def local_stt_model(self):
         # parakeet.cpp model name (downloaded as GGUF from HuggingFace) or a
-        # path to a local .gguf. default is the streaming multilingual nemotron.
-        # other options: realtime_eou_120m-v1, tdt-0.6b-v3, ctc-0.6b, rnnt-0.6b.
-        return self.get("local", "stt", "model", default="nemotron-3.5-asr-streaming-0.6b")
+        # path to a local .gguf. default is the offline multilingual tdt v3.
+        # other options: nemotron-3.5-asr-streaming-0.6b, realtime_eou_120m-v1,
+        # ctc-0.6b, rnnt-0.6b.
+        return self.get("local", "stt", "model", default="tdt-0.6b-v3")
 
     @property
     def local_stt_quant(self):
