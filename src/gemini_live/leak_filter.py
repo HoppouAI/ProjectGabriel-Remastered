@@ -38,6 +38,18 @@ _BARE_FUNC_BRACE = re.compile(
     re.DOTALL,
 )
 
+# Square-bracket call leak: [setMood:emotion=angry,level=6,reason=...]
+# The native-audio model sometimes narrates a tool call wrapped in [] with
+# key=value args instead of (or alongside) the real call. We require a
+# camelCase/snake_case identifier at the head of the bracket AND at least
+# one key=value pair inside, so plain expressive tags like [whispers] and
+# asides like [see below] are left alone (those get handled downstream by
+# the audio-tag stripper, not here).
+_BRACKET_CALL = re.compile(
+    r"\[\s*(?=\w*(?:[A-Z]|_))[a-zA-Z_]\w{2,}[\s:=(]+[^\[\]]*?[a-zA-Z_]\w*\s*=\s*[^\[\]]{1,300}?\]",
+    re.DOTALL,
+)
+
 # Worst case from observed real-world leaks: the model emits
 #   "response:setMood{emotion:excited,level:7,reason:User said hello! ..."
 # and NEVER closes the brace. The rest of the buffer is the function args
@@ -70,7 +82,7 @@ def strip_tool_call_leaks(text: str) -> tuple[str, bool]:
     if not text:
         return text, False
     original = text
-    for pat in (_PAREN_CALL, _RESPONSE_PREFIX_BRACE, _BARE_FUNC_BRACE):
+    for pat in (_PAREN_CALL, _RESPONSE_PREFIX_BRACE, _BARE_FUNC_BRACE, _BRACKET_CALL):
         text = pat.sub("", text)
 
     # unclosed leak prefix at start of buffer (no `}` ever shows up). We only

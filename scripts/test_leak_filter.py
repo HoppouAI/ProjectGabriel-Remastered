@@ -19,6 +19,14 @@ cases = [
     ("KEEP", "I love coding! Lets write some Python."),
     # short reply, starts with weird shape
     ("KEEP", "config{test} no real args here"),
+    # square-bracket tool-call leaks (the [setMood:...] format)
+    ("LEAK", "[disgusted] Such language is inappropriate. [setMood:emotion=indignant,level=6,reason=User used profane language] [indignant] profanity does not change the facts!"),
+    ("LEAK", "[saveMemory:content=User likes pizza,category=long_term] Got it, saved that for ya."),
+    ("LEAK", "[switch_personality:name=scientist] Ah, that feels much better."),
+    # bracket asides / emotion tags that must SURVIVE the leak filter
+    ("KEEP", "[disgusted] honestly that is rude of them."),
+    ("KEEP", "Check the note [see below] for the rest of it."),
+    ("KEEP", "[Note this down] for later, it is important."),
 ]
 for tag, s in cases:
     out, changed = strip_tool_call_leaks(s)

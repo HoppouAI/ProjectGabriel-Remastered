@@ -37,9 +37,21 @@ def _strip_emojis(text: str) -> str:
 # them at the per-sentence layer so the audio doesn't say "curious" out loud.
 _AUDIO_TAG_RE = re.compile(r"\[(?:[A-Za-z][A-Za-z\s,'-]{0,40})\]")
 
+# Tool-call shaped square brackets the model occasionally narrates, like
+# [setMood:emotion=angry,level=6,reason=...]. The plain audio-tag regex above
+# misses these (the :, = and digits break its char class), so nuke them here
+# too, otherwise an external TTS provider reads the leaked call out loud. Mirror
+# of _BRACKET_CALL in gemini_live/leak_filter.py (kept local to avoid a circular
+# import back through the gemini_live package).
+_TOOL_TAG_RE = re.compile(
+    r"\[\s*(?=\w*(?:[A-Z]|_))[a-zA-Z_]\w{2,}[\s:=(]+[^\[\]]*?[a-zA-Z_]\w*\s*=\s*[^\[\]]{1,300}?\]",
+    re.DOTALL,
+)
+
 
 def _strip_audio_tags(text: str) -> str:
-    cleaned = _AUDIO_TAG_RE.sub(" ", text)
+    cleaned = _TOOL_TAG_RE.sub(" ", text)
+    cleaned = _AUDIO_TAG_RE.sub(" ", cleaned)
     cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
     cleaned = re.sub(r" {2,}", " ", cleaned)
     return cleaned.strip()
