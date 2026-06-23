@@ -657,15 +657,22 @@ class LocalLiveSession:
 
         full_assistant_text = ""
         interrupted = False
+        forced_answer = False
 
         for iteration in range(max_iter):
             tool_calls_this_iter: list[dict] = []
             saw_finish_reason = None
-            if tool_gate is not None:
+            if forced_answer:
+                # recovery pass: model used a tool then went quiet, drop the
+                # tools so it has no choice but to actually speak
+                turn_tools = None
+            elif tool_gate is not None:
                 # reselect each iteration so tools the model just pulled in via
                 # findTools show up with full schemas on the next step
-                tools = tool_gate.select(content, self._activated_tools)
-            stream = self._llm.stream_turn(messages, tools=tools)
+                turn_tools = tool_gate.select(content, self._activated_tools)
+            else:
+                turn_tools = tools
+            stream = self._llm.stream_turn(messages, tools=turn_tools)
             try:
                 async for event in stream:
                     if self._reconnect_requested:
@@ -862,7 +869,16 @@ class LocalLiveSession:
                 full_assistant_text = ""
                 continue
 
-            # no tool calls; this turn is done
+            # no tool calls. if nothing was spoken (model only reasoned, or ran
+            # out of tokens mid <think>, which happens a lot right after a tool
+            # result) force one more pass with no tools so the turn isn't silent.
+            if not full_assistant_text.strip() and not forced_answer:
+                forced_answer = True
+                self._transcript_buffer = ""
+                logger.info("empty response after tool use, forcing a spoken reply")
+                continue
+
+            # the model answered (or already retried); this turn is done
             break
 
         # finalize speech + chatbox
