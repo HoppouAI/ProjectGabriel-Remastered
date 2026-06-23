@@ -110,7 +110,7 @@ ctx.register_tts("my_tts", make_my_tts)
 Register a custom STT / ASR provider. The cloud (`gemini_live`) backend
 transcribes natively inside the model, so this hook drives the **local
 backend** (`backend: local`), where it swaps out the built in Silero VAD
-plus Moonshine pipeline for your own.
+plus parakeet.cpp pipeline for your own.
 
 `factory(config)` is called once by the host and should return an object
 matching `BaseSTTProvider` in `src/local_live/stt.py`. Subclass it for a

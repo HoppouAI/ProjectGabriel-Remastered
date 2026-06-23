@@ -58,7 +58,7 @@ Most of the well known VRChat AI companions out there are either closed source, 
     <td>🔑</td>
     <td><strong>API key rotation</strong><br>Add backup Gemini API keys and Gabriel cycles through them automatically when he hits a rate limit. No downtime, no manual intervention.</td>
     <td>🏠</td>
-    <td><strong>Local backend</strong><br>Optionally run everything on your own machine with LM Studio, Moonshine speech recognition, and any TTS provider. Nothing leaves your computer.</td>
+    <td><strong>Local backend</strong><br>Optionally run everything on your own machine with LM Studio, parakeet.cpp speech recognition, and any TTS provider. Nothing leaves your computer.</td>
   </tr>
 </table>
 
