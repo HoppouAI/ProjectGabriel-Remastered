@@ -80,7 +80,7 @@ class LocalLiveSession:
         if self._tts is None:
             raise RuntimeError(
                 "local backend requires an external TTS provider. enable one of "
-                "tts.qwen3 / tts.hoppou / tts.chirp3_hd / tts.tiktok or set "
+                "tts.hoppou / tts.chirp3_hd / tts.tiktok or set "
                 "tts.external_provider to a plugin-supplied name."
             )
 

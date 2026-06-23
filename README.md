@@ -149,7 +149,7 @@ No. Gabriel is just the project name and the default app name. Change it in `con
 <details>
 <summary><strong>"How do I change the AI's voice?"</strong></summary>
 
-Set the `voice` field under `gemini` in `config.yml` to any of the eight built-in names: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, or Zephyr. Puck and Kore are the most popular. You can also use external TTS providers like Qwen3 or Chirp 3 HD through the local backend.
+Set the `voice` field under `gemini` in `config.yml` to any of the eight built-in names: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, or Zephyr. Puck and Kore are the most popular. You can also use external TTS providers like Hoppou or Chirp 3 HD through the local backend.
 
 </details>
 

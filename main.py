@@ -142,12 +142,7 @@ async def main(save_audio=False):
 
     # External TTS provider (optional - when tts.provider != "gemini")
     tts_provider = None
-    if config.tts_qwen3_enabled:
-        from src.tts import QwenTTSProvider
-        tts_provider = QwenTTSProvider(config)
-        tts_provider.start()
-        logger.info("Using Qwen3 TTS provider (Gemini audio will be discarded)")
-    elif config.tts_hoppou_enabled:
+    if config.tts_hoppou_enabled:
         from src.tts import HoppouTTSProvider
         tts_provider = HoppouTTSProvider(config)
         tts_provider.start()
@@ -185,7 +180,7 @@ async def main(save_audio=False):
         if tts_provider is None:
             logger.error(
                 "local backend selected but no TTS provider is enabled. "
-                "enable one of tts.qwen3 / tts.hoppou / tts.chirp3_hd / tts.tiktok, "
+                "enable one of tts.hoppou / tts.chirp3_hd / tts.tiktok, "
                 "or set tts.external_provider to a plugin-supplied name."
             )
             raise SystemExit(2)

@@ -11,8 +11,7 @@ import numpy as np
 import soundfile as sf
 from stream2sentence import generate_sentences
 
-from ._helpers import _strip_audio_tags, _strip_emojis
-from .qwen import QwenTTSProvider
+from ._helpers import _resample, _strip_audio_tags, _strip_emojis
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +296,7 @@ class TikTokTTSProvider:
                 audio_np = audio_np.mean(axis=1)
 
             if src_sr != self._target_sr:
-                audio_np = QwenTTSProvider._resample(audio_np, src_sr, self._target_sr)
+                audio_np = _resample(audio_np, src_sr, self._target_sr)
 
             pcm = (audio_np * 32767).clip(-32767, 32767).astype(np.int16)
             return pcm.tobytes()

@@ -39,7 +39,7 @@ class VoiceTools(BaseTool):
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "provider": {"type": "STRING", "description": "Provider ID to switch to (e.g. 'gemini', 'chirp3_hd', 'hoppou', 'qwen3', 'tiktok')"},
+                        "provider": {"type": "STRING", "description": "Provider ID to switch to (e.g. 'gemini', 'chirp3_hd', 'hoppou', 'tiktok')"},
                         "voice": {"type": "STRING", "description": "A custom voice name OR a built-in voice name for the provider. Optional -- uses config default if omitted. NOT supported for 'gemini' provider."},
                     },
                     "required": ["provider"],
@@ -127,9 +127,6 @@ class VoiceTools(BaseTool):
         if provider_name == "gemini":
             if voice:
                 return {"result": "error", "message": "Cannot change Gemini voice mid-session. Gemini voice requires a full session restart."}
-        elif provider_name == "qwen3":
-            from src.tts import QwenTTSProvider
-            new_provider = QwenTTSProvider(self.config, voice_override=voice_override)
         elif provider_name == "hoppou":
             from src.tts import HoppouTTSProvider
             if not voice_override and voice:
@@ -162,7 +159,7 @@ class VoiceTools(BaseTool):
             current = "gemini"
         else:
             name = type(current_tts).__name__
-            mapping = {"QwenTTSProvider": "qwen3", "HoppouTTSProvider": "hoppou", "Chirp3HDTTSProvider": "chirp3_hd", "TikTokTTSProvider": "tiktok"}
+            mapping = {"HoppouTTSProvider": "hoppou", "Chirp3HDTTSProvider": "chirp3_hd", "TikTokTTSProvider": "tiktok"}
             current = mapping.get(name, name)
         return {"result": "ok", "providers": allowed, "current": current}
 
@@ -173,7 +170,7 @@ class VoiceTools(BaseTool):
                 voices[vname] = {
                     "display_name": vdef.get("display_name", vname),
                     "description": vdef.get("description", ""),
-                    "providers": [p for p in ("qwen3", "hoppou", "chirp3_hd", "tiktok") if p in vdef],
+                    "providers": [p for p in ("hoppou", "chirp3_hd", "tiktok") if p in vdef],
                 }
         return {"result": "ok", "voices": voices}
 

@@ -1,8 +1,10 @@
-"""Shared TTS helpers: regex-based emoji/audio-tag stripping."""
+"""Shared TTS helpers: regex-based emoji/audio-tag stripping + resampling."""
 
 from __future__ import annotations
 
 import re
+
+import numpy as np
 
 # Strip emoji / invisible symbols the TTS model cannot pronounce
 _EMOJI_RE = re.compile(
@@ -55,3 +57,13 @@ def _strip_audio_tags(text: str) -> str:
     cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
     cleaned = re.sub(r" {2,}", " ", cleaned)
     return cleaned.strip()
+
+
+def _resample(audio: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
+    """Linear-interpolation resample of a float32 mono signal."""
+    if src_sr == dst_sr:
+        return audio
+    ratio = dst_sr / src_sr
+    new_len = int(len(audio) * ratio)
+    indices = np.linspace(0, len(audio) - 1, new_len)
+    return np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)

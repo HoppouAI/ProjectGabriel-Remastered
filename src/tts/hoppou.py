@@ -8,8 +8,7 @@ import httpx
 import numpy as np
 from stream2sentence import generate_sentences
 
-from ._helpers import _strip_audio_tags, _strip_emojis
-from .qwen import QwenTTSProvider
+from ._helpers import _resample, _strip_audio_tags, _strip_emojis
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +17,8 @@ class HoppouTTSProvider:
     """Streams output transcription text to the Hoppou AI cloud TTS API.
 
     OpenAI-compatible endpoint returning raw int16 PCM at 24kHz.
-    Same sentence splitting and pre-synthesis pipeline as QwenTTSProvider.
+    Shares the same sentence splitting and pre-synthesis pipeline as the
+    other external providers.
     """
 
     _SAMPLE_RATE = 24000
@@ -141,7 +141,7 @@ class HoppouTTSProvider:
             asyncio.create_task(self._feeder_task()),
         ]
 
-    # -- Splitter (same as QwenTTSProvider) -------------------------------
+    # -- Splitter (shared pipeline) ---------------------------------------
 
     def _text_generator(self):
         last_text_time = time.monotonic()
@@ -272,7 +272,7 @@ class HoppouTTSProvider:
             samples = np.frombuffer(data, dtype=np.int16)
             if self._SAMPLE_RATE != self._target_sr:
                 float_samples = samples.astype(np.float32) / 32767.0
-                float_samples = QwenTTSProvider._resample(float_samples, self._SAMPLE_RATE, self._target_sr)
+                float_samples = _resample(float_samples, self._SAMPLE_RATE, self._target_sr)
                 samples = (float_samples * 32767).clip(-32767, 32767).astype(np.int16)
             return samples.tobytes()
         except Exception as e:

@@ -570,10 +570,6 @@ class Config:
         return self.get("tts", "provider", default="gemini")
 
     @property
-    def tts_qwen3_enabled(self):
-        return self.tts_provider == "qwen3"
-
-    @property
     def tts_hoppou_enabled(self):
         return self.tts_provider == "hoppou"
 

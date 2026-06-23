@@ -9,7 +9,7 @@ app_name: "Gabriel"
 # Which brain to run. Two options:
 #   gemini_live - cloud Gemini Live websocket (the original setup, native voice)
 #   local       - LM Studio for the LLM + Moonshine v2 for STT + your chosen
-#                 external TTS provider (qwen3 / hoppou / chirp3hd / tiktok / plugin)
+#                 external TTS provider (hoppou / chirp3hd / tiktok / plugin)
 # Local mode is fully offline aside from a few short flash-lite sub-agents
 # (memory recall, conversation summary). Local mode REQUIRES one of the
 # external TTS providers under tts:* to be enabled, since LM Studio has no
@@ -177,7 +177,7 @@ gemini:
 # Requirements:
 #   1. LM Studio running with a chat model loaded and server enabled
 #      (Developer tab -> Start Server). default endpoint is the one below.
-#   2. One of the external TTS providers below (tts.qwen3 / hoppou /
+#   2. One of the external TTS providers below (tts.hoppou /
 #      chirp3_hd / tiktok or a plugin) enabled. local mode refuses to
 #      start without a TTS provider since the LLM has no voice of its own.
 #   3. Moonshine Voice installed (pip install moonshine-voice). First
@@ -254,7 +254,6 @@ local:
 # ══════════════════════════════════════════════════════════
 # Choose which voice to use for AI speech output.
 # "gemini"    = use Gemini Live's native audio (default)
-# "qwen3"     = discard Gemini audio, use Qwen3 TTS server instead
 # "hoppou"    = discard Gemini audio, use Hoppou AI cloud TTS
 # "chirp3_hd" = discard Gemini audio, use Google Cloud Chirp 3: HD streaming TTS
 # "tiktok"    = discard Gemini audio, use TikTok's TTS API (free, no API key needed)
@@ -262,42 +261,8 @@ tts:
   provider: "gemini"
 
   # Providers the AI can switch to at runtime via the switchTTSProvider tool.
-  # Must be a list of provider names: "gemini", "qwen3", "hoppou", "chirp3_hd", "tiktok"
+  # Must be a list of provider names: "gemini", "hoppou", "chirp3_hd", "tiktok"
   switchable_providers: ["gemini"]
-
-  # Qwen3 TTS server settings (only used when provider is "qwen3")
-  qwen3:
-    # URL of your Qwen3 TTS server
-    base_url: "http://localhost:7860"
-
-    # TTS mode: "voice_clone", "custom", or "voice_design"
-    mode: "voice_clone"
-
-    # Language for synthesis
-    language: "English"
-
-    # ── Voice Clone settings ──
-    # Use a preset reference voice (from server's preset list)
-    ref_preset: ""
-    # OR provide a local reference audio file + transcript
-    ref_audio: ""
-    ref_text: ""
-    # x-vector only (faster) vs full clone (more accurate)
-    xvec_only: true
-
-    # ── Custom Voice settings ──
-    # Speaker name (for "custom" mode, requires CustomVoice model)
-    speaker: ""
-
-    # ── Voice Design / Custom instruct ──
-    # Text description of desired voice (for "voice_design" or "custom" mode)
-    instruct: ""
-
-    # ── Generation parameters ──
-    chunk_size: 8                # Streaming chunk size (tokens per chunk)
-    temperature: 0.9
-    top_k: 50
-    repetition_penalty: 1.05
 
   # Hoppou AI cloud TTS settings (only used when provider is "hoppou")
   hoppou:
