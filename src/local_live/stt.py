@@ -1,17 +1,31 @@
-"""Silero VAD + Moonshine batch STT.
+"""Silero VAD + parakeet.cpp STT for the local backend.
 
-Why not use Moonshine's built-in streaming VAD? Its threshold isn't exposed
-through the Python API, so we can't tune sensitivity. Instead we run Silero
-VAD ourselves on the mic stream (same model gemini_live uses), and only
-hand finalized speech segments to Moonshine for batch transcription.
+parakeet.cpp (an NVIDIA NeMo Parakeet port on ggml) does the actual speech
+recognition. It loads a GGUF model through a small ctypes binding (see
+parakeet_capi.py) and runs on CPU or any GPU via the prebuilt vulkan build,
+both auto downloaded on first use (see parakeet_assets.py).
+
+Two paths, picked automatically from the model:
+
+  streaming  (nemotron-*-streaming, realtime_eou_*): mic audio is fed straight
+             into parakeet's cache aware streaming decoder, which surfaces text
+             as it finalizes plus end of utterance (<EOU>) / backchannel (<EOB>)
+             events. We take the turn on <EOU>, or on a Silero silence timeout
+             for streaming models that don't emit one.
+
+  offline    (tdt / ctc / rnnt / hybrid): Silero VAD segments the mic stream
+             into utterances and each finished segment is batch transcribed.
+
+Silero VAD (the same model gemini_live uses) drives the .speaking flag for
+barge-in in both modes, and the utterance segmentation in offline mode.
 
 Public surface (kept stable for the orchestrator):
 
     start() / stop()
     feed_audio(pcm16_bytes)
     await next_transcript(timeout)
-    .speaking          true between silero speech-start and silence-timeout
-    .partial_text      latest partial (best-effort, may stay empty)
+    .speaking          true while the user is mid utterance
+    .partial_text      latest partial (best-effort)
     .ready / .load_error
 """
 
@@ -20,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+import queue
 import threading
 import time
 from typing import Optional
@@ -31,22 +46,11 @@ logger = logging.getLogger(__name__)
 SAMPLE_RATE = 16000
 SILERO_CHUNK = 512  # silero requires exactly 512 samples at 16khz per inference
 
-# config string -> ModelArch attr on moonshine_voice.transcriber.ModelArch.
-# we use the non-streaming weights since we batch-transcribe per segment, but
-# the streaming weights also accept batch input so we keep accepting both.
-_ARCH_MAP = {
-    "tiny": "TINY",
-    "base": "BASE",
-    "small": "SMALL",
-    "medium": "MEDIUM",
-    "tiny_streaming": "TINY_STREAMING",
-    "small_streaming": "SMALL_STREAMING",
-    "medium_streaming": "MEDIUM_STREAMING",
-    "base_streaming": "BASE_STREAMING",
-    "moonshine/tiny": "TINY_STREAMING",
-    "moonshine/base": "SMALL_STREAMING",
-    "moonshine/small": "SMALL_STREAMING",
-}
+# offline decoder selection passed to parakeet_capi_transcribe_pcm_lang.
+_DECODER_MAP = {"default": 0, "ctc": 1, "tdt": 2, "rnnt": 2}
+
+# substrings that mark a model as a cache-aware streaming model.
+_STREAMING_HINTS = ("streaming", "eou", "realtime")
 
 
 class BaseSTTProvider:
@@ -56,7 +60,7 @@ class BaseSTTProvider:
     Plugins register one with `ctx.register_stt("my_asr", factory)` and
     point `local.stt.external_provider: my_asr` at it in config.yml. The
     host then builds it with `factory(config)` and drives it from the
-    local session run loop exactly like the built in Moonshine pipeline.
+    local session run loop exactly like the built in parakeet pipeline.
 
     Subclass this for a head start (the optional bits already have sane
     defaults), or just duck-type the same surface. The orchestrator only
@@ -119,14 +123,20 @@ class BaseSTTProvider:
         return []
 
 
-class MoonshineSTT(BaseSTTProvider):
-    """Name kept for backward compat with session.py imports; under the hood
-    it's Silero VAD + Moonshine batch transcription."""
+class ParakeetSTT(BaseSTTProvider):
+    """Silero VAD + parakeet.cpp transcription. Auto picks a streaming or
+    offline path based on the configured model."""
 
     def __init__(self, config):
         self.config = config
-        self._model_name = (config.local_stt_model or "small_streaming").lower()
-        self._language = getattr(config, "local_stt_language", "en") or "en"
+        self._model = (config.local_stt_model or "nemotron-3.5-asr-streaming-0.6b").strip()
+        self._quant = (config.local_stt_quant or "q8_0").strip()
+        self._compute = (config.local_stt_compute or "auto").strip().lower()
+        self._language = (config.local_stt_language or "auto").strip()
+        self._mode_cfg = (config.local_stt_mode or "auto").strip().lower()
+        self._decoder = _DECODER_MAP.get(
+            (config.local_stt_decoder or "default").strip().lower(), 0,
+        )
 
         # VAD knobs. read from local.stt.* first, fall back to the shared
         # gemini.vad.* keys so a single value can drive both backends.
@@ -143,21 +153,37 @@ class MoonshineSTT(BaseSTTProvider):
         self._max_utterance_ms = int(config.local_stt_max_utterance_ms)
         self._pre_roll_ms = int(config.local_stt_pre_roll_ms)
 
-        self._transcriber = None
+        # parakeet handles
+        self._lib = None
+        self._ctx = None       # parakeet_capi.ParakeetContext
+        self._stream = None    # parakeet_capi.ParakeetStream (streaming mode)
+        self._variant = None
+        self._abi = 0
+        self._streaming = False
+
+        # silero
         self._silero = None
+        self._torch = None
 
         self._transcript_queue: "asyncio.Queue[str]" = asyncio.Queue()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
-        # silero state
+        # silero windowing state
         self._silero_buf = np.zeros(0, dtype=np.float32)
         self._pre_roll = collections.deque(
             maxlen=max(1, int(self._pre_roll_ms / 1000 * SAMPLE_RATE / SILERO_CHUNK)),
         )
+        # offline utterance buffering
         self._utterance: list[np.ndarray] = []
         self._utterance_samples = 0
         self._silence_samples = 0
         self._speech_start_ts = 0.0
+
+        # streaming worker
+        self._feed_queue: "queue.Queue" = queue.Queue()
+        self._worker: Optional[threading.Thread] = None
+        self._stream_text = ""
+        self._silence_finalize = threading.Event()
 
         self._transcribe_lock = threading.Lock()
         self._lock = threading.Lock()
@@ -169,70 +195,82 @@ class MoonshineSTT(BaseSTTProvider):
         self.speaking = False
         self.partial_text = ""
 
-    # lifecycle
+    # ── lifecycle ────────────────────────────────────────────────────────
+
+    def _resolve_streaming(self) -> bool:
+        if self._mode_cfg == "streaming":
+            return True
+        if self._mode_cfg == "offline":
+            return False
+        name = self._model.lower()
+        return any(h in name for h in _STREAMING_HINTS)
 
     def _load(self):
-        if self._transcriber is not None:
+        if self._ctx is not None:
             return
-        try:
-            from moonshine_voice import get_model_for_language
-            from moonshine_voice.transcriber import ModelArch, Transcriber
-        except ImportError as e:
-            self._load_error = (
-                "moonshine-voice not installed (it's an optional dep for the local "
-                "backend). run: pip install .[local]   or   "
-                "pip install moonshine-voice==0.0.59"
-            )
-            logger.error(self._load_error)
-            raise RuntimeError(self._load_error) from e
 
-        arch_key = _ARCH_MAP.get(self._model_name)
-        if arch_key is None:
-            self._load_error = (
-                f"unknown local_stt_model '{self._model_name}'. "
-                f"valid: {sorted(set(_ARCH_MAP.keys()))}"
-            )
+        from .parakeet_assets import ensure_model, ensure_runtime, resolve_variants
+        from .parakeet_capi import ParakeetContext, ParakeetError, load_library
+
+        # 1. runtime dll: try each variant (vulkan then cpu under 'auto') until
+        # one actually loads. a machine without a vulkan driver fails the CDLL
+        # load and we drop to cpu.
+        lib = None
+        last_err: Optional[Exception] = None
+        for variant in resolve_variants(self._compute):
+            try:
+                dll = ensure_runtime(variant)
+            except Exception as e:
+                last_err = e
+                logger.warning(f"parakeet runtime '{variant}' download failed: {e}")
+                continue
+            try:
+                lib = load_library(str(dll))
+                self._variant = variant
+                logger.info(f"loaded parakeet runtime ({variant}) from {dll}")
+                break
+            except OSError as e:
+                last_err = e
+                logger.warning(
+                    f"parakeet '{variant}' dll did not load ({e}), trying next variant"
+                )
+        if lib is None:
+            self._load_error = f"could not load any parakeet runtime: {last_err}"
             logger.error(self._load_error)
             raise RuntimeError(self._load_error)
-        # try the configured arch, then fall back to non-streaming variant
-        # since we batch-transcribe (streaming weights still accept batch but
-        # the plain SMALL/BASE/etc are tuned for it).
+        self._lib = lib
+
+        # 2. model gguf
         try:
-            arch = getattr(ModelArch, arch_key)
-        except AttributeError:
-            fallback = arch_key.replace("_STREAMING", "")
+            gguf = ensure_model(self._model, self._quant)
+        except Exception as e:
+            self._load_error = (
+                f"parakeet model download failed ({self._model}-{self._quant}): {e}"
+            )
+            logger.error(self._load_error)
+            raise
+
+        # 3. load the model
+        try:
+            self._ctx = ParakeetContext(lib, str(gguf))
+        except ParakeetError as e:
+            self._load_error = f"parakeet model load failed: {e}"
+            logger.error(self._load_error)
+            raise
+        self._abi = self._ctx.abi_version
+
+        # 4. pick mode and open a stream for streaming models
+        self._streaming = self._resolve_streaming()
+        if self._streaming:
             try:
-                arch = getattr(ModelArch, fallback)
-                arch_key = fallback
-            except AttributeError as e:
-                self._load_error = f"ModelArch has neither {arch_key} nor {fallback}"
-                logger.error(self._load_error)
-                raise RuntimeError(self._load_error) from e
+                self._stream = self._ctx.begin_stream(self._language)
+            except ParakeetError as e:
+                logger.warning(
+                    f"streaming session failed to start ({e}), using offline mode"
+                )
+                self._streaming = False
 
-        logger.info(
-            f"loading moonshine model lang={self._language} arch={arch_key}"
-        )
-        try:
-            model_path, model_arch = get_model_for_language(
-                wanted_language=self._language,
-                wanted_model_arch=arch,
-            )
-        except Exception as e:
-            self._load_error = f"get_model_for_language failed: {e}"
-            logger.error(self._load_error)
-            raise
-
-        try:
-            self._transcriber = Transcriber(
-                model_path=str(model_path),
-                model_arch=model_arch,
-            )
-        except Exception as e:
-            self._load_error = f"failed to construct Transcriber: {e}"
-            logger.error(self._load_error)
-            raise
-
-        # load silero
+        # 5. silero vad
         try:
             import torch
             torch.set_num_threads(1)
@@ -244,16 +282,15 @@ class MoonshineSTT(BaseSTTProvider):
             model.eval()
             self._silero = model
             self._torch = torch
-            logger.info(
-                f"silero vad loaded (threshold={self._vad_threshold:.2f}, "
-                f"silence={self._silence_ms}ms)"
-            )
         except Exception as e:
             self._load_error = f"silero vad load failed: {e}"
             logger.error(self._load_error)
             raise
 
-        logger.info("local stt ready (silero vad + moonshine batch)")
+        logger.info(
+            f"local stt ready (parakeet {self._model}-{self._quant} [{self._variant}], "
+            f"mode={'streaming' if self._streaming else 'offline'}, abi={self._abi})"
+        )
 
     def start(self):
         if self._running:
@@ -265,17 +302,36 @@ class MoonshineSTT(BaseSTTProvider):
         self._loop = asyncio.get_event_loop()
         self._running = True
         self._ready = True
+        if self._streaming:
+            self._worker = threading.Thread(
+                target=self._stream_worker, name="parakeet-stream", daemon=True,
+            )
+            self._worker.start()
 
     def stop(self):
         if not self._running:
             return
         self._running = False
         self._ready = False
+        if self._worker is not None:
+            try:
+                self._feed_queue.put_nowait(None)
+            except Exception:
+                pass
+            self._worker.join(timeout=2.0)
+            self._worker = None
         try:
-            if self._transcriber is not None:
-                self._transcriber.close()
+            if self._stream is not None:
+                self._stream.free()
+                self._stream = None
         except Exception as e:
-            logger.debug(f"transcriber close: {e}")
+            logger.debug(f"stream free: {e}")
+        try:
+            if self._ctx is not None:
+                self._ctx.free()
+                self._ctx = None
+        except Exception as e:
+            logger.debug(f"context free: {e}")
 
     @property
     def ready(self) -> bool:
@@ -285,12 +341,10 @@ class MoonshineSTT(BaseSTTProvider):
     def load_error(self) -> Optional[str]:
         return self._load_error
 
-    # feed / consume
+    # ── feed / consume ───────────────────────────────────────────────────
 
     def feed_audio(self, pcm16_chunk: bytes):
-        """Push raw int16 mono PCM from the mic at 16kHz. We chunk it into
-        512-sample windows for silero, then either buffer (speaking) or
-        retain as pre-roll (silence)."""
+        """Push raw int16 mono PCM from the mic at 16kHz."""
         if not self._running or not pcm16_chunk:
             return
         try:
@@ -301,6 +355,16 @@ class MoonshineSTT(BaseSTTProvider):
             logger.debug(f"pcm decode failed: {e}")
             return
 
+        if self._streaming:
+            self._streaming_vad(samples)
+            # hand the whole chunk to parakeet's streaming decoder
+            try:
+                self._feed_queue.put_nowait(samples)
+            except Exception as e:
+                logger.debug(f"feed queue put: {e}")
+            return
+
+        # offline: silero segments the stream into utterances
         with self._lock:
             self._silero_buf = np.concatenate([self._silero_buf, samples])
             while self._silero_buf.size >= SILERO_CHUNK:
@@ -311,11 +375,73 @@ class MoonshineSTT(BaseSTTProvider):
                 except Exception as e:
                     logger.debug(f"vad window processing failed: {e}")
 
+    def _silero_prob(self, window: np.ndarray) -> float:
+        with self._torch.no_grad():
+            return self._silero(self._torch.from_numpy(window), SAMPLE_RATE).item()
+
+    def _streaming_vad(self, samples: np.ndarray):
+        """Lightweight Silero pass for the streaming path: only updates the
+        speaking flag and the silence timeout that finalizes a turn. parakeet
+        keeps its own audio buffer, so we don't accumulate utterance audio."""
+        self._silero_buf = np.concatenate([self._silero_buf, samples])
+        while self._silero_buf.size >= SILERO_CHUNK:
+            window = self._silero_buf[:SILERO_CHUNK]
+            self._silero_buf = self._silero_buf[SILERO_CHUNK:]
+            try:
+                is_speech = self._silero_prob(window.copy()) >= self._vad_threshold
+            except Exception as e:
+                logger.debug(f"vad window failed: {e}")
+                continue
+            if is_speech:
+                self._silence_samples = 0
+                if not self.speaking:
+                    self.speaking = True
+            elif self.speaking:
+                self._silence_samples += SILERO_CHUNK
+                if self._silence_samples / SAMPLE_RATE * 1000 >= self._silence_ms:
+                    self.speaking = False
+                    self._silence_finalize.set()
+
+    def _stream_worker(self):
+        """Pull mic chunks and drive parakeet's streaming decoder, emitting a
+        finished utterance on <EOU> or a Silero silence timeout."""
+        from .parakeet_capi import PARAKEET_EVENT_EOU, ParakeetError
+
+        while self._running:
+            try:
+                chunk = self._feed_queue.get(timeout=0.2)
+            except queue.Empty:
+                if self._silence_finalize.is_set():
+                    self._silence_finalize.clear()
+                    self._emit_stream_turn()
+                continue
+            if chunk is None:
+                break
+            try:
+                text, events = self._stream.feed(chunk)
+            except ParakeetError as e:
+                logger.debug(f"stream feed error: {e}")
+                continue
+            if text:
+                self._stream_text += text
+                self.partial_text = self._stream_text.strip()
+            # v5 reports EOU as bit 0 of the mask; v4 was an any-event 0/1 that
+            # also lines up with bit 0. EOB-only (bit 1) keeps us listening.
+            eou = bool(events & PARAKEET_EVENT_EOU) if self._abi >= 5 else bool(events)
+            if eou or self._silence_finalize.is_set():
+                self._silence_finalize.clear()
+                self._emit_stream_turn()
+
+    def _emit_stream_turn(self):
+        utter = self._stream_text.strip()
+        self._stream_text = ""
+        self.partial_text = ""
+        if utter:
+            self._push_transcript(utter)
+
     def _process_window(self, window: np.ndarray):
         # silero inference (cheap, ~1-2ms cpu per 512-sample window)
-        with self._torch.no_grad():
-            prob = self._silero(self._torch.from_numpy(window), SAMPLE_RATE).item()
-        is_speech = prob >= self._vad_threshold
+        is_speech = self._silero_prob(window) >= self._vad_threshold
 
         if is_speech:
             self._silence_samples = 0
@@ -373,23 +499,19 @@ class MoonshineSTT(BaseSTTProvider):
         ).start()
 
     def _transcribe_worker(self, audio: np.ndarray):
-        # serialize moonshine calls to keep memory bounded if the user spams.
+        # serialize parakeet calls so spammed utterances don't run concurrently
+        # on a context that isn't built for it.
         with self._transcribe_lock:
             try:
-                transcript = self._transcriber.transcribe_without_streaming(
-                    audio.tolist(), sample_rate=SAMPLE_RATE,
-                )
-                text = " ".join(
-                    (line.text or "").strip()
-                    for line in transcript.lines
-                    if (line.text or "").strip()
+                text = self._ctx.transcribe(
+                    audio, decoder=self._decoder, lang=self._language,
                 ).strip()
                 if text:
                     self._push_transcript(text)
                 else:
-                    logger.debug("moonshine returned empty transcript")
+                    logger.debug("parakeet returned empty transcript")
             except Exception as e:
-                logger.warning(f"moonshine transcribe failed: {e}")
+                logger.warning(f"parakeet transcribe failed: {e}")
 
     async def next_transcript(self, timeout: float = 0.5) -> Optional[str]:
         try:

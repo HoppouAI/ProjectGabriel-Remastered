@@ -119,7 +119,7 @@ class Config:
     @property
     def backend(self):
         # which brain runs the show. gemini_live = cloud websocket (default,
-        # the og setup). local = LM Studio + Moonshine STT + external TTS, fully
+        # the og setup). local = LM Studio + parakeet.cpp STT + external TTS,
         # offline aside from the small flash-lite sub-agents we keep around for
         # summaries.
         val = (self.get("backend", default="gemini_live") or "gemini_live").lower()
@@ -128,7 +128,7 @@ class Config:
             return "gemini_live"
         return val
 
-    # local backend (LM Studio + Moonshine) settings ─────────────────────
+    # local backend (LM Studio + parakeet.cpp) settings
     @property
     def local_llm_base_url(self):
         return self.get("local", "llm", "base_url", default="http://localhost:1234/v1").rstrip("/")
@@ -185,17 +185,40 @@ class Config:
 
     @property
     def local_stt_model(self):
-        # moonshine streaming arch. one of: tiny_streaming, small_streaming,
-        # medium_streaming. small_streaming is the recommended default
-        # (123M params, ~165ms TTFT).
-        return self.get("local", "stt", "model", default="small_streaming")
+        # parakeet.cpp model name (downloaded as GGUF from HuggingFace) or a
+        # path to a local .gguf. default is the streaming multilingual nemotron.
+        # other options: realtime_eou_120m-v1, tdt-0.6b-v3, ctc-0.6b, rnnt-0.6b.
+        return self.get("local", "stt", "model", default="nemotron-3.5-asr-streaming-0.6b")
+
+    @property
+    def local_stt_quant(self):
+        # GGUF quantization to fetch. q8_0 is near lossless; q4_k is smallest.
+        # options: f16, q8_0, q6_k, q5_k, q4_k.
+        return self.get("local", "stt", "quant", default="q8_0")
+
+    @property
+    def local_stt_compute(self):
+        # which prebuilt parakeet runtime to use: auto (vulkan when a driver is
+        # present, else cpu), vulkan, or cpu.
+        return self.get("local", "stt", "compute", default="auto")
+
+    @property
+    def local_stt_mode(self):
+        # auto picks streaming for streaming/eou models and offline (Silero VAD
+        # segmented) for the rest. force with 'streaming' or 'offline'.
+        return self.get("local", "stt", "mode", default="auto")
+
+    @property
+    def local_stt_decoder(self):
+        # offline decoder head for tdt/ctc/rnnt models: default, ctc, or tdt.
+        # ignored by streaming models.
+        return self.get("local", "stt", "decoder", default="default")
 
     @property
     def local_stt_language(self):
-        # bcp-47 language code passed to moonshine_voice.download_model.
-        # english (en) gets the streaming weights; other langs fall back
-        # to base models which still work but lose the streaming win.
-        return self.get("local", "stt", "language", default="en")
+        # locale prompt for multilingual (nemotron) models, eg en, de, auto.
+        # 'auto' lets the model detect. ignored by single-language models.
+        return self.get("local", "stt", "language", default="auto")
 
     @property
     def local_stt_min_speech_ms(self):
@@ -217,8 +240,8 @@ class Config:
     @property
     def local_stt_external_provider(self):
         # name of a plugin-registered STT/ASR provider (ctx.register_stt).
-        # when set, the local backend uses it instead of Moonshine. empty
-        # / unset means the built in Silero VAD + Moonshine pipeline.
+        # when set, the local backend uses it instead of parakeet. empty
+        # / unset means the built in Silero VAD + parakeet pipeline.
         return self.get("local", "stt", "external_provider", default=None)
 
     @property

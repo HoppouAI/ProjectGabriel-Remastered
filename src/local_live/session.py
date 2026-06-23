@@ -14,8 +14,8 @@ Public surface (matches what main.py / control_server / plugins reach for):
     await s.run()
 
 Flow:
-    mic -> AudioManager input stream -> Silero VAD (inside MoonshineSTT)
-        -> Moonshine transcript -> LLM turn -> LM Studio stream
+    mic -> AudioManager input stream -> Silero VAD (inside ParakeetSTT)
+        -> parakeet transcript -> LLM turn -> LM Studio stream
         -> text deltas: TTS provider feed_text + chatbox stream
         -> tool calls: ToolHandler.handle_by_name -> append result -> reloop
         -> finish: turn_complete, finalize chatbox
@@ -40,7 +40,7 @@ from src.gemini_live.chatbox import ChatboxFormattersMixin
 from src.tools import ToolHandler
 
 from .llm import LMStudioClient
-from .stt import MoonshineSTT
+from .stt import ParakeetSTT
 from .tools_adapter import collect_openai_tools
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ class LocalLiveSession:
 
         # stt + llm clients. stt is pluggable: a plugin can register its own
         # ASR via ctx.register_stt and the user points local.stt.external_provider
-        # at it, otherwise we use the built in Silero VAD + Moonshine pipeline.
+        # at it, otherwise we use the built in Silero VAD + parakeet pipeline.
         self._stt = self._make_stt_provider(config)
         self._llm = LMStudioClient(config)
 
@@ -159,14 +159,14 @@ class LocalLiveSession:
 
     def _make_stt_provider(self, config):
         """Pick the STT/ASR backend. Defaults to the built in Silero VAD +
-        Moonshine pipeline, but a plugin can register its own provider with
+        parakeet.cpp pipeline, but a plugin can register its own provider with
         ctx.register_stt(name, factory) and the user selects it by setting
         local.stt.external_provider to that name in config.yml. The factory
         is called as factory(config) and must return something matching the
         BaseSTTProvider surface in stt.py."""
         ext_name = config.local_stt_external_provider
         if not ext_name:
-            return MoonshineSTT(config)
+            return ParakeetSTT(config)
         try:
             from src.plugins import get_stt_factory
         except Exception:
@@ -175,9 +175,9 @@ class LocalLiveSession:
         if factory is None:
             logger.warning(
                 f"local.stt.external_provider '{ext_name}' is not registered by "
-                f"any plugin, falling back to Moonshine"
+                f"any plugin, falling back to parakeet"
             )
-            return MoonshineSTT(config)
+            return ParakeetSTT(config)
         try:
             provider = factory(config)
             logger.info(f"local STT: using plugin provider '{ext_name}'")
@@ -185,9 +185,9 @@ class LocalLiveSession:
         except Exception as e:
             logger.error(
                 f"plugin STT '{ext_name}' failed to construct: {e}, "
-                f"falling back to Moonshine"
+                f"falling back to parakeet"
             )
-            return MoonshineSTT(config)
+            return ParakeetSTT(config)
 
     # ── chatbox builtins (parity with gemini session) ────────────────────
 
@@ -333,7 +333,7 @@ class LocalLiveSession:
             raise RuntimeError(f"STT init failed: {err}")
         await self._llm.start()
 
-        logger.info("local backend connected (OpenAI-compatible LLM + Moonshine)")
+        logger.info("local backend connected (OpenAI-compatible LLM + parakeet)")
         _broadcast_console("info",
             f"Local backend ready (model={self.config.local_llm_model}, "
             f"stt={self.config.local_stt_model})")
@@ -417,7 +417,7 @@ class LocalLiveSession:
                 await asyncio.sleep(0.1)
 
     async def _stt_partial_loop(self):
-        """No-op for now. Silero VAD + moonshine batch transcription doesn't
+        """No-op for now. Silero VAD + parakeet transcription doesn't
         produce stable partials; the user sees the full transcript once their
         utterance ends (typically <300ms after silence). Kept as a task slot
         in case we wire up incremental decoding later.
