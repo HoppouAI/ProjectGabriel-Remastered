@@ -35,6 +35,7 @@ import asyncio
 import collections
 import logging
 import queue
+import re
 import threading
 import time
 from typing import Optional
@@ -51,6 +52,15 @@ _DECODER_MAP = {"default": 0, "ctc": 1, "tdt": 2, "rnnt": 2}
 
 # substrings that mark a model as a cache-aware streaming model.
 _STREAMING_HINTS = ("streaming", "eou", "realtime")
+
+# nemotron leaks control/lang tags like <en-US> <eou> <eob> into the text
+_TAG_RE = re.compile(r"<[^>]{0,40}>")
+
+
+def _clean_transcript(text: str) -> str:
+    if not text:
+        return ""
+    return " ".join(_TAG_RE.sub(" ", text).split()).strip()
 
 
 class BaseSTTProvider:
@@ -184,6 +194,11 @@ class ParakeetSTT(BaseSTTProvider):
         self._worker: Optional[threading.Thread] = None
         self._stream_text = ""
         self._silence_finalize = threading.Event()
+        # buffer recent idle audio so the first word isnt clipped when we
+        # start feeding parakeet again on speech onset
+        self._stream_preroll: "collections.deque" = collections.deque()
+        self._preroll_samples = 0
+        self._preroll_budget = max(SILERO_CHUNK, int(self._pre_roll_ms / 1000 * SAMPLE_RATE))
 
         self._transcribe_lock = threading.Lock()
         self._lock = threading.Lock()
@@ -356,12 +371,30 @@ class ParakeetSTT(BaseSTTProvider):
             return
 
         if self._streaming:
+            was_speaking = self.speaking
             self._streaming_vad(samples)
-            # hand the whole chunk to parakeet's streaming decoder
-            try:
-                self._feed_queue.put_nowait(samples)
-            except Exception as e:
-                logger.debug(f"feed queue put: {e}")
+            # only feed parakeet while theres actual speech. pushing silence
+            # into the streaming decoder makes it hallucinate random words.
+            if self.speaking:
+                if not was_speaking and self._stream_preroll:
+                    for buf in self._stream_preroll:
+                        try:
+                            self._feed_queue.put_nowait(buf)
+                        except Exception:
+                            pass
+                    self._stream_preroll.clear()
+                    self._preroll_samples = 0
+                try:
+                    self._feed_queue.put_nowait(samples)
+                except Exception as e:
+                    logger.debug(f"feed queue put: {e}")
+            else:
+                # idle, hang onto a little pre-roll for the next onset
+                self._stream_preroll.append(samples)
+                self._preroll_samples += samples.size
+                while (self._preroll_samples > self._preroll_budget
+                       and len(self._stream_preroll) > 1):
+                    self._preroll_samples -= self._stream_preroll.popleft().size
             return
 
         # offline: silero segments the stream into utterances
@@ -417,6 +450,8 @@ class ParakeetSTT(BaseSTTProvider):
                 continue
             if chunk is None:
                 break
+            if self._stream is None:
+                continue
             try:
                 text, events = self._stream.feed(chunk)
             except ParakeetError as e:
@@ -424,7 +459,7 @@ class ParakeetSTT(BaseSTTProvider):
                 continue
             if text:
                 self._stream_text += text
-                self.partial_text = self._stream_text.strip()
+                self.partial_text = _clean_transcript(self._stream_text)
             # v5 reports EOU as bit 0 of the mask; v4 was an any-event 0/1 that
             # also lines up with bit 0. EOB-only (bit 1) keeps us listening.
             eou = bool(events & PARAKEET_EVENT_EOU) if self._abi >= 5 else bool(events)
@@ -433,11 +468,49 @@ class ParakeetSTT(BaseSTTProvider):
                 self._emit_stream_turn()
 
     def _emit_stream_turn(self):
-        utter = self._stream_text.strip()
+        # flush parakeet's tail so we dont lose the last word, then take it all
+        tail = ""
+        try:
+            if self._stream is not None:
+                tail = self._stream.finalize()
+        except Exception as e:
+            logger.debug(f"stream finalize: {e}")
+        if tail:
+            self._stream_text += tail
+        utter = _clean_transcript(self._stream_text)
         self._stream_text = ""
         self.partial_text = ""
+        # toss leftover audio + reopen the stream so the finished turn's cache
+        # doesnt bleed words into the next one
+        self._drain_feed_queue()
+        self._reset_stream()
         if utter:
             self._push_transcript(utter)
+
+    def _drain_feed_queue(self):
+        while True:
+            try:
+                item = self._feed_queue.get_nowait()
+            except queue.Empty:
+                break
+            if item is None:
+                self._feed_queue.put_nowait(None)
+                break
+
+    def _reset_stream(self):
+        from .parakeet_capi import ParakeetError
+        if self._ctx is None:
+            return
+        try:
+            if self._stream is not None:
+                self._stream.free()
+        except Exception as e:
+            logger.debug(f"stream free on reset: {e}")
+        self._stream = None
+        try:
+            self._stream = self._ctx.begin_stream(self._language)
+        except ParakeetError as e:
+            logger.warning(f"stream reopen failed: {e}")
 
     def _process_window(self, window: np.ndarray):
         # silero inference (cheap, ~1-2ms cpu per 512-sample window)
@@ -503,9 +576,9 @@ class ParakeetSTT(BaseSTTProvider):
         # on a context that isn't built for it.
         with self._transcribe_lock:
             try:
-                text = self._ctx.transcribe(
+                text = _clean_transcript(self._ctx.transcribe(
                     audio, decoder=self._decoder, lang=self._language,
-                ).strip()
+                ))
                 if text:
                     self._push_transcript(text)
                 else:
