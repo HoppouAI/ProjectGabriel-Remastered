@@ -170,6 +170,18 @@ class Config:
         return self.get("local", "llm", "max_tool_iterations", default=6)
 
     @property
+    def local_llm_concise_reasoning(self):
+        # append a brevity instruction so reasoning models stop thinking for
+        # ages and keep replies short.
+        return bool(self.get("local", "llm", "concise_reasoning", default=False))
+
+    @property
+    def local_llm_reasoning_effort(self):
+        # optional openai-style reasoning_effort passed to the api for models
+        # that support it (minimal/low/medium/high). empty = don't send it.
+        return (self.get("local", "llm", "reasoning_effort", default="") or "").strip().lower()
+
+    @property
     def local_vision_enabled(self):
         # send a screen capture with every user turn. requires a multimodal
         # model loaded in LM Studio (eg qwen2.5-vl).

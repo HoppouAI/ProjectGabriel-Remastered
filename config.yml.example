@@ -206,6 +206,15 @@ local:
     # a single user turn. If the model wants more iterations than this we
     # stop and let it speak.
     max_tool_iterations: 6
+    # Reasoning models (Qwen3, DeepSeek-R1, gpt-oss, etc) love to think for
+    # ages, narrating a whole plan before answering. Turn this on to append a
+    # brevity instruction that tells the model to barely reason and keep
+    # replies short. (Qwen3: you can also add /no_think to your prompt.)
+    concise_reasoning: false
+    # Optional API-level reasoning control for models that support it
+    # (gpt-oss and some LM Studio builds). One of: minimal, low, medium, high.
+    # Leave empty to not send it. Models that don't support it ignore it.
+    reasoning_effort: ""
 
   vision:
     # When true, captures the screen and attaches an image to every user

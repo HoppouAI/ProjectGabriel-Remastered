@@ -95,6 +95,7 @@ class LMStudioClient:
         self._temperature = config.local_llm_temperature
         self._top_p = config.local_llm_top_p
         self._max_tokens = config.local_llm_max_tokens
+        self._reasoning_effort = config.local_llm_reasoning_effort
         self._timeout = config.local_llm_request_timeout
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -146,6 +147,9 @@ class LMStudioClient:
             "top_p": self._top_p,
             "max_tokens": self._max_tokens,
         }
+        if self._reasoning_effort:
+            # only sent when set; models that don't grok it just ignore it
+            payload["reasoning_effort"] = self._reasoning_effort
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"

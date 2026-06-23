@@ -45,10 +45,22 @@ from .tools_adapter import collect_openai_tools
 
 logger = logging.getLogger(__name__)
 
+# appended to the system prompt when local.llm.concise_reasoning is on. reins
+# in reasoning models that narrate a whole plan + persona checklist before
+# answering. for qwen3 style models you can also add /no_think to fully kill it
+_CONCISE_REASONING_NOTE = (
+    "\n\n# Keep it brief\n"
+    "Think as little as possible before replying. Do NOT restate the user's "
+    "message, narrate a plan, list steps, or run through a persona checklist. "
+    "At most one short line of reasoning, then answer. Keep spoken replies "
+    "short and natural, usually a sentence or two, no padding or over-explaining."
+)
+
 try:
     from src.gemini_live.conversation_logger import ConversationLogger as _ConvLogger
 except Exception:
     _ConvLogger = None
+
 
 try:
     from src.gemini_live.chatbox_orchestrator import ChatboxOrchestrator
@@ -245,7 +257,10 @@ class LocalLiveSession:
         """
         pid = self._current_personality_id()
         if self._system_text is None or pid != self._system_personality_id:
-            self._system_text = self.config.build_system_instruction(self.personality)
+            text = self.config.build_system_instruction(self.personality)
+            if self.config.local_llm_concise_reasoning:
+                text += _CONCISE_REASONING_NOTE
+            self._system_text = text
             self._system_personality_id = pid
         return self._system_text
 
