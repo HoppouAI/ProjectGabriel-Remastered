@@ -170,13 +170,15 @@ async def main(save_audio=False):
         tts_provider.start()
         logger.info("Using TikTok TTS provider (Gemini audio will be discarded)")
     else:
-        # plugin-supplied TTS provider (config: tts.external_provider: <name>)
-        ext_name = config.get("tts", "external_provider", default=None)
+        # plugin provider. set tts.provider to the name directly, old external_provider still works as fallback
+        ext_name = config.tts_provider
+        if ext_name in ("gemini", "", None):
+            ext_name = config.get("tts", "external_provider", default=None)
         if ext_name:
             factory = get_tts_factory(ext_name)
             if factory is None:
                 logger.warning(
-                    f"tts.external_provider '{ext_name}' is not registered by any plugin"
+                    f"tts provider '{ext_name}' is not registered by any plugin"
                 )
             else:
                 try:
@@ -193,7 +195,7 @@ async def main(save_audio=False):
             logger.error(
                 "local backend selected but no TTS provider is enabled. "
                 "enable one of tts.hoppou / tts.chirp3_hd / tts.tiktok, "
-                "or set tts.external_provider to a plugin-supplied name."
+                "or set tts.provider to a plugin-supplied name."
             )
             raise SystemExit(2)
         from src.local_live import LocalLiveSession

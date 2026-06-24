@@ -95,8 +95,8 @@ plugin's owner in `config/tools.yml` and don't double register.
 Add a TTS provider. `factory(config)` should return an object with the
 same interface as the built in providers in `src/tts.py` (typically
 `start()`, `stop()`, plus whatever the Gemini Live session expects).
-Once registered, set `tts.external_provider: <name>` in `config.yml` to
-make it the active provider.
+Once registered, set `tts.provider: <name>` in `config.yml` to make it
+the active provider, same as you would for any built in voice.
 
 ```python
 def make_my_tts(config):

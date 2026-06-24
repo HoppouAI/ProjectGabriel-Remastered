@@ -110,7 +110,7 @@ class LocalLiveSession:
             raise RuntimeError(
                 "local backend requires an external TTS provider. enable one of "
                 "tts.hoppou / tts.chirp3_hd / tts.tiktok or set "
-                "tts.external_provider to a plugin-supplied name."
+                "tts.provider to a plugin-supplied name."
             )
 
         # state flags read by other subsystems

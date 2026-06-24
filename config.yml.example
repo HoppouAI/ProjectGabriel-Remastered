@@ -296,6 +296,9 @@ local:
 # "hoppou"    = discard Gemini audio, use Hoppou AI cloud TTS
 # "chirp3_hd" = discard Gemini audio, use Google Cloud Chirp 3: HD streaming TTS
 # "tiktok"    = discard Gemini audio, use TikTok's TTS API (free, no API key needed)
+# Plugins can register their own providers too. Just set provider to the name
+# the plugin registered (eg "pocket_tts" from the omnivoice plugin) and that
+# voice gets used. No extra field needed.
 tts:
   provider: "gemini"
 
