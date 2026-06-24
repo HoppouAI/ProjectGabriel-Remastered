@@ -628,6 +628,7 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     self._audio_in_queue = asyncio.Queue()
                     self._stream_closing = False
                     self._playback_interrupted = False
+                    self._fade_in_next = False
                     self._audio_stream_active = False
                     self._audio_gated = False
                     self._manual_vad_speaking = False

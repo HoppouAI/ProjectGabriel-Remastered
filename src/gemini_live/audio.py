@@ -21,6 +21,26 @@ from websockets.exceptions import ConnectionClosed
 
 logger = logging.getLogger(__name__)
 
+# short edge ramp (~6.5ms @ 24k) so a hard cut/resume doesnt click
+_FADE_SAMPLES = 160
+_FADE_BYTES = _FADE_SAMPLES * 2
+
+
+def _edge_fade(pcm: bytes, fade_in: bool) -> bytes:
+    """ramp a short pcm16 edge to/from zero so an interrupt cut or a resume
+    doesnt pop. caller passes just the edge slice, the whole thing gets ramped."""
+    if not pcm:
+        return pcm
+    samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+    n = len(samples)
+    if n == 0:
+        return pcm
+    ramp = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    if not fade_in:
+        ramp = ramp[::-1]
+    samples *= ramp
+    return samples.astype(np.int16).tobytes()
+
 
 class AudioLoopsMixin:
     async def _listen_audio_loop(self, input_stream):
@@ -228,9 +248,22 @@ class AudioLoopsMixin:
                         _plg_emit("tts_audio_chunk", audio_data, self.config.receive_sample_rate)
                     except Exception:
                         pass
+                    # ramp the first buffer back in after an interrupt so resume isnt a pop
+                    if getattr(self, "_fade_in_next", False):
+                        head = _edge_fade(audio_data[:_FADE_BYTES], fade_in=True)
+                        audio_data = head + audio_data[_FADE_BYTES:]
+                        self._fade_in_next = False
                     # Chunked write so we can stop quickly on interrupt
                     for i in range(0, len(audio_data), CHUNK_BYTES):
                         if self._playback_interrupted:
+                            # ramp the upcoming samples down to zero instead of a hard cut
+                            tail = _edge_fade(audio_data[i:i + _FADE_BYTES], fade_in=False)
+                            if tail:
+                                try:
+                                    await asyncio.to_thread(output_stream.write, tail)
+                                except Exception:
+                                    pass
+                            self._fade_in_next = True
                             break
                         await asyncio.to_thread(
                             output_stream.write, audio_data[i:i + CHUNK_BYTES]
