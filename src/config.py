@@ -348,6 +348,17 @@ class Config:
         except Exception as e:
             logger.warning(f"plugin prompt contributors failed: {e}")
 
+        # when dynamic tools are on the model only sees the meta tools, so
+        # drop in the catalog of what it can reach via searchTools/executeTool
+        if self.gemini_dynamic_tools:
+            try:
+                from src.tools.meta_router import build_meta_prompt
+                catalog = build_meta_prompt(self)
+                if catalog:
+                    parts.append(catalog)
+            except Exception as e:
+                logger.warning(f"meta tool catalog failed: {e}")
+
         # Always-on internal command handling rule. Baked into the code
         # so users cant accidentally delete it from appends.yml and
         # break mid-session steering. Goes last so the rule lands at
@@ -422,6 +433,10 @@ class Config:
     @property
     def proactivity(self):
         return self.get("gemini", "proactivity")
+
+    @property
+    def gemini_dynamic_tools(self):
+        return self.get("gemini", "dynamic_tools", default=False)
 
     @property
     def google_search_enabled(self):

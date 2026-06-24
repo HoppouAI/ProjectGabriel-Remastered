@@ -1,3 +1,4 @@
+import json
 import logging
 
 from google.genai import types
@@ -5,7 +6,6 @@ from google.genai import types
 from src.emotions import handle_emotion_function_call
 
 logger = logging.getLogger(__name__)
-
 
 class ToolHandler:
     def __init__(self, audio_mgr, osc, tracker, personality_mgr, config=None):
@@ -72,6 +72,16 @@ class ToolHandler:
         if skipped:
             logger.info(f"tool handler: skipped {skipped} tool class(es) with all declarations disabled")
 
+        # meta tool router (gemini session only). when on, the model gets
+        # searchTools + executeTool instead of every declaration up front
+        self.meta_router = None
+        if config is not None and getattr(config, "gemini_dynamic_tools", False):
+            try:
+                from src.tools.meta_router import MetaToolRouter
+                self.meta_router = MetaToolRouter(config)
+            except Exception as e:
+                logger.warning(f"meta tool router init failed: {e}")
+
     def _get_vrchat_api(self):
         if self.vrchat_api is None:
             from src.vrchatapi import VRChatAPI
@@ -81,6 +91,10 @@ class ToolHandler:
     async def handle(self, function_call) -> types.FunctionResponse:
         name = function_call.name
         args = dict(function_call.args) if function_call.args else {}
+
+        # meta tools: search the catalog or dispatch a real tool by name
+        if self.meta_router is not None and name in ("searchTools", "executeTool"):
+            return await self._handle_meta(function_call, name, args)
 
         # Emotion functions return FunctionResponse directly
         if name in ("emotion", "stopAnimation"):
@@ -112,6 +126,35 @@ class ToolHandler:
             name=name,
             response=result if result else {"result": "ok"},
         )
+
+    async def _handle_meta(self, function_call, name, args) -> types.FunctionResponse:
+        def resp(payload):
+            return types.FunctionResponse(id=function_call.id, name=name, response=payload)
+
+        if name == "searchTools":
+            tools = self.meta_router.search(args.get("query", "") or "")
+            out = {"result": "ok", "tools": tools}
+            if not tools:
+                out["hint"] = "no tools matched, try different keywords"
+            return resp(out)
+
+        # executeTool
+        tool = (args.get("tool") or "").strip()
+        raw = args.get("args_json")
+        inner = {}
+        if isinstance(raw, dict):
+            inner = raw
+        elif raw:
+            try:
+                inner = json.loads(raw)
+            except (TypeError, ValueError) as e:
+                return resp({"result": "error", "message": f"args_json was not valid json: {e}"})
+        if not isinstance(inner, dict):
+            inner = {}
+        if not tool or not self.meta_router.is_known(tool):
+            return resp({"result": "error", "message": f"unknown tool '{tool}', call searchTools first for the exact name"})
+        result = await self.handle_by_name(tool, inner)
+        return resp(result if result else {"result": "ok"})
 
     async def handle_by_name(self, name: str, args: dict) -> dict:
         """Generic dispatch by tool name + args dict. Used by non-Gemini

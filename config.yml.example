@@ -52,6 +52,14 @@ gemini:
   # System prompt -- select a named prompt from config/prompts/prompts.yml
   prompt: "default"
 
+  # Dynamic tool loading. When true the model only sees two meta tools
+  # (searchTools + executeTool) plus a small always-on core, instead of every
+  # tool declaration up front. It searches for what it needs then runs it by
+  # name. Cuts a big chunk of prompt tokens at the cost of an extra round trip
+  # for tools it hasnt looked up yet. Leave false for the classic behaviour
+  # where every tool is declared directly.
+  dynamic_tools: false
+
   # ── Voice Configuration ──
   # Prebuilt voice name. Available voices:
   #   Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr

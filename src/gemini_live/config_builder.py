@@ -56,6 +56,14 @@ class ConfigBuilderMixin:
 
         transcription_config = types.AudioTranscriptionConfig()
 
+        if self.config.gemini_dynamic_tools:
+            from src.tools.meta_router import build_meta_declarations
+            tool_list = build_meta_declarations(self.config)
+            declared = sum(len(t.function_declarations or []) for t in tool_list)
+            logger.info(f"dynamic tools ON: {declared} declarations sent (searchTools/executeTool + core), rest reached via searchTools")
+        else:
+            tool_list = get_tool_declarations(self.config)
+
         config_kwargs = dict(
             response_modalities=["AUDIO"],
             system_instruction=types.Content(
@@ -63,7 +71,7 @@ class ConfigBuilderMixin:
                     text=self.config.build_system_instruction(self.personality)
                 )]
             ),
-            tools=get_tool_declarations(self.config),
+            tools=tool_list,
             input_audio_transcription=transcription_config,
             output_audio_transcription=transcription_config,
             speech_config=types.SpeechConfig(
