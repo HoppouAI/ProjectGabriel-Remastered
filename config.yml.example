@@ -47,7 +47,7 @@ gemini:
   # Options: "gemini-3.1-flash-live-preview" (latest, lower latency)
   #          "gemini-2.5-flash-native-audio-preview-09-2025" (legacy)
   #          "gemini-2.5-flash-native-audio-preview-12-2025" (legacy)
-  model: "gemini-2.5-flash-native-audio-preview-09-2025"
+  model: "gemini-3.1-flash-live-preview"
 
   # System prompt -- select a named prompt from config/prompts/prompts.yml
   prompt: "default"
@@ -66,17 +66,12 @@ gemini:
   voice: "Puck"
 
   # ── Voice Activity Detection (VAD) ──
-  # Controls how Gemini detects when you start/stop speaking.
-  #
-  # Two modes:
-  #   1. Automatic (disabled: false) - Server-side VAD handles everything.
-  #      Simple, works well for most setups. Just configure sensitivity.
-  #   2. Manual (disabled: true) - Client-side energy-based VAD.
-  #      Sends activityStart/activityEnd signals to Gemini manually.
-  #      Recommended for production apps (per Google AI community patterns).
-  #      Gives you full control over turn-taking and prevents echo issues.
-  #      Also gates audio during tool calls and model speech to avoid
-  #      1007/1008 disconnects from stale audio.
+  # Controls how Gemini detects when you start and stop speaking. Pick the
+  # mode below. "auto" (server side) is the lower latency default and is what
+  # the AI Studio demo uses, so the model starts replying almost instantly.
+  # "silero" runs a local model with manual activityStart/activityEnd and is
+  # more defensive on noisy mics or flaky setups, at the cost of a bit more
+  # delay before the model responds.
   vad:
     # VAD mode: "auto" (Gemini server-side) or "silero" (local Silero VAD model)
     #   auto   = Uses Gemini's built-in automatic activity detection. Simple, no extra deps.
@@ -94,14 +89,15 @@ gemini:
     # Sensitivity for detecting the END of speech (auto mode only)
     # Options: END_SENSITIVITY_LOW, END_SENSITIVITY_HIGH
     # HIGH = ends speech detection quicker, LOW = waits longer
-    end_of_speech_sensitivity: "END_SENSITIVITY_HIGH"
+    end_of_speech_sensitivity: "END_SENSITIVITY_LOW"
 
     # Milliseconds of audio to capture BEFORE speech is detected (context padding)
     prefix_padding_ms: 100
 
-    # Milliseconds of silence required to consider speech complete
-    # Used in both auto and silero mode. 500ms is good for natural conversation.
-    silence_duration_ms: 200
+    # Milliseconds of silence required to consider speech complete.
+    # Used in both auto and silero mode. Lower = snappier turn taking, higher =
+    # waits longer so it wont cut you off mid pause. 200-300 feels responsive.
+    silence_duration_ms: 300
 
     # Speech probability threshold for Silero VAD (silero mode only)
     # Silero outputs a 0.0-1.0 probability per audio chunk.
@@ -120,12 +116,12 @@ gemini:
     # For 2.5 models: thinking token budget - guides how many tokens the model uses to think.
     # Higher = more thorough but slower responses. Set to 0 to disable thinking.
     # null = use model default (dynamic thinking)
-    budget: null
+    budget: 1024
 
     # For 3.1 models: thinking level controls thinking depth.
     # Options: "minimal" (lowest latency), "low", "medium", "high"
     # Default is "minimal" for 3.1 models. Ignored for 2.5 models.
-    # level: "low"
+    level: "minimal"
 
     # Whether to include thought summaries in server responses.
     # Useful for debugging what the model is reasoning about.
@@ -151,9 +147,9 @@ gemini:
   context_window_compression:
     enabled: true
     # Token count that triggers compression (null = 80% of model's 128k context window)
-    trigger_tokens: 50000
+    trigger_tokens: 80000
     # Tokens to keep after compression (null = trigger_tokens / 2)
-    target_tokens: 25000
+    target_tokens: 40000
 
   # ── Custom Context Compression ──
   # When enabled, replaces Gemini's built-in sliding window compression with a
@@ -502,23 +498,22 @@ face_tracker:
   enabled: false
 
 wanderer:
-  # Autonomous wandering using depth estimation for obstacle avoidance
-  # AI can toggle this to freely explore VRChat maps while avoiding walls
+  # Autonomous wandering. The AI can toggle this to freely explore VRChat
+  # worlds while avoiding walls and ledges. Obstacle distances come from
+  # VRCRaycast components mounted on the avatar (engine-truth readings, no
+  # screen capture or depth model involved). You have to add the raycast
+  # sensor to your avatar first, see unity_assets/AVATAR_SETUP.md.
   enabled: false
 
-  # Depth model: "depth-anything-v2-small" (fast, ~50ms), "depth-anything-v2-base" (balanced),
-  #              "dpt-large" (heavy, ~450ms)
-  model: "depth-anything-v2-small"
-
-  # Use FP16 on GPU (halves VRAM, ~2x faster, no quality loss)
-  fp16: true
-
-  # Remote depth server (offload inference to a dedicated GPU machine)
-  # See depth_server/ for the server setup
-  depth_server:
-    enabled: false
-    url: "http://192.168.1.x:8780"
-    api_key: "your-secret-key"
+  # Everything below is optional fine tuning. The defaults work out of the
+  # box, only uncomment these if you want to change how it moves around.
+  # Distances are in meters, speeds are 0-1.
+  # forward_speed: 0.6        # cruise speed when the path ahead is clear
+  # stop_distance: 0.8        # back up and turn when a wall is closer than this
+  # slow_distance: 2.0        # start easing off the throttle below this
+  # turn_speed_avoid: 1.0     # how hard it swerves to escape a wall
+  # random_turn_chance: 0.02  # chance per tick to make an exploratory turn
+  # jump_chance: 0.012        # chance per tick to hop (clears small ledges)
 
 vision:
   # Screen capture for Gemini Live vision
