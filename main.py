@@ -273,6 +273,10 @@ async def main(save_audio=False):
                     osc, instance_monitor=instance_monitor,
                 )
                 session.tool_handler.mapping_service = shared_state["mapping_service"]
+                # face tracker yields LookHorizontal while voxel nav drives,
+                # otherwise it fights the path steering + final-yaw aligner
+                if face_tracker:
+                    face_tracker.set_mapping_service(shared_state["mapping_service"])
                 # let the wanderer use the voxel map for curiosity exploration
                 if wanderer:
                     wanderer._mapping_service_ref = shared_state["mapping_service"]

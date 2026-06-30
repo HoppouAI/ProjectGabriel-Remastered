@@ -54,6 +54,7 @@ class FaceTracker:
         self._idle_ref = None  # callable that returns True when AI is idle
         self._player_tracker_ref = None  # reference to PlayerTracker to check if following
         self._wanderer_ref = None  # reference to Wanderer to check if wandering
+        self._mapping_service_ref = None  # mapping/voxel nav, yield while it drives
 
         # Tracking state
         self._locked_id = None
@@ -95,6 +96,11 @@ class FaceTracker:
         """Set reference to Wanderer so face tracker yields while wandering."""
         self._wanderer_ref = wanderer
 
+    def set_mapping_service(self, mapping_service):
+        """Set reference to the mapping/voxel nav so face tracker yields
+        LookHorizontal while it's walking a path or aligning final yaw."""
+        self._mapping_service_ref = mapping_service
+
     def _is_speaking(self):
         if self._speaking_ref is not None:
             return self._speaking_ref()
@@ -113,6 +119,22 @@ class FaceTracker:
     def _wanderer_active(self):
         if self._wanderer_ref is not None:
             return self._wanderer_ref._active and not self._wanderer_ref._paused
+        return False
+
+    def _mapping_nav_active(self):
+        # voxel nav owns LookHorizontal while it walks a path or rotates to a
+        # waypoint's saved facing. if we keep writing look here we fight the
+        # aligner and it stalls short of the target heading.
+        ms = self._mapping_service_ref
+        if ms is None:
+            return False
+        try:
+            if ms.follow_status().get("active"):
+                return True
+            if getattr(ms, "_pending_align_yaw", None) is not None:
+                return True
+        except Exception:
+            pass
         return False
 
     def _load_config(self):
@@ -309,6 +331,13 @@ class FaceTracker:
             while self._active:
                 t0 = time.perf_counter()
 
+                # voxel nav owns LookHorizontal while it walks a path or
+                # aligns to a waypoint facing. back off without zeroing so we
+                # dont stomp the aligner mid-turn.
+                if self._mapping_nav_active():
+                    time.sleep(0.2)
+                    continue
+
                 # Pause detection when player tracker is following or wanderer is active
                 if self._player_tracker_active() or self._wanderer_active():
                     self._zero_osc()
@@ -466,8 +495,9 @@ class FaceTracker:
         if not self.osc:
             return
 
-        # Don't fight the player tracker or wanderer for LookHorizontal
-        if self._player_tracker_active() or self._wanderer_active():
+        # Don't fight the player tracker, wanderer, or voxel nav for LookHorizontal
+        if (self._player_tracker_active() or self._wanderer_active()
+                or self._mapping_nav_active()):
             return
 
         client = self.osc.client

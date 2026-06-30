@@ -49,12 +49,14 @@ class MotionMixin:
         if target is None:
             return True
         delta = (target - pose_yaw_deg + 540.0) % 360.0 - 180.0
-        if abs(delta) <= 3.0:
+        if abs(delta) <= 5.0:
             return True
         sign = 1.0 if delta > 0 else -1.0
-        # bigger floor than the old mapping-side aligner so vrchat actually
-        # registers the turn at small angles. ramps up to 0.6 by ~45deg.
-        mag = min(0.6, max(0.18, abs(delta) / 45.0))
+        # vrchat look input has a real deadzone, small axis values rotate
+        # barely or not at all and the avatar stalls short of the heading.
+        # keep a strong floor so the last few degrees still actually turn,
+        # ramp up fast for big corrections.
+        mag = min(0.85, max(0.30, abs(delta) / 30.0))
         # push lookhorizontal every tick (not just on change) so face tracker
         # or other systems writing 0 to lookhorizontal cant strand us.
         try:
