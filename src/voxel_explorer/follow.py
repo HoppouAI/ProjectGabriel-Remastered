@@ -37,6 +37,9 @@ class FollowMixin:
             self._follow_label = label or ""
             self._final_yaw_deg = final_yaw_deg
             self._aligning = False
+            # fresh trip, reset the seek fallback budget
+            self._seek_active = False
+            self._seek_engagements = 0
             # last cell of the queue is treated as the goal for replans
             self._follow_goal = serials[-1] if serials else None
             self._follow_replans = 0
@@ -54,10 +57,11 @@ class FollowMixin:
 
     def cancel_follow(self) -> None:
         with self._lock:
-            if not self._follow_active and not self._aligning:
+            if not self._follow_active and not self._aligning and not self._seek_active:
                 return
             self._follow_active = False
             self._aligning = False
+            self._seek_active = False
             self._final_yaw_deg = None
             self._path_queue.clear()
             self._follow_goal = None
@@ -70,10 +74,11 @@ class FollowMixin:
     @property
     def follow_status(self) -> dict:
         return {
-            "active": self._follow_active or self._aligning,
+            "active": self._follow_active or self._aligning or self._seek_active,
             "remaining": len(self._path_queue),
             "label": self._follow_label,
             "aligning": self._aligning,
+            "seeking": self._seek_active,
         }
 
     def _follow_carrot(self, px: float, pz: float) -> tuple[float, float]:

@@ -42,6 +42,33 @@ class MotionMixin:
             return False
         return True
 
+    def _turn_toward(self, fx: float, fz: float,
+                     ndx: float, ndz: float) -> tuple[float, float, bool]:
+        """reference turn math: cross/dot of forward vs desired direction ->
+        a LookHorizontal turn. shared by path-follow DoMotion and seek.
+        returns (turn, dot, facing)."""
+        cross = fx * ndz - fz * ndx
+        dot = fx * ndx + fz * ndz
+        facing = dot > self.FACING_THRESHOLD
+        if dot < 0.0:
+            # behind us: hard turn one way
+            cross = -1.0 if cross < 0 else 1.0
+        elif facing:
+            # nearly aligned: soften turn with cross^1.5 (signed)
+            if cross < 0:
+                cross = -1.0 * (abs(cross) ** 1.5)
+            else:
+                cross = cross ** 1.5
+        if cross < -self.TURN_DEADZONE or cross > self.TURN_DEADZONE:
+            # reference keeps a minimum turn magnitude of 0.5 to defeat deadzone
+            if cross < 0:
+                turn = 0.5 - 0.5 * cross
+            else:
+                turn = -0.5 - 0.5 * cross
+        else:
+            turn = 0.0
+        return turn, dot, facing
+
     def _drive_final_yaw(self, pose_yaw_deg: float) -> bool:
         """Rotate toward `_final_yaw_deg` via LookHorizontal. Returns True
         once we're inside the deadband (caller should release)."""

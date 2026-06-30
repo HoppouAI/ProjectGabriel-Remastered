@@ -35,6 +35,7 @@ from src.voxel_nav import NodeType, Serial, VoxelNavManager, serial_to_center
 from .follow import FollowMixin
 from .motion import MotionMixin
 from .raycast_assist import RaycastAssistMixin
+from .seek import SeekMixin
 from .state import ExplorerState
 from .targeting import TargetingMixin
 
@@ -42,7 +43,8 @@ from .targeting import TargetingMixin
 logger = logging.getLogger(__name__)
 
 
-class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin):
+class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin,
+                    SeekMixin):
     """Drives the avatar via OSC to fill in `nav.graph` reference style.
 
     Call `tick(pose)` at ~20Hz from the same loop that calls
@@ -67,6 +69,17 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
     # have a target and our voxel cell hasnt changed this many seconds, we
     # give up the same way an eCount blowout would.
     NO_PROGRESS_TIMEOUT = 4.0
+
+    # raycast-guided seek fallback. kicks in when the A* follow dead-ends in
+    # unmapped territory instead of cancelling and spinning. heads at the
+    # goal's world pos using the raycasts to dodge stuff, mapping as it goes.
+    SEEK_ARRIVE_RADIUS = 0.5         # within this XZ (m) of goal = arrived
+    SEEK_ARRIVE_Y = 0.75            # and within this vertical (m)
+    SEEK_NO_PROGRESS_S = 6.0        # no closing distance this long = bail
+    SEEK_MAX_S = 30.0              # hard cap on a single seek
+    SEEK_ASTAR_RETRY_S = 1.5       # how often to retry a real A* path
+    SEEK_MAX_ENGAGEMENTS = 3       # seeks per follow_path before we quit
+    SEEK_PROGRESS_EPS = 0.15       # min closing distance (m) that counts
 
     def __init__(self, nav: VoxelNavManager, osc, *, learning_mode: bool = True):
         self.nav = nav
@@ -96,6 +109,15 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
         self._aligning: bool = False
         self._align_start_t: float = 0.0
         self._align_timeout_s: float = 10.0
+        # raycast seek fallback state (see SeekMixin).
+        self._seek_active: bool = False
+        self._seek_goal_world: Optional[tuple[float, float, float]] = None
+        self._seek_goal_cell: Optional[Serial] = None
+        self._seek_start_t: float = 0.0
+        self._seek_best_dist: float = math.inf
+        self._seek_best_t: float = 0.0
+        self._seek_next_astar_t: float = 0.0
+        self._seek_engagements: int = 0
         self.state = ExplorerState()
         self._active = False
         self._last_send_forward = 0.0
@@ -119,6 +141,8 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
         self.state.last_progress_t = time.time()
         self._ec_multiplier = 1.0
         self._last_pose = None
+        self._seek_active = False
+        self._seek_engagements = 0
         # force first OSC send by invalidating dedupe state
         self._last_send_forward = float("nan")
         self._last_send_turn = float("nan")
@@ -127,6 +151,7 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
 
     def stop(self) -> None:
         self._active = False
+        self._seek_active = False
         self._send_osc(0.0, 0.0, run=False)
         logger.info("voxel_explorer: stopped")
 
@@ -160,6 +185,14 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
         fx = math.sin(yaw_rad)
         fz = math.cos(yaw_rad)
 
+        # raycast seek fallback. owns motion while active and works even when
+        # we're standing in unmapped space (no nav.current), so it runs before
+        # the current-cell gate below.
+        if self._seek_active:
+            self._seek_tick(pose_x, pose_y, pose_z, fx, fz)
+            self._last_pose = (pose_x, pose_z, fx, fz)
+            return
+
         current = self.nav.current
         if current is None:
             # no pose lock yet, do nothing
@@ -182,6 +215,18 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
                     tcx, _, tcz = serial_to_center(s.target)
                     if math.hypot(tcx - pose_x, tcz - pose_z) <= self.FOLLOW_ARRIVE_RADIUS:
                         reached = True
+            if not reached and self._follow_active and self._path_queue:
+                # pure-pursuit: drop the waypoint the moment we've driven past
+                # it toward the next one, so overshooting at speed doesnt make
+                # us turn back to touch the exact cell (the forward-then-back
+                # wobble where it looks like it forgot where it was going).
+                nxt = self._path_queue[0]
+                wtx, _, wtz = serial_to_center(s.target)
+                wnx, _, wnz = serial_to_center(nxt)
+                segx, segz = wnx - wtx, wnz - wtz
+                apx, apz = pose_x - wtx, pose_z - wtz
+                if (segx * segx + segz * segz) > 1e-9 and (segx * apx + segz * apz) >= 0.0:
+                    reached = True
             if reached:
                 logger.info("voxel_explorer: reached target %s", s.target)
                 s.target = None
@@ -289,30 +334,7 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
             ndx = sdx / smag
             ndz = sdz / smag
 
-        # reference Utils.CrossProd on Vector2 = look.x*to.y - look.y*to.x.
-        # they pack worldX -> .x, worldZ -> .y, so this is fx*ndz - fz*ndx.
-        cross = fx * ndz - fz * ndx
-        dot = fx * ndx + fz * ndz
-        flag = dot > self.FACING_THRESHOLD
-
-        if dot < 0.0:
-            # behind us: hard turn one way
-            cross = -1.0 if cross < 0 else 1.0
-        elif flag:
-            # nearly aligned: soften turn with cross^1.5 (signed)
-            if cross < 0:
-                cross = -1.0 * (abs(cross) ** 1.5)
-            else:
-                cross = cross ** 1.5
-
-        if cross < -self.TURN_DEADZONE or cross > self.TURN_DEADZONE:
-            # reference keeps a minimum turn magnitude of 0.5 to defeat deadzone
-            if cross < 0:
-                turn = 0.5 - 0.5 * cross
-            else:
-                turn = -0.5 - 0.5 * cross
-        else:
-            turn = 0.0
+        turn, dot, flag = self._turn_toward(fx, fz, ndx, ndz)
 
         # forward speed scales with distance to the steering point. in follow
         # mode that's the carrot (~lookahead away) so we keep full speed across

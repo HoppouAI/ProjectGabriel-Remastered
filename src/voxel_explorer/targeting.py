@@ -160,12 +160,15 @@ class TargetingMixin:
                 and cur is not None):
             if self._follow_replans >= self._follow_replan_limit:
                 logger.warning("voxel_explorer: follow replan limit hit (%d), "
-                               "cancelling follow %r",
+                               "trying raycast seek %r",
                                self._follow_replan_limit, self._follow_label)
-                self._follow_active = False
-                self._path_queue.clear()
-                self._follow_goal = None
-                self._follow_replans = 0
+                # map's got gaps A* cant route through. head at the goal on
+                # raycasts alone instead of cancelling and spinning.
+                if not self._begin_seek("replan limit"):
+                    self._follow_active = False
+                    self._path_queue.clear()
+                    self._follow_goal = None
+                    self._follow_replans = 0
             else:
                 self._follow_replans += 1
                 now_m = time.monotonic()
@@ -189,11 +192,12 @@ class TargetingMixin:
                                 len(self._path_queue), self._follow_goal)
                 else:
                     logger.warning("voxel_explorer: follow replan #%d failed, "
-                                   "no path from %s to %s, cancelling",
+                                   "no path from %s to %s, trying raycast seek",
                                    self._follow_replans, cur.serial,
                                    self._follow_goal)
-                    self._follow_active = False
-                    self._path_queue.clear()
-                    self._follow_goal = None
-                    self._follow_replans = 0
+                    if not self._begin_seek("no path"):
+                        self._follow_active = False
+                        self._path_queue.clear()
+                        self._follow_goal = None
+                        self._follow_replans = 0
         self._send_osc(0.0, 0.0, run=False)
