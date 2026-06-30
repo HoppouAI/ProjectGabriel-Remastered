@@ -114,15 +114,20 @@ class Graph:
     def _corner_blocked(
         nodes: dict[Serial, Node], a: Serial, b: Serial,
     ) -> bool:
-        """True if the diagonal step a->b is blocked by both orthogonal
-        corner cells being unreachable. Must be called with the lock held."""
+        """True only if the diagonal step a->b would cut between two confirmed
+        wall corners. Both endpoints are already known REACHABLE, so we only
+        refuse the move when BOTH orthogonal corner cells are explicit
+        UnReachable walls. Unmapped (missing) or Iffy corners dont block it:
+        the footstep map is often just one cell wide and the avatar provably
+        walked these diagonals when it laid the trail down, so treating
+        unmapped corners as walls disconnected every thin diagonal path."""
         dx = b[0] - a[0]
         dz = b[2] - a[2]
         o1 = nodes.get((a[0] + dx, a[1], a[2]))
-        if o1 is not None and o1.node_type == NodeType.REACHABLE:
+        if o1 is None or o1.node_type != NodeType.UNREACHABLE:
             return False
         o2 = nodes.get((a[0], a[1], a[2] + dz))
-        if o2 is not None and o2.node_type == NodeType.REACHABLE:
+        if o2 is None or o2.node_type != NodeType.UNREACHABLE:
             return False
         return True
 
