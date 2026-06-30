@@ -50,9 +50,14 @@ class MappingTools(BaseTool):
                 description=(
                     "Walk to a previously saved waypoint in the current "
                     "VRChat world. The system pathfinds dynamically from "
-                    "wherever you are right now using the live voxel map.\n"
+                    "wherever you are right now using the live voxel map. "
+                    "You can pick how fast to travel with 'speed': slow "
+                    "(sneaking), normal, fast (default, jogs the straights), "
+                    "or sprint (run flat out).\n"
                     "**Invocation Condition:** Call when asked to go to, "
-                    "walk to, return to, or visit a named spot."
+                    "walk to, return to, or visit a named spot. Set 'speed' "
+                    "to match how they ask, eg sprint if told to run there, "
+                    "slow if told to sneak or take it slow."
                 ),
                 parameters={
                     "type": "OBJECT",
@@ -60,6 +65,12 @@ class MappingTools(BaseTool):
                         "name": {
                             "type": "STRING",
                             "description": "Name of the waypoint to walk to.",
+                        },
+                        "speed": {
+                            "type": "STRING",
+                            "description": "How fast to travel for this trip. "
+                                           "Leave out to keep the current speed.",
+                            "enum": ["slow", "normal", "fast", "sprint"],
                         },
                     },
                     "required": ["name"],
@@ -101,20 +112,22 @@ class MappingTools(BaseTool):
             types.FunctionDeclaration(
                 name="setMoveSpeed",
                 description=(
-                    "Change how fast you walk along pathfinding routes. "
-                    "Choose 'walk' for half speed (sneaking around), "
-                    "'fast' for normal full walk speed (default), or "
-                    "'run' to sprint everywhere. Persists until changed.\n"
-                    "**Invocation Condition:** Call when asked to walk "
-                    "slower, faster, run, sprint, or sneak."
+                    "Change the default speed you walk along pathfinding "
+                    "routes. 'slow' for half speed (sneaking around), "
+                    "'normal' for full walk speed, 'fast' for a quicker pace "
+                    "that jogs the long straightaways (default), or 'sprint' "
+                    "to run everywhere. Persists until changed. For a one-off "
+                    "trip you can instead pass 'speed' to gotoWaypoint.\n"
+                    "**Invocation Condition:** Call when asked to generally "
+                    "walk slower, faster, run, sprint, or sneak from now on."
                 ),
                 parameters={
                     "type": "OBJECT",
                     "properties": {
                         "mode": {
                             "type": "STRING",
-                            "description": "One of: walk, fast, run.",
-                            "enum": ["walk", "fast", "run"],
+                            "description": "One of: slow, normal, fast, sprint.",
+                            "enum": ["slow", "normal", "fast", "sprint"],
                         },
                     },
                     "required": ["mode"],
@@ -167,14 +180,14 @@ class MappingTools(BaseTool):
             except Exception:
                 logger.exception("gotoWaypoint: wanderer stop failed")
             try:
-                r = ms.goto_waypoint(wp_name)
+                r = ms.goto_waypoint(wp_name, speed=args.get("speed"))
             except RuntimeError as e:
                 return {"result": "error", "message": str(e)}
             if not r.get("found"):
                 return {"result": "error", "message": r.get("reason", "no path")}
             return {"result": "ok", "driving": True,
                     "cells": len(r.get("full") or []),
-                    "turns": len(r.get("filtered") or []),
+                    "turns": len(r.get("smoothed") or r.get("filtered") or []),
                     "disengaged": disengaged}
 
         if name == "listWaypoints":
@@ -198,11 +211,11 @@ class MappingTools(BaseTool):
 
         if name == "setMoveSpeed":
             mode = (args.get("mode") or "").strip().lower()
-            if mode not in ("walk", "fast", "run"):
-                return {"result": "error",
-                        "message": "mode must be walk, fast, or run"}
             try:
                 st = ms.update_settings(speed_mode=mode)
+            except ValueError:
+                return {"result": "error",
+                        "message": "mode must be slow, normal, fast, or sprint"}
             except Exception as e:
                 return {"result": "error", "message": str(e)}
             return {"result": "ok", "speed_mode": st.get("speed_mode", mode)}

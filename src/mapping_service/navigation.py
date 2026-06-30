@@ -10,6 +10,8 @@ from typing import Optional
 from src.voxel_explorer import VoxelExplorer
 from src.voxel_nav import VoxelPathResult, find_path_astar, serial_to_center
 
+from ._base import normalize_speed
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,6 +64,7 @@ class NavigationMixin:
             "goal": list(goal_node.serial),
             "full": [list(s) for s in result.full_serials],
             "filtered": [list(s) for s in result.serials],
+            "smoothed": [list(s) for s in result.smoothed],
             "cost": result.cost,
             "expanded": result.nodes_expanded,
             "start_snap_distance": math.sqrt(
@@ -120,10 +123,12 @@ class NavigationMixin:
 
     def goto_xyz(self, gx: float, gy: float, gz: float,
                  *, label: str = "",
-                 final_yaw_deg: Optional[float] = None) -> dict:
+                 final_yaw_deg: Optional[float] = None,
+                 speed: Optional[str] = None) -> dict:
         """A* from current pose to (gx,gy,gz), then drive there via OSC.
         If final_yaw_deg is given, the explorer rotates to that heading
-        after arrival before going inactive."""
+        after arrival before going inactive. `speed` (slow/normal/fast/
+        sprint) overrides the move speed for this trip if provided."""
         err = self._autostart_for_nav()
         if err:
             return {"found": False, "reason": err}
@@ -132,14 +137,28 @@ class NavigationMixin:
             if not preview.get("found"):
                 return preview
             self._ensure_explorer_for_follow()
-            # prefer the line-of-sight filtered path (just the turn points) so
-            # the follower drives long straightaways and sprints between them
-            # instead of micro-turning at every voxel. raycast-assist handles
-            # local obstacle dodging. fall back to the full path if filtering
-            # collapsed it to nothing (very short hops).
+            # one-off speed override for this trip. doesnt touch the persistent
+            # default (set via setMoveSpeed); we always (re)assign the explorer
+            # speed here so a previous override never leaks into the next goto.
+            spd = normalize_speed(speed)
+            try:
+                self._explorer.speed_mode = spd if spd is not None else self._speed_mode
+            except Exception:
+                pass
+            # prefer the line-of-sight smoothed path (straight runs between
+            # real turn points) so the follower drives long straightaways and
+            # cuts corners instead of tracing the grid staircase. fall back to
+            # the turn-point filter, then the full path, if smoothing collapsed
+            # to nothing (very short hops). raycast-assist handles local dodge.
+            smoothed = preview.get("smoothed") or []
             filtered = preview.get("filtered") or []
             full = preview.get("full") or []
-            chosen = filtered if len(filtered) >= 1 else full
+            if len(smoothed) > 1:
+                chosen = smoothed[1:]
+            elif filtered:
+                chosen = filtered
+            else:
+                chosen = full
             cells: list[tuple[int, int, int]] = [tuple(s) for s in chosen]  # type: ignore
             try:
                 self._explorer.follow_path(cells, label=label or "goto",
@@ -156,7 +175,7 @@ class NavigationMixin:
             preview["label"] = label or "goto"
             return preview
 
-    def goto_waypoint(self, name: str) -> dict:
+    def goto_waypoint(self, name: str, *, speed: Optional[str] = None) -> dict:
         # autostart up front so the world id (and thus the waypoint store)
         # points at the real world, not the default placeholder.
         err = self._autostart_for_nav()
@@ -170,7 +189,7 @@ class NavigationMixin:
         # to the heading once it arrives, in the same control loop as the
         # walking (no race with explorer teardown).
         return self.goto_xyz(wp.x, wp.y, wp.z, label=f"wp:{name}",
-                             final_yaw_deg=float(wp.yaw))
+                             final_yaw_deg=float(wp.yaw), speed=speed)
 
     def cancel_goto(self) -> dict:
         with self._lock:

@@ -170,11 +170,16 @@ class TargetingMixin:
                 self._follow_replans += 1
                 pr = find_path_astar(self.nav.graph, cur.serial,
                                      self._follow_goal)
-                if pr.found and (pr.serials or len(pr.full_serials) > 1):
-                    # filtered turn-points first (smooth, fewer stalls), fall
-                    # back to the full cell list when filtering emptied it.
-                    self._path_queue = list(pr.serials) if pr.serials \
-                        else list(pr.full_serials[1:])
+                if pr.found and (pr.smoothed or pr.serials
+                                 or len(pr.full_serials) > 1):
+                    # LOS-smoothed straightaways first (fewest stalls), then
+                    # turn-points, then the full cell list as a last resort.
+                    if len(pr.smoothed) > 1:
+                        self._path_queue = list(pr.smoothed[1:])
+                    elif pr.serials:
+                        self._path_queue = list(pr.serials)
+                    else:
+                        self._path_queue = list(pr.full_serials[1:])
                     s.last_progress_t = time.time()
                     logger.info("voxel_explorer: follow replan #%d ok, "
                                 "%d cells to goal %s",

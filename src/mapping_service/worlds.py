@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from ._base import normalize_speed
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,10 +29,10 @@ class WorldsMixin:
                     except Exception:
                         pass
             if speed_mode is not None:
-                mode = str(speed_mode).strip().lower()
-                if mode not in ("walk", "fast", "run"):
+                mode = normalize_speed(speed_mode)
+                if mode is None:
                     raise ValueError(
-                        f"speed_mode must be walk/fast/run, got {speed_mode!r}")
+                        f"speed_mode must be slow/normal/fast/sprint, got {speed_mode!r}")
                 self._speed_mode = mode
                 if self._explorer is not None:
                     try:

@@ -56,6 +56,12 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
     TURN_DEADZONE = 0.001            # |cross| <= this = no turn
     FOLLOW_MAX_CLIMB = 1             # skip queued cells more than this many
                                      # voxels above current (cant jump walls)
+    # pure-pursuit follow tuning. once we're within ARRIVE_RADIUS (m) of the
+    # current waypoint we pop it and aim at the next, so we cut the corner
+    # instead of grinding to the exact cell. LOOKAHEAD (m) is how far down
+    # the path the steering carrot sits, which controls how wide we arc.
+    FOLLOW_ARRIVE_RADIUS = 0.5
+    FOLLOW_LOOKAHEAD = 1.5
     # wallclock progress watchdog. reference relies on eCount > 20 which works at
     # their ~60Hz, but at our 20Hz with small targets the forward output sits
     # right at 0.1 and CheckImpeded gates out so eCount never grows. if we
@@ -173,6 +179,10 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
             if not reached and self._follow_active:
                 if current.serial[0] == s.target[0] and current.serial[2] == s.target[2]:
                     reached = True
+                else:
+                    tcx, _, tcz = serial_to_center(s.target)
+                    if math.hypot(tcx - pose_x, tcz - pose_z) <= self.FOLLOW_ARRIVE_RADIUS:
+                        reached = True
             if reached:
                 logger.info("voxel_explorer: reached target %s", s.target)
                 s.target = None
@@ -259,16 +269,26 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
                     self._last_pose = (pose_x, pose_z, fx, fz)
                     return
 
-        # --- DoMotion (1-1 with reference Wander.DoMotion) -------------------
+        # --- DoMotion (reference Wander.DoMotion + pure-pursuit follow) ------
         tx, _, tz = serial_to_center(s.target)
         dx = tx - pose_x
         dz = tz - pose_z
         mag = math.hypot(dx, dz)
-        if mag < 1e-6:
+        # steering normally aims at the target cell, but in follow mode we aim
+        # at a pure-pursuit carrot a bit further down the path so we arc
+        # through corners instead of stopping to pivot at each waypoint.
+        if self._follow_active:
+            cxw, czw = self._follow_carrot(pose_x, pose_z)
+            sdx = cxw - pose_x
+            sdz = czw - pose_z
+            smag = math.hypot(sdx, sdz)
+        else:
+            sdx, sdz, smag = dx, dz, mag
+        if smag < 1e-6:
             ndx, ndz = fx, fz
         else:
-            ndx = dx / mag
-            ndz = dz / mag
+            ndx = sdx / smag
+            ndz = sdz / smag
 
         # reference Utils.CrossProd on Vector2 = look.x*to.y - look.y*to.x.
         # they pack worldX -> .x, worldZ -> .y, so this is fx*ndz - fz*ndx.
@@ -295,8 +315,21 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
         else:
             turn = 0.0
 
-        fwd_scale = min(mag * 0.75, 1.0) * 0.9 + 0.1
-        if flag:
+        # forward speed scales with distance to the steering point. in follow
+        # mode that's the carrot (~lookahead away) so we keep full speed across
+        # straightaways and only ease off as the carrot collapses onto the
+        # final goal.
+        scale_dist = smag if self._follow_active else mag
+        fwd_scale = min(scale_dist * 0.75, 1.0) * 0.9 + 0.1
+        if self._follow_active:
+            # curved follow: keep rolling while we steer toward the carrot so
+            # corners get cut smoothly. only stop to pivot when the carrot is
+            # well behind us (a sharp switchback).
+            if dot < 0.2:
+                forward = 0.0
+            else:
+                forward = max(0.0, min(fwd_scale * dot, 1.0))
+        elif flag:
             forward = max(0.0, min(fwd_scale * dot, 1.0))
         else:
             forward = 0.0
@@ -313,12 +346,14 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
         # the proportional forward scaling so the avatar doesnt overshoot
         # short single-cell hops and spin around to recover.
         mode = (self.speed_mode or "fast").lower()
-        if mode == "walk":
+        if mode in ("slow", "walk"):
             forward = forward * 0.5
             run = False
-        elif mode == "run":
+        elif mode == "normal":
+            run = False
+        elif mode in ("sprint", "run"):
             run = True
-        else:  # "fast" (default)
+        else:  # "fast" (default): full walk, sprint the long straightaways
             run = mag >= 2.0 or bool(getattr(self, "force_run", False))
         # dont sprint straight into something close even if the cell is far
         if ra_clearance is not None and ra_clearance < self.RA_RUN_MIN_CLEAR:

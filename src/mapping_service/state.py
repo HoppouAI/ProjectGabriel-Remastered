@@ -66,6 +66,7 @@ class StateMixin:
                 "settings": {
                     "tick_hz": self._tick_hz,
                     "force_run": self._force_run,
+                    "speed_mode": self._speed_mode,
                     "manual_wall_distance": self.manual_wall_distance,
                     "manual_wall_ratio": self.manual_wall_ratio,
                 },

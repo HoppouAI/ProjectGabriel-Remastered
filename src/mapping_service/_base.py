@@ -16,6 +16,27 @@ from src.waypoints import WaypointStore
 logger = logging.getLogger(__name__)
 
 
+# canonical move speeds + a few friendly aliases the AI / UI might say.
+# slow   -> half walk speed, never sprints (sneaking)
+# normal -> full walk speed, never sprints
+# fast   -> full walk, sprints the long straightaways (default)
+# sprint -> always sprints
+SPEED_ALIASES = {
+    "slow": "slow", "walk": "slow", "sneak": "slow", "creep": "slow",
+    "normal": "normal", "walking": "normal",
+    "fast": "fast", "quick": "fast", "jog": "fast",
+    "sprint": "sprint", "run": "sprint", "running": "sprint",
+}
+
+
+def normalize_speed(value) -> Optional[str]:
+    """Map a free-form speed word to one of slow/normal/fast/sprint, or
+    None if it isnt a recognized speed."""
+    if value is None:
+        return None
+    return SPEED_ALIASES.get(str(value).strip().lower())
+
+
 @dataclass
 class _RegionGuess:
     monitor_index: int

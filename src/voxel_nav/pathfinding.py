@@ -1,4 +1,4 @@
-"""26-connected A* over the voxel `Graph`. Port of the reference Pathfinding.cs."""
+"""26-connected A* over the voxel `Graph`."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from .coords import (
+    NodeType,
     Serial,
     serial_to_center,
 )
@@ -54,11 +55,74 @@ def _filter_path(path: list[Serial]) -> list[Serial]:
     return out
 
 
+def _line_of_sight(graph: Graph, a: Serial, b: Serial) -> bool:
+    """True if every voxel the straight segment a->b passes through is a
+    REACHABLE node. Conservative on purpose: unmapped or wall cells block
+    LOS so a shortcut never cuts across geometry we havent confirmed
+    walkable. 3D traversal so stairs/ramps stay valid too."""
+    if a == b:
+        return True
+    ax, ay, az = a
+    bx, by, bz = b
+    sx = bx - ax
+    sy = by - ay
+    sz = bz - az
+    stepx = 1 if sx > 0 else (-1 if sx < 0 else 0)
+    stepy = 1 if sy > 0 else (-1 if sy < 0 else 0)
+    stepz = 1 if sz > 0 else (-1 if sz < 0 else 0)
+    inf = math.inf
+    # amanatides-woo voxel walk from center(a) to center(b). t runs 0..1.
+    tmax_x = ((ax + (1 if stepx > 0 else 0)) - (ax + 0.5)) / sx if sx != 0 else inf
+    tmax_y = ((ay + (1 if stepy > 0 else 0)) - (ay + 0.5)) / sy if sy != 0 else inf
+    tmax_z = ((az + (1 if stepz > 0 else 0)) - (az + 0.5)) / sz if sz != 0 else inf
+    tdx = abs(1.0 / sx) if sx != 0 else inf
+    tdy = abs(1.0 / sy) if sy != 0 else inf
+    tdz = abs(1.0 / sz) if sz != 0 else inf
+    cx, cy, cz = ax, ay, az
+    guard = abs(sx) + abs(sy) + abs(sz) + 4
+    while True:
+        n = graph.get((cx, cy, cz))
+        if n is None or n.node_type != NodeType.REACHABLE:
+            return False
+        if (cx, cy, cz) == (bx, by, bz):
+            return True
+        if tmax_x <= tmax_y and tmax_x <= tmax_z:
+            cx += stepx
+            tmax_x += tdx
+        elif tmax_y <= tmax_z:
+            cy += stepy
+            tmax_y += tdy
+        else:
+            cz += stepz
+            tmax_z += tdz
+        guard -= 1
+        if guard < 0:
+            return False
+
+
+def _string_pull(graph: Graph, full: list[Serial]) -> list[Serial]:
+    """Greedy line-of-sight smoothing. Keeps a waypoint only where LOS from
+    the current anchor to the next cell breaks, collapsing the grid
+    staircase into long straight runs. Mirrors the 2D planners _smooth_los
+    but on the 3D voxel graph."""
+    if len(full) <= 2:
+        return full[:]
+    out: list[Serial] = [full[0]]
+    anchor = 0
+    for i in range(2, len(full)):
+        if not _line_of_sight(graph, full[anchor], full[i]):
+            out.append(full[i - 1])
+            anchor = i - 1
+    out.append(full[-1])
+    return out
+
+
 @dataclass
 class VoxelPathResult:
     found: bool
     serials: list[Serial] = field(default_factory=list)        # filtered (turn points)
     full_serials: list[Serial] = field(default_factory=list)   # every cell
+    smoothed: list[Serial] = field(default_factory=list)       # LOS string-pulled
     cost: float = 0.0
     nodes_expanded: int = 0
 
@@ -78,7 +142,8 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
     if start not in graph or goal not in graph:
         return VoxelPathResult(found=False)
     if start == goal:
-        return VoxelPathResult(found=True, serials=[goal], full_serials=[goal])
+        return VoxelPathResult(found=True, serials=[goal], full_serials=[goal],
+                               smoothed=[goal])
 
     open_set: list[tuple[float, int, Serial]] = []
     came_from: dict[Serial, Serial] = {}
@@ -97,9 +162,10 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
                 full.append(current)
             full.reverse()
             filtered = _filter_path(full)
+            smoothed = _string_pull(graph, full)
             return VoxelPathResult(
                 found=True, serials=filtered, full_serials=full,
-                cost=g_score[goal], nodes_expanded=expanded,
+                smoothed=smoothed, cost=g_score[goal], nodes_expanded=expanded,
             )
 
         expanded += 1

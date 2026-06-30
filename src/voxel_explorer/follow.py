@@ -7,7 +7,7 @@ import math
 import time
 from typing import Optional
 
-from src.voxel_nav import Serial
+from src.voxel_nav import Serial, serial_to_center
 
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,32 @@ class FollowMixin:
             "label": self._follow_label,
             "aligning": self._aligning,
         }
+
+    def _follow_carrot(self, px: float, pz: float) -> tuple[float, float]:
+        """Pure-pursuit lookahead point along [target] + queue, about
+        FOLLOW_LOOKAHEAD meters ahead of the avatar. Steering at this carrot
+        instead of the next cell center lets the follower arc through corners
+        and flow between waypoints instead of stopping to pivot at each one."""
+        s = self.state
+        if s.target is None:
+            return px, pz
+        remaining = self.FOLLOW_LOOKAHEAD
+        prev_x, prev_z = px, pz
+        cx, _cy, cz = serial_to_center(s.target)
+        pts: list[tuple[float, float]] = [(cx, cz)]
+        for cell in self._path_queue:
+            wx, _wy, wz = serial_to_center(cell)
+            pts.append((wx, wz))
+        for wx, wz in pts:
+            seg = math.hypot(wx - prev_x, wz - prev_z)
+            if seg >= remaining:
+                if seg < 1e-6:
+                    return wx, wz
+                t = remaining / seg
+                return prev_x + (wx - prev_x) * t, prev_z + (wz - prev_z) * t
+            remaining -= seg
+            prev_x, prev_z = wx, wz
+        return prev_x, prev_z
 
     def _advance_follow_queue(self, current_serial: Serial) -> bool:
         """Pop cells off the follow queue until we find one we should actually
