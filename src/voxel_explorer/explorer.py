@@ -109,6 +109,10 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
         self._aligning: bool = False
         self._align_start_t: float = 0.0
         self._align_timeout_s: float = 10.0
+        # best-effort follow: when the queue is only a partial route to the
+        # closest reachable cell, this holds the real goal world pos so we can
+        # seek the rest once the queue runs out instead of stopping short.
+        self._bridge_goal_world: Optional[tuple[float, float, float]] = None
         # raycast seek fallback state (see SeekMixin).
         self._seek_active: bool = False
         self._seek_goal_world: Optional[tuple[float, float, float]] = None
@@ -143,6 +147,7 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
         self._last_pose = None
         self._seek_active = False
         self._seek_engagements = 0
+        self._bridge_goal_world = None
         # force first OSC send by invalidating dedupe state
         self._last_send_forward = float("nan")
         self._last_send_turn = float("nan")
@@ -152,6 +157,7 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
     def stop(self) -> None:
         self._active = False
         self._seek_active = False
+        self._bridge_goal_world = None
         self._send_osc(0.0, 0.0, run=False)
         logger.info("voxel_explorer: stopped")
 
@@ -242,6 +248,18 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
                         s.last_progress_t = time.time()
                         s.action = f"follow next ({len(self._path_queue)} left)"
                     else:
+                        # partial route ran out. if we were only getting as
+                        # close as the map allowed, seek the rest toward the
+                        # real goal (raycasts permitting); otherwise finish.
+                        if (self._bridge_goal_world is not None
+                                and self.start_seek_to(
+                                    *self._bridge_goal_world,
+                                    label=self._follow_label,
+                                    final_yaw_deg=self._final_yaw_deg)):
+                            self._bridge_goal_world = None
+                            self._last_pose = (pose_x, pose_z, fx, fz)
+                            return
+                        self._bridge_goal_world = None
                         self._follow_active = False
                         self._follow_goal = None
                         self._follow_replans = 0
@@ -271,6 +289,17 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
                     s.last_progress_t = time.time()
                     s.action = f"follow next ({len(self._path_queue)} left)"
                 else:
+                    # partial route ran out. seek the rest toward the real goal
+                    # if we were only routed as close as the map allowed.
+                    if (self._bridge_goal_world is not None
+                            and self.start_seek_to(
+                                *self._bridge_goal_world,
+                                label=self._follow_label,
+                                final_yaw_deg=self._final_yaw_deg)):
+                        self._bridge_goal_world = None
+                        self._last_pose = (pose_x, pose_z, fx, fz)
+                        return
+                    self._bridge_goal_world = None
                     self._follow_active = False
                     self._follow_goal = None
                     self._follow_replans = 0

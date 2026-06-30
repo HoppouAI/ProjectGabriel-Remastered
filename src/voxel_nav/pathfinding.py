@@ -87,6 +87,10 @@ class VoxelPathResult:
     smoothed: list[Serial] = field(default_factory=list)       # LOS string-pulled
     cost: float = 0.0
     nodes_expanded: int = 0
+    partial: bool = False                                       # best-effort: path
+                                                               # ends at the closest
+                                                               # reachable cell, not
+                                                               # the actual goal
 
     @property
     def world_waypoints(self) -> list[tuple[float, float, float]]:
@@ -95,7 +99,8 @@ class VoxelPathResult:
 
 def find_path_astar(graph: Graph, start: Serial, goal: Serial,
                     max_nodes: int = 50_000,
-                    blacklist: set[Serial] | None = None) -> VoxelPathResult:
+                    blacklist: set[Serial] | None = None,
+                    best_effort: bool = False) -> VoxelPathResult:
     """A* over the voxel graph. 26-connected, prevents corner clipping.
 
     Both `start` and `goal` must already exist in the graph as Reachable
@@ -105,8 +110,15 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
     `blacklist` cells are skipped during expansion (the goal is never
     skipped) so a replan can route around a cell we just got stuck on
     instead of producing the same dead path again.
+
+    `best_effort`: when the goal cant be reached (different blob, or the goal
+    cell isnt even mapped yet), still return a path to the reachable cell that
+    gets us closest to the goal, with `partial=True`. The goal then only acts
+    as a direction anchor and doesnt need to exist in the graph.
     """
-    if start not in graph or goal not in graph:
+    if start not in graph:
+        return VoxelPathResult(found=False)
+    if goal not in graph and not best_effort:
         return VoxelPathResult(found=False)
     if start == goal:
         return VoxelPathResult(found=True, serials=[goal], full_serials=[goal],
@@ -118,6 +130,11 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
     counter = 0
     heapq.heappush(open_set, (_heuristic(start, goal), counter, start))
     expanded = 0
+    # best-effort bookkeeping: remember the reachable cell that got us closest
+    # to the goal so we can hand back a partial path when the goal is out of
+    # reach instead of failing outright.
+    best_serial = start
+    best_h = _heuristic(start, goal)
 
     while open_set:
         _, _, current = heapq.heappop(open_set)
@@ -135,6 +152,12 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
                 smoothed=smoothed, cost=g_score[goal], nodes_expanded=expanded,
             )
 
+        if best_effort:
+            h = _heuristic(current, goal)
+            if h < best_h:
+                best_h = h
+                best_serial = current
+
         expanded += 1
         if expanded > max_nodes:
             logger.warning("voxel_nav: A* hit max_nodes=%d, aborting", max_nodes)
@@ -150,5 +173,21 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
                 counter += 1
                 f = tentative + _heuristic(neighbor, goal)
                 heapq.heappush(open_set, (f, counter, neighbor))
+
+    # goal unreachable. best-effort: return a path to the closest cell we found.
+    if best_effort and best_serial != start and best_serial in came_from:
+        full = [best_serial]
+        cur = best_serial
+        while cur in came_from:
+            cur = came_from[cur]
+            full.append(cur)
+        full.reverse()
+        filtered = _filter_path(full)
+        smoothed = _string_pull(graph, full)
+        return VoxelPathResult(
+            found=True, serials=filtered, full_serials=full, smoothed=smoothed,
+            cost=g_score.get(best_serial, 0.0), nodes_expanded=expanded,
+            partial=True,
+        )
 
     return VoxelPathResult(found=False, nodes_expanded=expanded)

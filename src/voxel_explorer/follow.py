@@ -24,11 +24,16 @@ class FollowMixin:
     """
 
     def follow_path(self, serials: list[Serial], *, label: str = "",
-                    final_yaw_deg: Optional[float] = None) -> None:
+                    final_yaw_deg: Optional[float] = None,
+                    bridge_goal_world: Optional[tuple[float, float, float]] = None
+                    ) -> None:
         """Drive along the given cell sequence. Replaces any current target.
         The explorer must be active; if not, start() is called first.
         If final_yaw_deg is given, the explorer rotates to that heading
-        once the queue is empty before going inactive."""
+        once the queue is empty before going inactive.
+        If bridge_goal_world is given, the queue is only a best-effort partial
+        route; once it runs out the explorer seeks the rest of the way toward
+        that world position (raycasts permitting) instead of stopping short."""
         with self._lock:
             if not self._active:
                 self.start()
@@ -36,6 +41,7 @@ class FollowMixin:
             self._follow_active = True
             self._follow_label = label or ""
             self._final_yaw_deg = final_yaw_deg
+            self._bridge_goal_world = bridge_goal_world
             self._aligning = False
             # fresh trip, reset the seek fallback budget
             self._seek_active = False
@@ -62,6 +68,7 @@ class FollowMixin:
             self._follow_active = False
             self._aligning = False
             self._seek_active = False
+            self._bridge_goal_world = None
             self._final_yaw_deg = None
             self._path_queue.clear()
             self._follow_goal = None

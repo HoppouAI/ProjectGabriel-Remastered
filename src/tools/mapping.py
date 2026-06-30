@@ -190,6 +190,11 @@ class MappingTools(BaseTool):
                         "note": "no mapped path, heading toward it via "
                                 "raycasts and mapping as i go",
                         "disengaged": disengaged}
+            if r.get("partial"):
+                return {"result": "ok", "driving": True, "partial": True,
+                        "note": r.get("note", "no full path, getting as "
+                                "close as the map allows"),
+                        "disengaged": disengaged}
             return {"result": "ok", "driving": True,
                     "cells": len(r.get("full") or []),
                     "turns": len(r.get("smoothed") or r.get("filtered") or []),

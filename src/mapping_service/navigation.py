@@ -8,7 +8,8 @@ import time
 from typing import Optional
 
 from src.voxel_explorer import VoxelExplorer
-from src.voxel_nav import VoxelPathResult, find_path_astar, serial_to_center
+from src.voxel_nav import (VoxelPathResult, find_path_astar, serial_to_center,
+                           world_to_serial)
 
 from ._base import normalize_speed
 
@@ -88,6 +89,44 @@ class NavigationMixin:
             return {"found": False, "reason": f"waypoint '{name}' not found"}
         return self.pathfind_to(wp.x, wp.y, wp.z)
 
+    def _plan_best_effort(self, gx: float, gy: float, gz: float):
+        """When no full A* path exists, route as close to the goal as the
+        mapped graph allows. Returns (cells, bridge_world) where bridge_world
+        is the real goal world pos to seek toward once the partial path runs
+        out, or None if we couldnt even find a partial route. The goal cell
+        doesnt need to be mapped here, it just acts as a direction anchor."""
+        if self._last_pose is None:
+            return None
+        starts = self._nav.graph.find_nearest_reachable(
+            self._last_pose.x, self._last_pose.y, self._last_pose.z,
+            max_distance=8.0, k=3,
+        )
+        if not starts:
+            return None
+        goal_cell = world_to_serial(gx, gy, gz)
+        best: VoxelPathResult | None = None
+        for cand in starts:
+            r = find_path_astar(self._nav.graph, cand.serial, goal_cell,
+                                max_nodes=50_000, best_effort=True)
+            if r.found and (len(r.full_serials) > 1):
+                best = r
+                break
+        if best is None:
+            return None
+        smoothed = best.smoothed or []
+        if len(smoothed) > 1:
+            chosen = smoothed[1:]
+        elif best.serials:
+            chosen = best.serials
+        else:
+            chosen = best.full_serials[1:]
+        cells: list[tuple[int, int, int]] = [tuple(s) for s in chosen]  # type: ignore
+        if not cells:
+            return None
+        # only bridge toward the true goal if we genuinely stopped short.
+        bridge = (gx, gy, gz) if best.partial else None
+        return cells, bridge
+
     def _ensure_explorer_for_follow(self) -> None:
         """Make sure an explorer exists for follow mode, but DO NOT flip
         the public explore_enabled flag, so frontier-exploration stays off.
@@ -143,10 +182,45 @@ class NavigationMixin:
         with self._lock:
             preview = self.pathfind_to(gx, gy, gz)
             if not preview.get("found"):
-                # no mapped A* path (goal in unmapped space, or we're off the
-                # green grid). dont just bail. spin up a raycast-guided seek
-                # straight at the goal so we still try to get there, filling
-                # in the map as we walk and switching to A* once a path shows.
+                # no full mapped A* path. first try a best-effort partial route
+                # that gets us as close to the goal as the map allows, then
+                # bridges the last gap with seek (raycasts) once it runs out.
+                # this still helps with no raycasts: we drive closer and map
+                # new ground on the way, and the AI can re-call to extend.
+                bep = self._plan_best_effort(gx, gy, gz)
+                if bep is not None:
+                    cells, bridge = bep
+                    self._ensure_explorer_for_follow()
+                    spd = normalize_speed(speed)
+                    try:
+                        self._explorer.speed_mode = (spd if spd is not None
+                                                     else self._speed_mode)
+                    except Exception:
+                        pass
+                    try:
+                        self._explorer.follow_path(
+                            cells, label=label or "goto",
+                            final_yaw_deg=final_yaw_deg,
+                            bridge_goal_world=bridge)
+                    except Exception as exc:
+                        logger.exception("mapping: best-effort follow_path failed")
+                        return {"found": False, "reason": f"follow failed: {exc}"}
+                    if not self._explore_enabled:
+                        self._explorer_follow_only = True
+                    return {
+                        "found": True,
+                        "driving": True,
+                        "partial": True,
+                        "label": label or "goto",
+                        "reason": preview.get("reason", "no path"),
+                        "note": "no full path, routing as close as i can"
+                                + (" then bridging toward the goal"
+                                   if bridge is not None else ""),
+                    }
+                # no partial route at all (off the grid entirely). fall back to
+                # a raycast-guided seek straight at the goal so we still try to
+                # get there, filling in the map as we walk and switching to A*
+                # once a path shows.
                 self._ensure_explorer_for_follow()
                 spd = normalize_speed(speed)
                 try:
