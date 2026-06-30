@@ -57,47 +57,9 @@ def _filter_path(path: list[Serial]) -> list[Serial]:
 
 def _line_of_sight(graph: Graph, a: Serial, b: Serial) -> bool:
     """True if every voxel the straight segment a->b passes through is a
-    REACHABLE node. Conservative on purpose: unmapped or wall cells block
-    LOS so a shortcut never cuts across geometry we havent confirmed
-    walkable. 3D traversal so stairs/ramps stay valid too."""
-    if a == b:
-        return True
-    ax, ay, az = a
-    bx, by, bz = b
-    sx = bx - ax
-    sy = by - ay
-    sz = bz - az
-    stepx = 1 if sx > 0 else (-1 if sx < 0 else 0)
-    stepy = 1 if sy > 0 else (-1 if sy < 0 else 0)
-    stepz = 1 if sz > 0 else (-1 if sz < 0 else 0)
-    inf = math.inf
-    # amanatides-woo voxel walk from center(a) to center(b). t runs 0..1.
-    tmax_x = ((ax + (1 if stepx > 0 else 0)) - (ax + 0.5)) / sx if sx != 0 else inf
-    tmax_y = ((ay + (1 if stepy > 0 else 0)) - (ay + 0.5)) / sy if sy != 0 else inf
-    tmax_z = ((az + (1 if stepz > 0 else 0)) - (az + 0.5)) / sz if sz != 0 else inf
-    tdx = abs(1.0 / sx) if sx != 0 else inf
-    tdy = abs(1.0 / sy) if sy != 0 else inf
-    tdz = abs(1.0 / sz) if sz != 0 else inf
-    cx, cy, cz = ax, ay, az
-    guard = abs(sx) + abs(sy) + abs(sz) + 4
-    while True:
-        n = graph.get((cx, cy, cz))
-        if n is None or n.node_type != NodeType.REACHABLE:
-            return False
-        if (cx, cy, cz) == (bx, by, bz):
-            return True
-        if tmax_x <= tmax_y and tmax_x <= tmax_z:
-            cx += stepx
-            tmax_x += tdx
-        elif tmax_y <= tmax_z:
-            cy += stepy
-            tmax_y += tdy
-        else:
-            cz += stepz
-            tmax_z += tdz
-        guard -= 1
-        if guard < 0:
-            return False
+    REACHABLE node. Thin wrapper over Graph.has_line_of_sight (single-lock
+    amanatides-woo trace)."""
+    return graph.has_line_of_sight(a, b)
 
 
 def _string_pull(graph: Graph, full: list[Serial]) -> list[Serial]:
@@ -132,12 +94,17 @@ class VoxelPathResult:
 
 
 def find_path_astar(graph: Graph, start: Serial, goal: Serial,
-                    max_nodes: int = 50_000) -> VoxelPathResult:
+                    max_nodes: int = 50_000,
+                    blacklist: set[Serial] | None = None) -> VoxelPathResult:
     """A* over the voxel graph. 26-connected, prevents corner clipping.
 
     Both `start` and `goal` must already exist in the graph as Reachable
     nodes. Use `Graph.find_closest()` first if you need to snap a free
     world position onto the trail.
+
+    `blacklist` cells are skipped during expansion (the goal is never
+    skipped) so a replan can route around a cell we just got stuck on
+    instead of producing the same dead path again.
     """
     if start not in graph or goal not in graph:
         return VoxelPathResult(found=False)
@@ -174,6 +141,8 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
             break
 
         for neighbor, cost in _neighbors(graph, current):
+            if blacklist and neighbor in blacklist and neighbor != goal:
+                continue
             tentative = g_score[current] + cost
             if tentative < g_score.get(neighbor, math.inf):
                 came_from[neighbor] = current

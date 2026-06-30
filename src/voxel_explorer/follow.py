@@ -80,18 +80,29 @@ class FollowMixin:
         """Pure-pursuit lookahead point along [target] + queue, about
         FOLLOW_LOOKAHEAD meters ahead of the avatar. Steering at this carrot
         instead of the next cell center lets the follower arc through corners
-        and flow between waypoints instead of stopping to pivot at each one."""
+        and flow between waypoints instead of stopping to pivot at each one.
+
+        The carrot only extends through queued cells we still have voxel
+        line-of-sight to from where we are, so it never aims past a wall
+        corner and yanks the avatar into geometry."""
         s = self.state
         if s.target is None:
             return px, pz
+        cur = self.nav.current
+        from_cell = cur.serial if cur is not None else None
+        graph = self.nav.graph
+        # always head to the immediate target, then keep extending through
+        # queued cells only while LOS holds from our current cell.
+        chain: list[Serial] = [s.target]
+        if from_cell is not None:
+            for cell in self._path_queue:
+                if not graph.has_line_of_sight(from_cell, cell):
+                    break
+                chain.append(cell)
         remaining = self.FOLLOW_LOOKAHEAD
         prev_x, prev_z = px, pz
-        cx, _cy, cz = serial_to_center(s.target)
-        pts: list[tuple[float, float]] = [(cx, cz)]
-        for cell in self._path_queue:
+        for cell in chain:
             wx, _wy, wz = serial_to_center(cell)
-            pts.append((wx, wz))
-        for wx, wz in pts:
             seg = math.hypot(wx - prev_x, wz - prev_z)
             if seg >= remaining:
                 if seg < 1e-6:

@@ -50,7 +50,6 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
     is the standard SimpleUDPClient.
     """
 
-    # reference hardcoded constants from Wander.cs / NodeManager.cs
     FACING_THRESHOLD = 0.98          # dot(forward, to_target) past this = walk
     E_COUNT_GIVE_UP = 20             # eCount > this = target is UnReachable
     TURN_DEADZONE = 0.001            # |cross| <= this = no turn
@@ -60,8 +59,8 @@ class VoxelExplorer(FollowMixin, TargetingMixin, MotionMixin, RaycastAssistMixin
     # current waypoint we pop it and aim at the next, so we cut the corner
     # instead of grinding to the exact cell. LOOKAHEAD (m) is how far down
     # the path the steering carrot sits, which controls how wide we arc.
-    FOLLOW_ARRIVE_RADIUS = 0.5
-    FOLLOW_LOOKAHEAD = 1.5
+    FOLLOW_ARRIVE_RADIUS = 0.35
+    FOLLOW_LOOKAHEAD = 1.0
     # wallclock progress watchdog. reference relies on eCount > 20 which works at
     # their ~60Hz, but at our 20Hz with small targets the forward output sits
     # right at 0.1 and CheckImpeded gates out so eCount never grows. if we

@@ -174,6 +174,51 @@ class Graph:
         cands.sort(key=lambda t: t[0])
         return [n for _, n in cands[:k]]
 
+    def has_line_of_sight(self, a: Serial, b: Serial) -> bool:
+        """True if every voxel the straight segment a->b passes through is a
+        REACHABLE node. Conservative: unmapped or wall cells block sight, so a
+        shortcut never cuts across geometry we havent confirmed walkable. 3D
+        amanatides-woo voxel walk, acquires the lock once for the whole trace."""
+        if a == b:
+            return True
+        ax, ay, az = a
+        bx, by, bz = b
+        sx = bx - ax
+        sy = by - ay
+        sz = bz - az
+        stepx = 1 if sx > 0 else (-1 if sx < 0 else 0)
+        stepy = 1 if sy > 0 else (-1 if sy < 0 else 0)
+        stepz = 1 if sz > 0 else (-1 if sz < 0 else 0)
+        inf = math.inf
+        tmax_x = ((ax + (1 if stepx > 0 else 0)) - (ax + 0.5)) / sx if sx != 0 else inf
+        tmax_y = ((ay + (1 if stepy > 0 else 0)) - (ay + 0.5)) / sy if sy != 0 else inf
+        tmax_z = ((az + (1 if stepz > 0 else 0)) - (az + 0.5)) / sz if sz != 0 else inf
+        tdx = abs(1.0 / sx) if sx != 0 else inf
+        tdy = abs(1.0 / sy) if sy != 0 else inf
+        tdz = abs(1.0 / sz) if sz != 0 else inf
+        cx, cy, cz = ax, ay, az
+        guard = abs(sx) + abs(sy) + abs(sz) + 4
+        with self._lock:
+            nodes = self._nodes
+            while True:
+                n = nodes.get((cx, cy, cz))
+                if n is None or n.node_type != NodeType.REACHABLE:
+                    return False
+                if (cx, cy, cz) == (bx, by, bz):
+                    return True
+                if tmax_x <= tmax_y and tmax_x <= tmax_z:
+                    cx += stepx
+                    tmax_x += tdx
+                elif tmax_y <= tmax_z:
+                    cy += stepy
+                    tmax_y += tdy
+                else:
+                    cz += stepz
+                    tmax_z += tdz
+                guard -= 1
+                if guard < 0:
+                    return False
+
     def to_dict(self) -> dict:
         with self._lock:
             nodes_out = []

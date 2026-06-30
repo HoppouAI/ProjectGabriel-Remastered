@@ -168,8 +168,10 @@ class TargetingMixin:
                 self._follow_replans = 0
             else:
                 self._follow_replans += 1
+                now_m = time.monotonic()
+                blocked = {c for c, exp in self._abandoned.items() if exp > now_m}
                 pr = find_path_astar(self.nav.graph, cur.serial,
-                                     self._follow_goal)
+                                     self._follow_goal, blacklist=blocked)
                 if pr.found and (pr.smoothed or pr.serials
                                  or len(pr.full_serials) > 1):
                     # LOS-smoothed straightaways first (fewest stalls), then
