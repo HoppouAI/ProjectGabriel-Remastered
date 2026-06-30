@@ -14,8 +14,9 @@ from __future__ import annotations
 import logging
 import math
 import time
+from typing import Optional
 
-from src.voxel_nav import find_path_astar, serial_to_center
+from src.voxel_nav import find_path_astar, serial_to_center, world_to_serial
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,49 @@ class SeekMixin:
         SEEK_* constants set in __init__. Calls _turn_toward,
         _apply_raycast_assist, _ra_forward_clearance, _send_osc.
     """
+
+    def start_seek_to(self, gx: float, gy: float, gz: float, *,
+                      label: str = "",
+                      final_yaw_deg: Optional[float] = None) -> bool:
+        """Public entry: head straight at a world position on raycasts even
+        when there's no A* path at all yet (initial plan failed, goal sits in
+        unmapped space). Maps as it walks and flips to A* follow the moment a
+        real path appears. Returns False if we cant seek (no fresh raycast
+        data to steer with), so the caller can surface the original error."""
+        with self._lock:
+            if not self._active:
+                self.start()
+            if self._ra_forward_clearance() is None:
+                return False
+            goal_cell = world_to_serial(gx, gy, gz)
+            now = time.time()
+            self._follow_label = label or "seek"
+            self._final_yaw_deg = final_yaw_deg
+            self._aligning = False
+            self._path_queue = []
+            self._follow_active = False
+            self._follow_goal = goal_cell
+            self._follow_replans = 0
+            self._seek_active = True
+            self._seek_goal_world = (gx, gy, gz)
+            self._seek_goal_cell = goal_cell
+            self._seek_start_t = now
+            self._seek_best_dist = math.inf
+            self._seek_best_t = now
+            self._seek_next_astar_t = now + self.SEEK_ASTAR_RETRY_S
+            self._seek_engagements = 1
+            s = self.state
+            s.target = None
+            s.target_source = None
+            s.e_count = 0.0
+            s.last_distance = math.inf
+            s.last_cell = None
+            s.last_progress_t = now
+            s.action = "seek"
+            self._ec_multiplier = 1.0
+            logger.info("voxel_explorer: starting direct raycast seek to %s (%s)",
+                        goal_cell, self._follow_label)
+            return True
 
     def _begin_seek(self, why: str) -> bool:
         """Flip from A* follow into raycast seek toward the goal. Returns

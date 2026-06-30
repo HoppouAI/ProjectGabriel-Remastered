@@ -135,7 +135,38 @@ class NavigationMixin:
         with self._lock:
             preview = self.pathfind_to(gx, gy, gz)
             if not preview.get("found"):
-                return preview
+                # no mapped A* path (goal in unmapped space, or we're off the
+                # green grid). dont just bail. spin up a raycast-guided seek
+                # straight at the goal so we still try to get there, filling
+                # in the map as we walk and switching to A* once a path shows.
+                self._ensure_explorer_for_follow()
+                spd = normalize_speed(speed)
+                try:
+                    self._explorer.speed_mode = (spd if spd is not None
+                                                 else self._speed_mode)
+                except Exception:
+                    pass
+                seeking = False
+                try:
+                    seeking = self._explorer.start_seek_to(
+                        gx, gy, gz, label=label or "goto",
+                        final_yaw_deg=final_yaw_deg)
+                except Exception:
+                    logger.exception("mapping: start_seek_to failed")
+                if not seeking:
+                    # couldnt seek either (no raycast data), surface the
+                    # original planning failure.
+                    return preview
+                if not self._explore_enabled:
+                    self._explorer_follow_only = True
+                return {
+                    "found": True,
+                    "driving": True,
+                    "seeking": True,
+                    "label": label or "goto",
+                    "reason": preview.get("reason", "no path"),
+                    "note": "no mapped path, seeking toward goal via raycasts",
+                }
             self._ensure_explorer_for_follow()
             # one-off speed override for this trip. doesnt touch the persistent
             # default (set via setMoveSpeed); we always (re)assign the explorer

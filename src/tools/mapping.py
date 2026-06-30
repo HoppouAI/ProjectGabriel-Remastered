@@ -185,6 +185,11 @@ class MappingTools(BaseTool):
                 return {"result": "error", "message": str(e)}
             if not r.get("found"):
                 return {"result": "error", "message": r.get("reason", "no path")}
+            if r.get("seeking"):
+                return {"result": "ok", "driving": True, "seeking": True,
+                        "note": "no mapped path, heading toward it via "
+                                "raycasts and mapping as i go",
+                        "disengaged": disengaged}
             return {"result": "ok", "driving": True,
                     "cells": len(r.get("full") or []),
                     "turns": len(r.get("smoothed") or r.get("filtered") or []),
