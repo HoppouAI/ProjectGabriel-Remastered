@@ -50,11 +50,19 @@ class NavigationMixin:
         # the start cant reach the goal.
         chosen_start = None
         result: VoxelPathResult | None = None
+        max_nodes = 50_000
         for cand in starts:
-            r = find_path_astar(self._nav.graph, cand.serial, goal_node.serial)
+            r = find_path_astar(self._nav.graph, cand.serial, goal_node.serial,
+                                max_nodes=max_nodes)
             if r.found:
                 chosen_start = cand
                 result = r
+                break
+            if r.nodes_expanded >= max_nodes:
+                # the search burned its whole node budget from this start, so
+                # the goal is outside this (big) connected blob. the other
+                # nearby starts sit in the same blob and would each waste the
+                # same ~1s for nothing, so stop retrying.
                 break
         if result is None or chosen_start is None:
             return {"found": False, "reason": "no path"}
@@ -154,8 +162,19 @@ class NavigationMixin:
                 except Exception:
                     logger.exception("mapping: start_seek_to failed")
                 if not seeking:
-                    # couldnt seek either (no raycast data), surface the
-                    # original planning failure.
+                    # couldnt seek either (no raycast data). dont leave a
+                    # half-spun idle explorer lying around, it would slide into
+                    # frontier discovery on the next tick. only drop it if its
+                    # not already actively driving a previous goto.
+                    try:
+                        if (self._explorer is not None
+                                and not self._explorer.follow_status.get("active")):
+                            self._explorer.stop()
+                            self._explorer = None
+                            self._explorer_follow_only = False
+                    except Exception:
+                        logger.exception("mapping: idle explorer cleanup failed")
+                    # surface the original planning failure.
                     return preview
                 if not self._explore_enabled:
                     self._explorer_follow_only = True

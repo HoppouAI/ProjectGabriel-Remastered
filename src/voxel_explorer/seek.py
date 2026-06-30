@@ -41,10 +41,13 @@ class SeekMixin:
         real path appears. Returns False if we cant seek (no fresh raycast
         data to steer with), so the caller can surface the original error."""
         with self._lock:
-            if not self._active:
-                self.start()
+            # bail before we touch any state if we cant actually steer, so a
+            # failed seek never leaves the explorer started and idle (which
+            # would slide it into frontier discovery mode).
             if self._ra_forward_clearance() is None:
                 return False
+            if not self._active:
+                self.start()
             goal_cell = world_to_serial(gx, gy, gz)
             now = time.time()
             self._follow_label = label or "seek"
