@@ -102,11 +102,22 @@ class TestPathfinding(unittest.TestCase):
         g.add_node(Node(serial=(10, 0, 10)))
         self.assertFalse(find_path_astar(g, (0, 0, 0), (10, 0, 10)).found)
 
-    def test_diagonal_blocked_when_both_orthogonal_missing(self):
-        # only start and a diagonal neighbor exist -> corner check blocks it
+    def test_diagonal_allowed_when_orthogonals_unmapped(self):
+        # footstep trails are often one cell wide, so unmapped corner cells
+        # must not block the diagonal the avatar provably walked
         g = Graph()
         g.add_node(Node(serial=(0, 0, 0)))
         g.add_node(Node(serial=(1, 0, 1)))
+        result = find_path_astar(g, (0, 0, 0), (1, 0, 1))
+        self.assertTrue(result.found)
+
+    def test_diagonal_blocked_between_confirmed_walls(self):
+        # both orthogonal corners are explicit walls -> cant cut between them
+        g = Graph()
+        g.add_node(Node(serial=(0, 0, 0)))
+        g.add_node(Node(serial=(1, 0, 1)))
+        g.add_node(Node(serial=(1, 0, 0), node_type=NodeType.UNREACHABLE))
+        g.add_node(Node(serial=(0, 0, 1), node_type=NodeType.UNREACHABLE))
         result = find_path_astar(g, (0, 0, 0), (1, 0, 1))
         self.assertFalse(result.found)
 

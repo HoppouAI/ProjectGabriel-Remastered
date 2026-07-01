@@ -111,8 +111,7 @@ class WorldsMixin:
             if is_current:
                 # wipe in-memory graph too so the viewer empties out
                 try:
-                    with self._nav.graph._lock:  # noqa: SLF001
-                        self._nav.graph.nodes.clear()
+                    self._nav.graph.clear()
                     self._nav._current = None  # noqa: SLF001
                     self._nav._previous = None  # noqa: SLF001
                     self._nav._dirty = False  # noqa: SLF001

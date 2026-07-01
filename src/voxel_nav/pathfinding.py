@@ -6,10 +6,8 @@ import heapq
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Iterable
 
 from .coords import (
-    NodeType,
     Serial,
     serial_to_center,
 )
@@ -17,13 +15,6 @@ from .graph import Graph
 
 
 logger = logging.getLogger(__name__)
-
-
-def _neighbors(graph: Graph, serial: Serial) -> Iterable[tuple[Serial, float]]:
-    """Returns (neighbor_serial, edge_cost) for every REACHABLE 26-connected
-    neighbor. Uses Graph.get_pathable_neighbors which acquires the lock once
-    for all 26 lookups instead of thrashing it per candidate."""
-    return graph.get_pathable_neighbors(serial)
 
 
 def _heuristic(a: Serial, b: Serial) -> float:
@@ -127,6 +118,7 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
     open_set: list[tuple[float, int, Serial]] = []
     came_from: dict[Serial, Serial] = {}
     g_score: dict[Serial, float] = {start: 0.0}
+    closed: set[Serial] = set()
     counter = 0
     heapq.heappush(open_set, (_heuristic(start, goal), counter, start))
     expanded = 0
@@ -136,8 +128,17 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
     best_serial = start
     best_h = _heuristic(start, goal)
 
+    # local bindings, this loop runs tens of thousands of times per pathfind
+    heappush = heapq.heappush
+    heappop = heapq.heappop
+    get_neighbors = graph.get_pathable_neighbors
+    g_get = g_score.get
+    sqrt = math.sqrt
+    inf = math.inf
+    gx_, gy_, gz_ = goal
+
     while open_set:
-        _, _, current = heapq.heappop(open_set)
+        _, _, current = heappop(open_set)
         if current == goal:
             # reconstruct
             full: list[Serial] = [current]
@@ -152,6 +153,11 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
                 smoothed=smoothed, cost=g_score[goal], nodes_expanded=expanded,
             )
 
+        # stale heap entry for a node we already expanded via a cheaper route
+        if current in closed:
+            continue
+        closed.add(current)
+
         if best_effort:
             h = _heuristic(current, goal)
             if h < best_h:
@@ -163,16 +169,22 @@ def find_path_astar(graph: Graph, start: Serial, goal: Serial,
             logger.warning("voxel_nav: A* hit max_nodes=%d, aborting", max_nodes)
             break
 
-        for neighbor, cost in _neighbors(graph, current):
+        g_current = g_score[current]
+        for neighbor, cost in get_neighbors(current):
+            if neighbor in closed:
+                continue
             if blacklist and neighbor in blacklist and neighbor != goal:
                 continue
-            tentative = g_score[current] + cost
-            if tentative < g_score.get(neighbor, math.inf):
+            tentative = g_current + cost
+            if tentative < g_get(neighbor, inf):
                 came_from[neighbor] = current
                 g_score[neighbor] = tentative
                 counter += 1
-                f = tentative + _heuristic(neighbor, goal)
-                heapq.heappush(open_set, (f, counter, neighbor))
+                nx, ny, nz = neighbor
+                dx = nx - gx_; dy = ny - gy_; dz = nz - gz_
+                heappush(open_set,
+                         (tentative + sqrt(dx*dx + dy*dy + dz*dz),
+                          counter, neighbor))
 
     # goal unreachable. best-effort: return a path to the closest cell we found.
     if best_effort and best_serial != start and best_serial in came_from:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from typing import Iterable, Optional
+from typing import Optional
 
 from .coords import (
     CELL_SIZE,
@@ -22,12 +22,43 @@ from .coords import (
 # how often to yield the GIL during O(n) scans, in node count.
 _GIL_YIELD_EVERY = 2000
 
+# spatial index granularity: 8 cells per chunk axis = 2m chunks. nearest-node
+# queries only touch chunks that intersect the search sphere instead of
+# scanning all 100k+ nodes.
+_CHUNK_SHIFT = 3
+_CHUNK_M = CELL_SIZE * (1 << _CHUNK_SHIFT)
+
+
+def _chunk_of(s: Serial) -> tuple[int, int, int]:
+    return (s[0] >> _CHUNK_SHIFT, s[1] >> _CHUNK_SHIFT, s[2] >> _CHUNK_SHIFT)
+
+
+def _build_neighbor_offsets() -> tuple[tuple[int, int, int, float, bool], ...]:
+    out = []
+    for dy in (-1, 0, 1):
+        same_layer = dy == 0
+        vert = abs(dy) * _VERTICAL_PENALTY
+        ortho = (1.0 if same_layer else _SQRT2) + vert
+        diag = (_SQRT2 if same_layer else _SQRT3) + vert
+        for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            out.append((dx, dy, dz, ortho, False))
+        for dx, dz in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
+            out.append((dx, dy, dz, diag, True))
+    return tuple(out)
+
+
+# (dx, dy, dz, cost, is_diagonal) x26, built once instead of per expansion.
+_NEIGHBOR_OFFSETS = _build_neighbor_offsets()
+
 
 class Graph:
     """Concurrent dict of Serial -> Node, scoped to a single VRChat world."""
 
     def __init__(self):
         self._nodes: dict[Serial, Node] = {}
+        # chunk -> {serial: node} spatial index, kept in sync by add/remove.
+        # in-place node_type flips dont need index updates since we store refs.
+        self._chunks: dict[tuple[int, int, int], dict[Serial, Node]] = {}
         self._lock = threading.RLock()
         # monotonic change counter, bumped on any mutation. lets the WebUI
         # state layer cache the heavy world-cells payload and skip rebuilding
@@ -50,12 +81,26 @@ class Graph:
 
     def add_node(self, node: Node) -> None:
         with self._lock:
-            self._nodes[node.serial] = node
+            s = node.serial
+            self._nodes[s] = node
+            self._chunks.setdefault(_chunk_of(s), {})[s] = node
             self._rev += 1
 
     def remove_node(self, serial: Serial) -> None:
         with self._lock:
-            self._nodes.pop(serial, None)
+            if self._nodes.pop(serial, None) is not None:
+                ck = _chunk_of(serial)
+                bucket = self._chunks.get(ck)
+                if bucket is not None:
+                    bucket.pop(serial, None)
+                    if not bucket:
+                        del self._chunks[ck]
+            self._rev += 1
+
+    def clear(self) -> None:
+        with self._lock:
+            self._nodes.clear()
+            self._chunks.clear()
             self._rev += 1
 
     def find_node(self, x: float, y: float, z: float) -> Optional[Node]:
@@ -80,35 +125,27 @@ class Graph:
     # ------------------------------------------------------------------
     def get_pathable_neighbors(
         self, serial: Serial,
-    ) -> Iterable[tuple[Serial, float]]:
+    ) -> list[tuple[Serial, float]]:
         """26-connected neighbors that are REACHABLE, with A* edge costs.
         Acquires the graph lock exactly once for all 26 lookups so A* and
-        BFS callers dont thrash the lock 1.3M times per pathfind."""
+        BFS callers dont thrash the lock 1.3M times per pathfind. Returns a
+        list (not a generator) so the lock is released before the caller
+        does its per-neighbor work."""
         sx, sy, sz = serial
-        # collect every candidate serial first so we can batch-lookup under
-        # one lock. the cost is the same regardless of whether the cell
-        # exists so we precompute costs too.
-        items: list[tuple[Serial, float, bool]] = []
-        for dy in (-1, 0, 1):
-            ny = sy + dy
-            same_layer = dy == 0
-            ortho_cost = 1.0 if same_layer else _SQRT2
-            for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                items.append(((sx + dx, ny, sz + dz),
-                              ortho_cost + abs(dy) * _VERTICAL_PENALTY, False))
-            diag_cost = _SQRT2 if same_layer else _SQRT3
-            for dx, dz in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
-                items.append(((sx + dx, ny, sz + dz),
-                              diag_cost + abs(dy) * _VERTICAL_PENALTY, True))
+        out: list[tuple[Serial, float]] = []
         with self._lock:
             nodes = self._nodes
-            for cand, cost, is_diag in items:
-                n = nodes.get(cand)
-                if n is None or n.node_type != NodeType.REACHABLE:
+            get = nodes.get
+            reachable = NodeType.REACHABLE
+            for dx, dy, dz, cost, is_diag in _NEIGHBOR_OFFSETS:
+                cand = (sx + dx, sy + dy, sz + dz)
+                n = get(cand)
+                if n is None or n.node_type != reachable:
                     continue
                 if is_diag and self._corner_blocked(nodes, serial, cand):
                     continue
-                yield cand, cost
+                out.append((cand, cost))
+        return out
 
     @staticmethod
     def _corner_blocked(
@@ -131,6 +168,33 @@ class Graph:
             return False
         return True
 
+    def _nearby(self, x: float, y: float, z: float, max_distance: float,
+                only_reachable: bool) -> list[tuple[float, Node]]:
+        """All nodes within max_distance meters as (dist_sq, node), unsorted.
+        Walks only the chunks that intersect the search sphere."""
+        limit_sq = max_distance * max_distance
+        qcx, qcy, qcz = _chunk_of(world_to_serial(x, y, z))
+        r = int(max_distance / _CHUNK_M) + 1
+        out: list[tuple[float, Node]] = []
+        with self._lock:
+            chunks = self._chunks
+            reachable = NodeType.REACHABLE
+            for cx in range(qcx - r, qcx + r + 1):
+                for cy in range(qcy - r, qcy + r + 1):
+                    for cz in range(qcz - r, qcz + r + 1):
+                        bucket = chunks.get((cx, cy, cz))
+                        if not bucket:
+                            continue
+                        for s, node in bucket.items():
+                            if only_reachable and node.node_type != reachable:
+                                continue
+                            ccx, ccy, ccz = serial_to_center(s)
+                            dx = ccx - x; dy = ccy - y; dz = ccz - z
+                            d = dx*dx + dy*dy + dz*dz
+                            if d <= limit_sq:
+                                out.append((d, node))
+        return out
+
     def find_closest(self, x: float, y: float, z: float,
                      only_reachable: bool = True,
                      max_distance: float | None = None) -> Optional[Node]:
@@ -139,9 +203,14 @@ class Graph:
         rejected and None is returned. Useful for snapping pathfind
         endpoints so a stale waypoint in an unmapped area doesnt silently
         snap to some random cell on the other side of the graph."""
+        if max_distance is not None:
+            cands = self._nearby(x, y, z, max_distance, only_reachable)
+            if not cands:
+                return None
+            return min(cands, key=lambda t: t[0])[1]
+        # unbounded query has to scan everything, keep the legacy path.
         best: Optional[Node] = None
         best_d = math.inf
-        limit_sq = math.inf if max_distance is None else max_distance * max_distance
         with self._lock:
             for i, node in enumerate(self._nodes.values()):
                 if only_reachable and node.node_type != NodeType.REACHABLE:
@@ -149,7 +218,7 @@ class Graph:
                 cx, cy, cz = serial_to_center(node.serial)
                 dx = cx - x; dy = cy - y; dz = cz - z
                 d = dx*dx + dy*dy + dz*dz
-                if d < best_d and d <= limit_sq:
+                if d < best_d:
                     best_d = d
                     best = node
                 if i % _GIL_YIELD_EVERY == 0:
@@ -163,19 +232,7 @@ class Graph:
         sorted by distance. Used as fallback start candidates when the
         closest cell to the player turns out to be in an isolated little
         island that cant reach the actual goal."""
-        limit_sq = max_distance * max_distance
-        cands: list[tuple[float, Node]] = []
-        with self._lock:
-            for i, node in enumerate(self._nodes.values()):
-                if node.node_type != NodeType.REACHABLE:
-                    continue
-                cx, cy, cz = serial_to_center(node.serial)
-                dx = cx - x; dy = cy - y; dz = cz - z
-                d = dx*dx + dy*dy + dz*dz
-                if d <= limit_sq:
-                    cands.append((d, node))
-                if i % _GIL_YIELD_EVERY == 0:
-                    time.sleep(0)
+        cands = self._nearby(x, y, z, max_distance, only_reachable=True)
         cands.sort(key=lambda t: t[0])
         return [n for _, n in cands[:k]]
 
@@ -245,9 +302,11 @@ class Graph:
         g = cls()
         for entry in data.get("nodes", ()):
             s = tuple(entry["s"])  # type: ignore[assignment]
-            g._nodes[s] = Node(
+            node = Node(
                 serial=s,
                 node_type=NodeType(int(entry.get("t", 0))),
                 label=entry.get("l", ""),
             )
+            g._nodes[s] = node
+            g._chunks.setdefault(_chunk_of(s), {})[s] = node
         return g

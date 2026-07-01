@@ -89,43 +89,64 @@ class NavigationMixin:
             return {"found": False, "reason": f"waypoint '{name}' not found"}
         return self.pathfind_to(wp.x, wp.y, wp.z)
 
-    def _plan_best_effort(self, gx: float, gy: float, gz: float):
-        """When no full A* path exists, route as close to the goal as the
-        mapped graph allows. Returns (cells, bridge_world) where bridge_world
-        is the real goal world pos to seek toward once the partial path runs
-        out, or None if we couldnt even find a partial route. The goal cell
-        doesnt need to be mapped here, it just acts as a direction anchor."""
+    def _plan_route(self, gx: float, gy: float, gz: float) -> dict:
+        """One-shot goto planner. Full A* path when the goal is reachable,
+        best-effort partial toward it when it isnt, from a single search
+        instead of the old strict-then-best-effort double flood. Same shape
+        as pathfind_to plus a `partial` flag."""
         if self._last_pose is None:
-            return None
+            return {"found": False, "reason": "no current pose"}
         starts = self._nav.graph.find_nearest_reachable(
             self._last_pose.x, self._last_pose.y, self._last_pose.z,
-            max_distance=8.0, k=3,
+            max_distance=8.0, k=12,
         )
         if not starts:
-            return None
-        goal_cell = world_to_serial(gx, gy, gz)
-        best: VoxelPathResult | None = None
+            return {"found": False,
+                    "reason": "your current position isnt on the map yet, "
+                              "walk around to map this area first"}
+        # snap the goal to a mapped cell when one is close so a reachable
+        # goal comes back as a normal full path. otherwise the raw goal cell
+        # just acts as a direction anchor for the best-effort search.
+        goal_node = self._nav.graph.find_closest(gx, gy, gz, max_distance=2.5)
+        goal_cell = (goal_node.serial if goal_node is not None
+                     else world_to_serial(gx, gy, gz))
+        max_nodes = 50_000
+        chosen: tuple | None = None
+        best_partial: tuple | None = None
         for cand in starts:
             r = find_path_astar(self._nav.graph, cand.serial, goal_cell,
-                                max_nodes=50_000, best_effort=True)
-            if r.found and (len(r.full_serials) > 1):
-                best = r
+                                max_nodes=max_nodes, best_effort=True)
+            if r.found and not r.partial:
+                chosen = (cand, r)
                 break
-        if best is None:
-            return None
-        smoothed = best.smoothed or []
-        if len(smoothed) > 1:
-            chosen = smoothed[1:]
-        elif best.serials:
-            chosen = best.serials
-        else:
-            chosen = best.full_serials[1:]
-        cells: list[tuple[int, int, int]] = [tuple(s) for s in chosen]  # type: ignore
-        if not cells:
-            return None
-        # only bridge toward the true goal if we genuinely stopped short.
-        bridge = (gx, gy, gz) if best.partial else None
-        return cells, bridge
+            if r.found and r.partial and len(r.full_serials) > 1:
+                # keep whichever partial ends closest to the actual goal;
+                # a later start might still produce a full path.
+                ex, ey, ez = serial_to_center(r.full_serials[-1])
+                d = (ex - gx) ** 2 + (ey - gy) ** 2 + (ez - gz) ** 2
+                if best_partial is None or d < best_partial[0]:
+                    best_partial = (d, cand, r)
+            if r.nodes_expanded >= max_nodes:
+                # burned the whole node budget: the goal is outside this
+                # (big) blob and the other nearby starts share it, so more
+                # retries would just waste the same second each. stop here.
+                break
+        if chosen is None and best_partial is not None:
+            chosen = (best_partial[1], best_partial[2])
+        if chosen is None:
+            return {"found": False, "reason": "no path"}
+        cand, result = chosen
+        return {
+            "found": True,
+            "partial": result.partial,
+            "start": list(cand.serial),
+            "goal": list(goal_cell),
+            "full": [list(s) for s in result.full_serials],
+            "filtered": [list(s) for s in result.serials],
+            "smoothed": [list(s) for s in result.smoothed],
+            "cost": result.cost,
+            "expanded": result.nodes_expanded,
+        }
 
     def _ensure_explorer_for_follow(self) -> None:
         """Make sure an explorer exists for follow mode, but DO NOT flip
@@ -180,47 +201,12 @@ class NavigationMixin:
         if err:
             return {"found": False, "reason": err}
         with self._lock:
-            preview = self.pathfind_to(gx, gy, gz)
-            if not preview.get("found"):
-                # no full mapped A* path. first try a best-effort partial route
-                # that gets us as close to the goal as the map allows, then
-                # bridges the last gap with seek (raycasts) once it runs out.
-                # this still helps with no raycasts: we drive closer and map
-                # new ground on the way, and the AI can re-call to extend.
-                bep = self._plan_best_effort(gx, gy, gz)
-                if bep is not None:
-                    cells, bridge = bep
-                    self._ensure_explorer_for_follow()
-                    spd = normalize_speed(speed)
-                    try:
-                        self._explorer.speed_mode = (spd if spd is not None
-                                                     else self._speed_mode)
-                    except Exception:
-                        pass
-                    try:
-                        self._explorer.follow_path(
-                            cells, label=label or "goto",
-                            final_yaw_deg=final_yaw_deg,
-                            bridge_goal_world=bridge)
-                    except Exception as exc:
-                        logger.exception("mapping: best-effort follow_path failed")
-                        return {"found": False, "reason": f"follow failed: {exc}"}
-                    if not self._explore_enabled:
-                        self._explorer_follow_only = True
-                    return {
-                        "found": True,
-                        "driving": True,
-                        "partial": True,
-                        "label": label or "goto",
-                        "reason": preview.get("reason", "no path"),
-                        "note": "no full path, routing as close as i can"
-                                + (" then bridging toward the goal"
-                                   if bridge is not None else ""),
-                    }
-                # no partial route at all (off the grid entirely). fall back to
-                # a raycast-guided seek straight at the goal so we still try to
-                # get there, filling in the map as we walk and switching to A*
-                # once a path shows.
+            plan = self._plan_route(gx, gy, gz)
+            if not plan.get("found"):
+                # nothing routable at all (off the grid / empty map). fall
+                # back to a raycast-guided seek straight at the goal so we
+                # still try to get there, filling in the map as we walk and
+                # switching to A* once a path shows.
                 self._ensure_explorer_for_follow()
                 spd = normalize_speed(speed)
                 try:
@@ -249,7 +235,7 @@ class NavigationMixin:
                     except Exception:
                         logger.exception("mapping: idle explorer cleanup failed")
                     # surface the original planning failure.
-                    return preview
+                    return plan
                 if not self._explore_enabled:
                     self._explorer_follow_only = True
                 return {
@@ -257,7 +243,7 @@ class NavigationMixin:
                     "driving": True,
                     "seeking": True,
                     "label": label or "goto",
-                    "reason": preview.get("reason", "no path"),
+                    "reason": plan.get("reason", "no path"),
                     "note": "no mapped path, seeking toward goal via raycasts",
                 }
             self._ensure_explorer_for_follow()
@@ -274,9 +260,9 @@ class NavigationMixin:
             # cuts corners instead of tracing the grid staircase. fall back to
             # the turn-point filter, then the full path, if smoothing collapsed
             # to nothing (very short hops). raycast-assist handles local dodge.
-            smoothed = preview.get("smoothed") or []
-            filtered = preview.get("filtered") or []
-            full = preview.get("full") or []
+            smoothed = plan.get("smoothed") or []
+            filtered = plan.get("filtered") or []
+            full = plan.get("full") or []
             if len(smoothed) > 1:
                 chosen = smoothed[1:]
             elif filtered:
@@ -284,9 +270,13 @@ class NavigationMixin:
             else:
                 chosen = full
             cells: list[tuple[int, int, int]] = [tuple(s) for s in chosen]  # type: ignore
+            # partial route: once the queue runs out, bridge-seek the rest of
+            # the way toward the real goal (raycasts permitting).
+            bridge = (gx, gy, gz) if plan.get("partial") else None
             try:
                 self._explorer.follow_path(cells, label=label or "goto",
-                                           final_yaw_deg=final_yaw_deg)
+                                           final_yaw_deg=final_yaw_deg,
+                                           bridge_goal_world=bridge)
             except Exception as exc:
                 logger.exception("mapping: follow_path failed")
                 return {"found": False, "reason": f"follow failed: {exc}"}
@@ -295,9 +285,12 @@ class NavigationMixin:
             # and seed (follow_status.active is False until follow_path).
             if not self._explore_enabled:
                 self._explorer_follow_only = True
-            preview["driving"] = True
-            preview["label"] = label or "goto"
-            return preview
+            plan["driving"] = True
+            plan["label"] = label or "goto"
+            if plan.get("partial"):
+                plan["note"] = ("no full path, routing as close as i can "
+                                "then bridging toward the goal")
+            return plan
 
     def goto_waypoint(self, name: str, *, speed: Optional[str] = None) -> dict:
         # autostart up front so the world id (and thus the waypoint store)
