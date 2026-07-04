@@ -206,9 +206,15 @@ If you're on an ARM machine (Snapdragon X, etc), some packages like `pyaudio` ma
 <details>
 <summary><strong>"How do I enable the GPU for faster vision/YOLO?"</strong></summary>
 
-Run `setup.bat` and choose option 2 (NVIDIA GPU ONLY) or manually swap in CUDA PyTorch:
+Run `setup.bat` and choose option 2 (NVIDIA GPU ONLY). Setup installs the CUDA 12.8 build, tests it on your GPU, and automatically drops back to CUDA 12.6 if it doesn't work.
+
+To swap manually instead:
 
 ```bash
+# GTX 16xx / RTX 20-series and newer (including RTX 50-series)
+.\bin\uv.exe pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision torchaudio --reinstall
+
+# GTX 10-series and older
 .\bin\uv.exe pip install --index-url https://download.pytorch.org/whl/cu126 torch torchvision torchaudio --reinstall
 ```
 

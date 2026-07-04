@@ -51,7 +51,7 @@ echo.
 echo   [3/4] Hardware selection
 echo.
 echo        1. CPU only
-echo        2. NVIDIA GPU ^(CUDA 12.6^)
+echo        2. NVIDIA GPU
 echo.
 choice /C 12 /M "        Choice"
 set "GPU=%errorlevel%"
@@ -69,17 +69,42 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-if "%GPU%"=="2" (
-    echo.
-    echo        Swapping in CUDA PyTorch...
-    uv pip install --index-url https://download.pytorch.org/whl/cu126 ^
-        torch torchvision torchaudio --reinstall
-    if %errorlevel% neq 0 (
-        echo        WARNING: CUDA torch failed, CPU torch will be used.
-    ) else (
-        echo        CUDA PyTorch installed.
-    )
+if "%GPU%"=="2" goto cuda_torch
+goto torch_done
+
+:cuda_torch
+echo.
+echo        Swapping in CUDA PyTorch ^(CUDA 12.8^)...
+uv pip install --index-url https://download.pytorch.org/whl/cu128 ^
+    torch torchvision torchaudio --reinstall
+if %errorlevel% neq 0 (
+    echo        WARNING: CUDA torch install failed. See output above.
+    goto torch_done
 )
+
+echo        Testing that this build actually runs on your GPU...
+.venv\Scripts\python.exe -c "import torch; assert torch.cuda.is_available(), 'no cuda device'; x = torch.rand(64, 64, device='cuda'); (x @ x).sum().item(); print('        CUDA OK:', torch.cuda.get_device_name(0))"
+if %errorlevel% equ 0 goto torch_done
+
+echo.
+echo        The CUDA 12.8 build doesn't work on this GPU, trying CUDA 12.6...
+uv pip install --index-url https://download.pytorch.org/whl/cu126 ^
+    torch torchvision torchaudio --reinstall
+if %errorlevel% neq 0 (
+    echo        WARNING: CUDA torch install failed. See output above.
+    goto torch_done
+)
+
+echo        Testing that this build actually runs on your GPU...
+.venv\Scripts\python.exe -c "import torch; assert torch.cuda.is_available(), 'no cuda device'; x = torch.rand(64, 64, device='cuda'); (x @ x).sum().item(); print('        CUDA OK:', torch.cuda.get_device_name(0))"
+if %errorlevel% equ 0 goto torch_done
+
+echo.
+echo        WARNING: neither CUDA build works on this machine.
+echo        Falling back to CPU torch so everything still runs.
+uv pip install torch torchvision torchaudio --reinstall
+
+:torch_done
 
 :: ---- config files ----
 echo.
@@ -119,7 +144,7 @@ if exist "config.yml" (
 )
 
 echo   Launching configuration wizard...
-uv run python configurator.py
+.venv\Scripts\python.exe configurator.py
 
 echo.
 echo   Run:  run.bat
