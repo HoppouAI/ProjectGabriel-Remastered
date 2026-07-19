@@ -70,39 +70,53 @@ NEUTRAL = {
     'RLegFB': 0.58, 'RLegIO': 0.0, 'RKnee': 0.85, 'RFootUD': -0.3,
 }
 
-# rest angles (radians) of DART's 'stand' prompt in the raw anatomical
-# convention below. subtracted so standing maps exactly to NEUTRAL.
-# regenerate with probe_axes.py after model/prompt changes.
-REST_RAD = {
-    'HeadNod': -0.0351,
-    'HeadTilt': -0.0935,
-    'HeadTurn': -0.0984,
-    'HipsPitch': -0.1169,
-    'HipsRoll': -0.0220,
-    'LArmFB': -0.2782,
-    'LArmTW': +0.0301,
-    'LArmUp': +0.1336,
-    'LElbow': -0.6319,
-    'LFootUD': +0.0915,
-    'LKnee': -0.1592,
-    'LLegFB': -0.1898,
-    'LLegIO': -0.1065,
-    'LWristIO': +0.1369,
-    'LWristUD': -0.0044,
-    'RArmFB': -0.2133,
-    'RArmTW': -0.1597,
-    'RArmUp': +0.1766,
-    'RElbow': -0.4371,
-    'RFootUD': -0.0044,
-    'RKnee': -0.1559,
-    'RLegFB': -0.1528,
-    'RLegIO': +0.1262,
-    'RWristIO': +0.0732,
-    'RWristUD': -0.0895,
-    'SpineFB': +0.1831,
-    'SpineLR': -0.0329,
-    'SpineTW': -0.0516,
+# rest angles (radians) per model variant, measured off each models 'stand'
+# prompt in the raw anatomical convention below. subtracted so standing maps
+# exactly to NEUTRAL. regenerate with probe_axes.py after formula changes.
+REST_PRESETS = {
+    'babel': {
+        'HeadNod': -0.0351,
+        'HeadTilt': -0.0935,
+        'HeadTurn': -0.0984,
+        'HipsPitch': -0.1169,
+        'HipsRoll': -0.0220,
+        'LArmFB': -0.2782,
+        'LArmTW': +0.0301,
+        'LArmUp': +0.1336,
+        'LElbow': -0.6319,
+        'LFootUD': +0.0915,
+        'LKnee': -0.1592,
+        'LLegFB': -0.1898,
+        'LLegIO': -0.1065,
+        'LWristIO': +0.1369,
+        'LWristUD': -0.0044,
+        'RArmFB': -0.2133,
+        'RArmTW': -0.1597,
+        'RArmUp': +0.1766,
+        'RElbow': -0.4371,
+        'RFootUD': -0.0044,
+        'RKnee': -0.1559,
+        'RLegFB': -0.1528,
+        'RLegIO': +0.1262,
+        'RWristIO': +0.0732,
+        'RWristUD': -0.0895,
+        'SpineFB': +0.1831,
+        'SpineLR': -0.0329,
+        'SpineTW': -0.0516,
+    },
+    # hml3d: run probe_axes.py with the server on --model hml3d and paste here
+    'hml3d': {},
 }
+REST_RAD = REST_PRESETS['babel']
+
+
+def set_rest(name):
+    global REST_RAD
+    preset = REST_PRESETS.get(name)
+    if not preset:
+        print(f'warning: no rest preset for {name!r}, using babel values')
+        preset = REST_PRESETS['babel']
+    REST_RAD = preset
 
 # raw anatomical convention: forward/left/up positive, twist by right hand
 # rule about the rest bone axis. unity muscle naming has the FIRST word as
@@ -229,11 +243,12 @@ def extract_angles(rotmats, joints):
 
 
 class Retargeter:
-    def __init__(self, ranges_path):
+    def __init__(self, ranges_path, fps=30):
         with open(ranges_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         self.muscles = data['muscles']  # name -> {min, max} degrees
         self.human_scale = data.get('humanScale', 1.0)
+        self.fps = fps
         # dart world floor is z=0 with the seed standing on it
         self.smpl_stand_z = data.get('smplStandZ', 0.0)
         self.hipsy_down_m = data.get('hipsYDownMeters', 0.65)
@@ -301,7 +316,7 @@ class Retargeter:
         # (rad/s, positive = turn right)
         if self._prev_root is not None:
             px, py, pyaw = self._prev_root
-            dt = 1.0 / 30.0
+            dt = 1.0 / self.fps
             dx, dy = x - px, y - py
             s, c = math.sin(yaw), math.cos(yaw)
             out['_vfwd'] = (dx * s + dy * c) / dt

@@ -17,10 +17,11 @@ from retarget import Retargeter  # noqa: E402
 def main():
     prompt = sys.argv[1] if len(sys.argv) > 1 else 'walk forward'
     seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 4.0
-    n_frames = int(seconds * 30)
+    model = sys.argv[3] if len(sys.argv) > 3 else 'babel'
 
-    engine = MotionEngine()
-    retargeter = Retargeter(HERE / 'muscle_ranges.json')
+    engine = MotionEngine(model=model)
+    n_frames = int(seconds * engine.fps)
+    retargeter = Retargeter(HERE / 'muscle_ranges.json', fps=engine.fps)
     engine.set_prompt(prompt)
 
     frames = []
@@ -43,7 +44,7 @@ def main():
 
     out = HERE / 'test_frames.json'
     with open(out, 'w') as fp:
-        json.dump({'prompt': prompt, 'fps': 30, 'frames': frames}, fp, indent=1)
+        json.dump({'prompt': prompt, 'fps': engine.fps, 'frames': frames}, fp, indent=1)
     print(f'wrote {out}')
 
     # quick eyeball: param ranges across the clip

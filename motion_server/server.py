@@ -50,9 +50,19 @@ from mld.train_mld import DenoiserArgs, MLDArgs, create_gaussian_diffusion, Deno
 
 sys.path.insert(0, str(HERE))
 from retarget import Retargeter
+import retarget as retarget_mod
 
-DENOISER_CHECKPOINT = './mld_denoiser/mld_fps_clip_repeat_euler/checkpoint_300000.pt'
-FPS = 30
+MODELS = {
+    'babel': {
+        'checkpoint': './mld_denoiser/mld_fps_clip_repeat_euler/checkpoint_300000.pt',
+        'seed': './data/stand.pkl',
+    },
+    # hml3d variant understands full sentence prompts, runs 20fps, smplh bodies
+    'hml3d': {
+        'checkpoint': './mld_denoiser/smplh_hml3d_2_8_4/checkpoint_300000.pt',
+        'seed': './data/stand_20fps.pkl',
+    },
+}
 DEFAULT_PROMPT = 'stand'
 
 
@@ -106,31 +116,38 @@ def load_mld(denoiser_checkpoint, device):
 class MotionEngine:
     """owns the DART rollout state. all methods must be called from one thread."""
 
-    def __init__(self, device='cuda', guidance=5.0, use_predicted_joints=True, respacing='ddim5'):
+    def __init__(self, device='cuda', guidance=5.0, use_predicted_joints=True, respacing='ddim5',
+                 model='babel'):
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
         self.guidance = guidance
         self.use_predicted_joints = use_predicted_joints
         self.respacing = respacing
+        self.model_name = model
+        spec = MODELS[model]
         self.lock = threading.Lock()
 
-        print('loading models...')
+        print(f'loading models ({model})...')
         self.denoiser_args, self.denoiser_model, self.vae_args, self.vae_model = load_mld(
-            DENOISER_CHECKPOINT, self.device)
+            spec['checkpoint'], self.device)
         self.diffusion_args = self.denoiser_args.diffusion_args
         self.diffusion_args.respacing = respacing
         self.diffusion = create_gaussian_diffusion(self.diffusion_args)
 
+        body_type = getattr(self.vae_args.data_args, 'body_type', 'smplx')
         print('loading seed dataset...')
         self.dataset = SinglePrimitiveDataset(
             cfg_path=self.vae_args.data_args.cfg_path,
             dataset_path=self.vae_args.data_args.data_dir,
-            sequence_path='./data/stand.pkl',
+            sequence_path=spec['seed'],
             batch_size=1,
             device=self.device,
             enforce_gender='male',
             enforce_zero_beta=1,
+            body_type=body_type,
         )
-        self.primitive_utility = PrimitiveUtility(device=self.device, dtype=torch.float32)
+        self.fps = int(self.dataset.target_fps)
+        self.primitive_utility = PrimitiveUtility(device=self.device, dtype=torch.float32,
+                                                  body_type=body_type)
         self.history_length = self.dataset.history_length
         self.future_length = self.dataset.future_length
         self.primitive_length = self.history_length + self.future_length
@@ -150,7 +167,7 @@ class MotionEngine:
         self.frame_idx = 0
         self.prompt = DEFAULT_PROMPT
         self.text_embedding = self._encode(DEFAULT_PROMPT)
-        print(f'engine ready on {self.device}, history={self.history_length} future={self.future_length}')
+        print(f'engine ready on {self.device}, fps={self.fps} history={self.history_length} future={self.future_length}')
 
     def _encode(self, text):
         return encode_text(self.dataset.clip_model, [text], force_empty_zero=True).to(
@@ -283,7 +300,7 @@ async def client_loop(ws, engine, retargeter, send_raw):
                 state['paused'] = True
 
     recv_task = asyncio.create_task(receiver())
-    frame_interval = 1.0 / FPS
+    frame_interval = 1.0 / engine.fps
     next_send = time.monotonic()
     try:
         while not recv_task.done():
@@ -322,16 +339,18 @@ async def main():
     ap.add_argument('--port', type=int, default=8765)
     ap.add_argument('--guidance', type=float, default=5.0)
     ap.add_argument('--respacing', default='ddim5', help="'' for full 10 step sampling")
+    ap.add_argument('--model', default='babel', choices=list(MODELS), help='babel = verb prompts 30fps, hml3d = sentence prompts 20fps (needs smplh bodies)')
     ap.add_argument('--raw', action='store_true', help='include raw smplx data in frames')
     args = ap.parse_args()
 
-    engine = MotionEngine(guidance=args.guidance, respacing=args.respacing)
+    engine = MotionEngine(guidance=args.guidance, respacing=args.respacing, model=args.model)
 
     ranges_path = HERE / 'muscle_ranges.json'
     retargeter = None
     if ranges_path.exists():
-        retargeter = Retargeter(ranges_path)
-        print('retargeter loaded')
+        retarget_mod.set_rest(args.model)
+        retargeter = Retargeter(ranges_path, fps=engine.fps)
+        print(f'retargeter loaded (rest preset: {args.model}, {engine.fps}fps)')
     else:
         print('muscle_ranges.json not found, streaming raw smplx only')
 

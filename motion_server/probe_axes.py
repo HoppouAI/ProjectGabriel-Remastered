@@ -1,6 +1,6 @@
-# diagnostics: measure the raw anatomical rest angles of DART's 'stand'
-# prompt and print a REST_RAD dict ready to paste into retarget.py.
-# usage: python probe_axes.py [prompt] [frames]
+# diagnostics: measure the raw anatomical rest angles of a models 'stand'
+# prompt and print a REST dict ready to paste into retarget.py REST_PRESETS.
+# usage: python probe_axes.py [prompt] [frames] [model]
 
 import sys
 from pathlib import Path
@@ -13,8 +13,9 @@ import numpy as np
 
 prompt = sys.argv[1] if len(sys.argv) > 1 else 'stand'
 n = int(sys.argv[2]) if len(sys.argv) > 2 else 120
+model = sys.argv[3] if len(sys.argv) > 3 else 'babel'
 
-engine = MotionEngine()
+engine = MotionEngine(model=model)
 engine.set_prompt(prompt)
 
 sums = {}
