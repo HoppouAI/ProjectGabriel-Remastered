@@ -8,8 +8,10 @@ Sign convention is Unity muscle naming, min to max: -1 = first word,
 +1 = second word. So Front-Back means -1 leans/swings FORWARD, Down-Up
 means -1 is DOWN, In-Out means -1 is IN.
 
-Usage: python scripts/test_fbt_puppet.py [demo]
-  demo: wave | sway | squat | headbang | all (default all, loops)
+Usage: python scripts/test_fbt_puppet.py [demo] [upper] [loop]
+  demo: wave | sway | squat | headbang | all (default all)
+  upper: upper body only mode, legs/locomotion stay with VRChat so you
+         can walk around (WASD or Gabriel's nav) while it gestures
 Ctrl+C exits cleanly (returns avatar to normal tracking).
 """
 
@@ -105,13 +107,16 @@ DEMOS = {
 
 
 def main():
-    args = [a for a in sys.argv[1:] if a != "loop"]
-    loop = "loop" in sys.argv[1:]
+    flags = {a for a in sys.argv[1:] if a in ("loop", "upper")}
+    args = [a for a in sys.argv[1:] if a not in flags]
+    loop = "loop" in flags
+    upper = "upper" in flags
     which = args[0] if args else "all"
     order = list(DEMOS) if which == "all" else [which]
 
-    print(f"enabling puppet mode, sending to {OSC_IP}:{OSC_PORT}")
+    print(f"enabling puppet mode ({'upper body' if upper else 'full body'}), sending to {OSC_IP}:{OSC_PORT}")
     send_pose()
+    client.send_message(PREFIX + "Upper", upper)
     client.send_message(PREFIX + "Enable", True)
     time.sleep(0.5)
 
