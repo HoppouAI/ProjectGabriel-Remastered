@@ -1,28 +1,39 @@
-# axis convention probe: print world facing/up and thigh dirs for a few frames
+# diagnostics: measure the raw anatomical rest angles of DART's 'stand'
+# prompt and print a REST_RAD dict ready to paste into retarget.py.
+# usage: python probe_axes.py [prompt] [frames]
+
 import sys
 from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
 from server import MotionEngine
+from retarget import extract_angles
 import numpy as np
 
+prompt = sys.argv[1] if len(sys.argv) > 1 else 'stand'
+n = int(sys.argv[2]) if len(sys.argv) > 2 else 120
+
 engine = MotionEngine()
-engine.set_prompt('walk forward')
+engine.set_prompt(prompt)
 
-UP = np.array([0, 1, 0.0])
-FWD = np.array([0, 0, 1.0])
-LEFT = np.array([1, 0, 0.0])
-
-print(f'{"t":>4s} {"face(R0@FWD)":>24s} {"up(R0@UP)":>24s} {"Lthigh dir":>24s} {"pelvis":>24s}')
-for i in range(120):
+sums = {}
+zs = []
+for i in range(n):
     f = engine.next_frame()
-    if i % 20 != 0:
+    if i < 30:  # skip transition from seed
         continue
-    R = f['rotmats']
-    face = R[0] @ FWD
-    up = R[0] @ UP
-    lthigh = R[0] @ (R[1] @ -UP)  # world dir of left thigh bone
-    pel = f['joints'][0]
-    fmt = lambda v: '[' + ' '.join(f'{x:+.2f}' for x in v) + ']'
-    print(f'{f["t"]:>4d} {fmt(face):>24s} {fmt(up):>24s} {fmt(lthigh):>24s} {fmt(pel):>24s}')
+    ang = extract_angles(f['rotmats'])
+    for k, v in ang.items():
+        sums[k] = sums.get(k, 0.0) + v
+    zs.append(float(f['joints'][0][2]))
+
+count = n - 30
+print(f"\n# mean over {count} '{prompt}' frames, pelvis z mean {sum(zs)/len(zs):+.3f}")
+print('REST_RAD = {')
+for k in sorted(sums):
+    if k.startswith('_'):
+        continue
+    mean = sums[k] / count
+    print(f"    '{k}': {mean:+.4f},  # {np.degrees(mean):+.1f} deg")
+print('}')
