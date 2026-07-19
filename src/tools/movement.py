@@ -12,6 +12,16 @@ class MovementTools(BaseTool):
     tool_key = "movement"
 
     def declarations(self, config=None):
+        motion_on = getattr(config, "motion_enabled", False) if config is not None else False
+        move_note = (
+            " Prefer playMotion for walking/running/moving around, it animates your whole body "
+            "and looks far better. Only use this for precise positioning nudges or if the motion "
+            "system is down." if motion_on else ""
+        )
+        jump_note = (
+            " Prefer playMotion ('a person jumps up and down') for expressive jumping; this is a "
+            "plain engine hop for clearing obstacles." if motion_on else ""
+        )
         return [
             types.FunctionDeclaration(
                 name="vrchatCrouch",
@@ -25,7 +35,7 @@ class MovementTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="vrchatMove",
-                description="Walk/run in VRChat until duration expires or vrchatStop is called. Supports strafe and sprint.\n**Invocation Condition:** Asked to walk, run, or move somewhere.",
+                description="Walk/run in VRChat until duration expires or vrchatStop is called. Supports strafe and sprint.\n**Invocation Condition:** Asked to walk, run, or move somewhere." + move_note,
                 parameters={
                     "type": "OBJECT",
                     "properties": {
@@ -43,7 +53,7 @@ class MovementTools(BaseTool):
             ),
             types.FunctionDeclaration(
                 name="vrchatJump",
-                description="Make the avatar jump in VRChat.\n**Invocation Condition:** Call when asked to jump.",
+                description="Make the avatar jump in VRChat.\n**Invocation Condition:** Call when asked to jump." + jump_note,
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(

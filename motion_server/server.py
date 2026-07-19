@@ -56,14 +56,15 @@ MODELS = {
     'babel': {
         'checkpoint': './mld_denoiser/mld_fps_clip_repeat_euler/checkpoint_300000.pt',
         'seed': './data/stand.pkl',
+        'idle_prompt': 'stand',
     },
     # hml3d variant understands full sentence prompts, runs 20fps, smplh bodies
     'hml3d': {
         'checkpoint': './mld_denoiser/smplh_hml3d_2_8_4/checkpoint_300000.pt',
         'seed': './data/stand_20fps.pkl',
+        'idle_prompt': 'a person stands still',
     },
 }
-DEFAULT_PROMPT = 'stand'
 
 
 class ClassifierFreeWrapper(torch.nn.Module):
@@ -165,20 +166,40 @@ class MotionEngine:
         motion = input_motions.squeeze(2).permute(0, 2, 1)  # [1, T, D]
         self.motion_tensor = self.dataset.denormalize(motion[:, :self.history_length, :])
         self.frame_idx = 0
-        self.prompt = DEFAULT_PROMPT
-        self.text_embedding = self._encode(DEFAULT_PROMPT)
+        self.idle_prompt = spec['idle_prompt']
+        self.prompt = self.idle_prompt
+        self.text_embedding = self._encode(self.idle_prompt)
         print(f'engine ready on {self.device}, fps={self.fps} history={self.history_length} future={self.future_length}')
 
     def _encode(self, text):
         return encode_text(self.dataset.clip_model, [text], force_empty_zero=True).to(
             dtype=torch.float32, device=self.device)
 
+    def normalize_prompt(self, text):
+        """nudge whatever the client sent toward this models training style."""
+        text = ' '.join(str(text).replace('.', ' ').replace('!', ' ').split())
+        if not text:
+            return self.idle_prompt
+        low = text.lower()
+        if self.model_name == 'babel':
+            # babel was trained on bare action labels, strip the narration
+            for pre in ('a person ', 'the person ', 'a man ', 'a woman ', 'someone '):
+                if low.startswith(pre):
+                    text = text[len(pre):]
+                    break
+        elif 'person' not in low:
+            # hml3d wants humanml3d style captions, give terse verbs a subject
+            text = f'a person {text}'
+        return text
+
     def set_prompt(self, text):
+        text = self.normalize_prompt(text)
         with self.lock:
             self.prompt = text
             self.text_embedding = self._encode(text)
             # drop queued future frames so the new prompt kicks in next primitive
             self.motion_tensor = self.motion_tensor[:, :max(self.frame_idx + 1, self.history_length), :]
+        return text
 
     def reset(self):
         """wipe rollout context back to the seed standing pose."""
@@ -188,8 +209,8 @@ class MotionEngine:
             motion = input_motions.squeeze(2).permute(0, 2, 1)
             self.motion_tensor = self.dataset.denormalize(motion[:, :self.history_length, :])
             self.frame_idx = 0
-            self.prompt = DEFAULT_PROMPT
-            self.text_embedding = self._encode(DEFAULT_PROMPT)
+            self.prompt = self.idle_prompt
+            self.text_embedding = self._encode(self.idle_prompt)
 
     @torch.no_grad()
     def _rollout(self):
@@ -282,13 +303,13 @@ async def client_loop(ws, engine, retargeter, send_raw):
                 continue
             mtype = msg.get('type')
             if mtype == 'prompt':
-                text = str(msg.get('text', '')).strip() or DEFAULT_PROMPT
-                print(f'prompt: {text!r}')
-                await asyncio.to_thread(engine.set_prompt, text)
+                text = str(msg.get('text', '')).strip()
+                used = await asyncio.to_thread(engine.set_prompt, text)
+                print(f'prompt: {text!r} -> {used!r}')
                 state['paused'] = False
             elif mtype == 'stop':
-                print('prompt: stop -> stand')
-                await asyncio.to_thread(engine.set_prompt, DEFAULT_PROMPT)
+                print('prompt: stop -> idle')
+                await asyncio.to_thread(engine.set_prompt, engine.idle_prompt)
             elif mtype == 'pause':
                 print('paused')
                 state['paused'] = True

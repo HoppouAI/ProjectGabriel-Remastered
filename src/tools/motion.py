@@ -23,19 +23,26 @@ class MotionTools(BaseTool):
             types.FunctionDeclaration(
                 name="playMotion",
                 description=(
-                    "Perform a full-body motion generated from a text prompt. Your whole body acts it out "
-                    "and walking/turning motions actually move you through the world. Short verb phrases "
-                    "work best: 'dance', 'wave', 'sit down', 'jump', 'walk in a circle', 'run', 'crouch', "
-                    "'kick', 'stretch'. Optionally give seconds to auto-return to standing when done; "
-                    "without it the motion continues until you call playMotion again or stopMotion."
+                    "Act out a full-body motion generated live from a text description. Your whole body "
+                    "performs it, and walking or turning in the motion physically moves you through the "
+                    "world. Describe ONE continuous action as a short third-person sentence, e.g. "
+                    "'a person dances energetically', 'a person sits down cross legged', 'a person walks "
+                    "forward slowly', 'a person waves with their right hand', 'a person jumps up and down'. "
+                    "Style words like slowly, excitedly, sneakily shape how it looks. The motion keeps "
+                    "going until you call playMotion again with a new description (switch directly, no "
+                    "stop needed in between) or stopMotion. Give seconds for one-off gestures that should "
+                    "auto-return to standing, like a 3 second wave."
                     "\n**Invocation Condition:** Call when you want to physically perform an action with "
                     "your body, when someone asks you to dance, sit, jump, act something out, or when it "
-                    "fits the moment emotionally."
+                    "fits the moment emotionally. Also the PREFERRED way to move around when someone tells "
+                    "you to walk, run, come closer, or back up ('a person walks forward', 'a person turns "
+                    "around and walks away'), it looks far more natural than the basic vrchatMove tool. "
+                    "Call again anytime to switch motions."
                 ),
                 parameters={
                     "type": "OBJECT",
                     "properties": {
-                        "prompt": {"type": "STRING", "description": "Short motion description, e.g. 'dance' or 'sit down'"},
+                        "prompt": {"type": "STRING", "description": "Third-person action sentence, e.g. 'a person dances energetically'. One action per call."},
                         "seconds": {"type": "NUMBER", "description": "Optional duration; auto-returns to standing after this many seconds"},
                     },
                     "required": ["prompt"],
