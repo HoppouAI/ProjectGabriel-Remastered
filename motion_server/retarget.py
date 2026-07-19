@@ -169,8 +169,10 @@ SIGN.update({
 })
 SCALE = {p: 1.0 for p in PARAM_MUSCLES}
 
-HIPS_PITCH_MAX_DEG = 40.0
-HIPS_ROLL_MAX_DEG = 30.0
+# rig blend grid ranges (FBT_HipsRot clips). regenerated 2026-07 at +-90 so
+# he can actually bow and lie down, was +-40/+-30 before
+HIPS_PITCH_MAX_DEG = 90.0
+HIPS_ROLL_MAX_DEG = 90.0
 
 
 def _twist_angle(R, axis):
@@ -199,7 +201,12 @@ def extract_angles(rotmats, joints):
 
     up_w = R[0] @ UP
     fwd_w = R[0] @ FWD
-    yaw = math.atan2(fwd_w[0], fwd_w[1])  # facing about world z
+    # facing vector stays defined when the chest points straight up/down
+    # (lying, deep bow): borrow the pelvis-to-head axis, sign matched so a
+    # forward bow keeps facing forward and falling on your back doesnt flip
+    fx = fwd_w[0] - fwd_w[2] * up_w[0]
+    fy = fwd_w[1] - fwd_w[2] * up_w[1]
+    yaw = math.atan2(fx, fy)  # facing about world z
     # fwd_w = Rz(-yaw) @ +y, so applying Rz(+yaw) cancels the facing
     cy, sy = math.cos(yaw), math.sin(yaw)
     yaw_inv = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]])
@@ -286,7 +293,7 @@ class Retargeter:
         self.fps = fps
         # dart world floor is z=0 with the seed standing on it
         self.smpl_stand_z = data.get('smplStandZ', 0.0)
-        self.hipsy_down_m = data.get('hipsYDownMeters', 0.65)
+        self.hipsy_down_m = data.get('hipsYDownMeters', 0.90)
         self.hipsy_up_m = data.get('hipsYUpMeters', 0.14)
         self._prev_root = None  # (x, y, yaw) of the previous frame
 
