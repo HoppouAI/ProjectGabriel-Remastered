@@ -25,10 +25,19 @@ for _alias, _t in [('float', float), ('int', int), ('bool', bool), ('object', ob
     if not hasattr(np, _alias):
         setattr(np, _alias, _t)
 
+# checkpoints and args.yaml were written on linux and contain PosixPath objects
+import pathlib
+if os.name == 'nt':
+    pathlib.PosixPath = pathlib.WindowsPath
+
 import torch
 import yaml
 import tyro
 from dataclasses import asdict
+
+torch.backends.cudnn.benchmark = True
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 from pytorch3d import transforms
 from model.mld_denoiser import DenoiserMLP, DenoiserTransformer
@@ -97,17 +106,18 @@ def load_mld(denoiser_checkpoint, device):
 class MotionEngine:
     """owns the DART rollout state. all methods must be called from one thread."""
 
-    def __init__(self, device='cuda', guidance=5.0, use_predicted_joints=True):
+    def __init__(self, device='cuda', guidance=5.0, use_predicted_joints=True, respacing='ddim5'):
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
         self.guidance = guidance
         self.use_predicted_joints = use_predicted_joints
+        self.respacing = respacing
         self.lock = threading.Lock()
 
         print('loading models...')
         self.denoiser_args, self.denoiser_model, self.vae_args, self.vae_model = load_mld(
             DENOISER_CHECKPOINT, self.device)
         self.diffusion_args = self.denoiser_args.diffusion_args
-        self.diffusion_args.respacing = ''
+        self.diffusion_args.respacing = respacing
         self.diffusion = create_gaussian_diffusion(self.diffusion_args)
 
         print('loading seed dataset...')
@@ -155,7 +165,7 @@ class MotionEngine:
 
     @torch.no_grad()
     def _rollout(self):
-        sample_fn = self.diffusion.p_sample_loop
+        sample_fn = self.diffusion.ddim_sample_loop if self.respacing else self.diffusion.p_sample_loop
         guidance_param = torch.ones(1, *self.denoiser_args.model_args.noise_shape,
                                     device=self.device) * self.guidance
         history_motion = self.motion_tensor[:, -self.history_length:, :]
@@ -284,10 +294,11 @@ async def main():
     ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8765)
     ap.add_argument('--guidance', type=float, default=5.0)
+    ap.add_argument('--respacing', default='ddim5', help="'' for full 10 step sampling")
     ap.add_argument('--raw', action='store_true', help='include raw smplx data in frames')
     args = ap.parse_args()
 
-    engine = MotionEngine(guidance=args.guidance)
+    engine = MotionEngine(guidance=args.guidance, respacing=args.respacing)
 
     ranges_path = HERE / 'muscle_ranges.json'
     retargeter = None

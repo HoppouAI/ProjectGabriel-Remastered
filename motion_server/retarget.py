@@ -103,9 +103,10 @@ class Retargeter:
             data = json.load(f)
         self.muscles = data['muscles']  # name -> {min, max} degrees
         self.human_scale = data.get('humanScale', 1.0)
-        self.smpl_stand_z = data.get('smplStandZ', 0.92)
-        self.hipsy_down_m = data.get('hipsYDownMeters', 0.62)
-        self.hipsy_up_m = data.get('hipsYUpMeters', 0.15)
+        # dart world origin sits at the initial pelvis, so standing pelvis z is 0
+        self.smpl_stand_z = data.get('smplStandZ', 0.0)
+        self.hipsy_down_m = data.get('hipsYDownMeters', 0.65)
+        self.hipsy_up_m = data.get('hipsYUpMeters', 0.14)
 
         # chain gain (radians of joint motion per unit of param) each side of 0
         self.pos_gain = {}
@@ -149,12 +150,14 @@ class Retargeter:
         roll = math.atan2(up_l[0], up_l[2])      # lean right positive
         out['HipsPitch'] = _clamp(math.degrees(pitch) / HIPS_PITCH_MAX_DEG)
         out['HipsRoll'] = _clamp(math.degrees(roll) / HIPS_ROLL_MAX_DEG)
-        dz = float(transl[2]) - self.smpl_stand_z
+        # smplx transl is the root offset, not pelvis position. use the
+        # network predicted pelvis joint for actual height.
+        dz = float(joints[PELVIS][2]) - self.smpl_stand_z
         out['HipsY'] = _clamp(dz / self.hipsy_up_m if dz >= 0 else dz / self.hipsy_down_m)
         # extras for the client locomotion layer (not muscle params)
         out['_yaw'] = yaw
-        out['_x'] = float(transl[0])
-        out['_y'] = float(transl[1])
+        out['_x'] = float(joints[PELVIS][0])
+        out['_y'] = float(joints[PELVIS][1])
 
         # --- spine / head ---
         self._ball(out, R[SPINE1] @ R[SPINE2] @ R[SPINE3], 'SpineFB', 'SpineLR', 'SpineTW')
