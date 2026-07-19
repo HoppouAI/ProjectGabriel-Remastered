@@ -240,10 +240,6 @@ class Retargeter:
         self.hipsy_up_m = data.get('hipsYUpMeters', 0.14)
         self._prev_root = None  # (x, y, yaw) of the previous frame
 
-    def reset_root(self):
-        """forget the previous root sample so velocities dont spike after an engine reset."""
-        self._prev_root = None
-
         # chain gain (radians of joint motion per unit of param) each side of 0
         self.pos_gain = {}
         self.neg_gain = {}
@@ -260,6 +256,10 @@ class Retargeter:
             self.neg_gain[param] = math.radians(neg)
             n = NEUTRAL.get(param, 0.0)
             self.theta_neutral[param] = n * (self.pos_gain[param] if n >= 0 else self.neg_gain[param])
+
+    def reset_root(self):
+        """forget the previous root sample so velocities dont spike after an engine reset."""
+        self._prev_root = None
 
     def _map(self, param, raw_rad):
         delta = raw_rad - REST_RAD.get(param, 0.0)
