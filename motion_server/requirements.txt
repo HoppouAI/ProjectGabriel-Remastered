@@ -1,0 +1,21 @@
+# motion server deps, DART rollout + retarget + websocket streaming
+# torch installed separately with cuda index, see setup below
+numpy<2
+smplx
+tyro
+pyyaml
+tqdm
+websockets
+scipy
+scikit-learn
+pandas
+loguru
+# DART import chain pulls these in even though we only use rollout
+spacy
+click
+omegaconf
+tensorboard
+# openai clip + its deps
+ftfy
+regex
+git+https://github.com/openai/CLIP.git

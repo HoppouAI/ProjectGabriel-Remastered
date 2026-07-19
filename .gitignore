@@ -7,6 +7,12 @@ sfx/music/*
 # soundfonts -- keep the folder, skip the big .sf2 files
 sfx/soundfonts/*
 !sfx/soundfonts/.gitkeep
+
+# motion server -- upstream repo clone, models and checkpoints are huge
+motion_server/DART/
+motion_server/.venv/
+motion_server/body_models/
+
 __pycache__/
 *.py[cod]
 *$py.class
