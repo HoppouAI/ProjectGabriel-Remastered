@@ -72,8 +72,9 @@ def demo_sway(t):
 
 def demo_squat(t):
     depth = 0.5 + 0.5 * math.sin(t * 1.5)  # 0..1
+    # hips drop eased, legs shorten on a cosine so linear drop dips underground
     return {
-        "HipsY": -0.9 * depth,
+        "HipsY": -0.85 * depth ** 1.6,
         "LKnee": 0.85 - 1.8 * depth,
         "RKnee": 0.85 - 1.8 * depth,
         "LLegFB": 0.58 - 1.2 * depth,
