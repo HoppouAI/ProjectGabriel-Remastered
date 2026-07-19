@@ -271,3 +271,4 @@ discord_bot/data/mutes.json
 # WebUI source build artifacts
 webui-src/node_modules/
 webui-src/.tsbuildinfo
+motion_server/test_frames.json

@@ -73,12 +73,25 @@ NEUTRAL = {
     'RLegFB': 0.58, 'RLegIO': 0.0, 'RKnee': 0.85, 'RFootUD': -0.3,
 }
 
-# empirical direction/scale corrections, tuned via the unity sampler
+# empirical direction/scale corrections, tuned via the unity sampler.
+# unity muscle naming: the FIRST word is the negative end ("Front-Back" means
+# -1=front +1=back, "Down-Up" means -1=down, "In-Out" means -1=in). our
+# anatomical angles are positive toward front/left/up, hence the flips.
 SIGN = {p: 1.0 for p in PARAM_MUSCLES}
+SIGN.update({
+    'SpineFB': -1.0, 'SpineLR': -1.0, 'SpineTW': -1.0,
+    'HeadNod': -1.0, 'HeadTilt': -1.0, 'HeadTurn': -1.0,
+    'LArmFB': -1.0, 'RArmFB': -1.0,
+    'LArmTW': -1.0,  # twist axes mirror between sides
+    'LWristIO': -1.0, 'RWristIO': -1.0,
+    'LFootUD': -1.0, 'RFootUD': -1.0,
+})
 SCALE = {p: 1.0 for p in PARAM_MUSCLES}
 
 HIPS_PITCH_MAX_DEG = 40.0
 HIPS_ROLL_MAX_DEG = 30.0
+# smpl standing pelvis carries a slight backward tilt, measured off the stand prompt
+HIPS_PITCH_REST_DEG = -3.8
 
 
 def _twist_angle(R, axis):
@@ -142,13 +155,14 @@ class Retargeter:
         up_w = R[0] @ UP
         fwd_w = R[0] @ FWD
         yaw = math.atan2(fwd_w[0], fwd_w[1])  # facing about world z
-        cy, sy = math.cos(-yaw), math.sin(-yaw)
+        # fwd_w = Rz(-yaw) @ +y, so applying Rz(+yaw) cancels the facing
+        cy, sy = math.cos(yaw), math.sin(yaw)
         yaw_inv = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]])
         up_l = yaw_inv @ up_w
         fwd_l = yaw_inv @ fwd_w
         pitch = math.atan2(-fwd_l[2], fwd_l[1])  # lean forward positive
         roll = math.atan2(up_l[0], up_l[2])      # lean right positive
-        out['HipsPitch'] = _clamp(math.degrees(pitch) / HIPS_PITCH_MAX_DEG)
+        out['HipsPitch'] = _clamp((math.degrees(pitch) - HIPS_PITCH_REST_DEG) / HIPS_PITCH_MAX_DEG)
         out['HipsRoll'] = _clamp(math.degrees(roll) / HIPS_ROLL_MAX_DEG)
         # smplx transl is the root offset, not pelvis position. use the
         # network predicted pelvis joint for actual height.
