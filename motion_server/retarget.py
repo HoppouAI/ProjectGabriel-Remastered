@@ -54,14 +54,18 @@ PARAM_MUSCLES = {
     'RFootUD': [('Right Foot Up-Down', 1.0)],
 }
 
-# param values for the anatomical standing rest pose (verified in game)
+# param values for the anatomical standing rest pose. arm values solved in
+# the unity sampler so the wrists land where darts stand pose puts them
+# (hands by the outer thighs, ~0.29m lateral), not the old hand-tuned guess
+# that parked them in front of the crotch. ArmTW 0.4 rotates the elbow
+# flexion plane outward which is what actually frees the hands.
 NEUTRAL = {
     'SpineFB': 0.0, 'SpineLR': 0.0, 'SpineTW': 0.0,
     'HeadNod': 0.0, 'HeadTilt': 0.0, 'HeadTurn': 0.0,
-    'LArmUp': -0.75, 'LArmFB': 0.0, 'LArmTW': 0.0,
-    'LElbow': 0.85, 'LWristUD': 0.0, 'LWristIO': 0.0,
-    'RArmUp': -0.75, 'RArmFB': 0.0, 'RArmTW': 0.0,
-    'RElbow': 0.85, 'RWristUD': 0.0, 'RWristIO': 0.0,
+    'LArmUp': -0.6, 'LArmFB': 0.1, 'LArmTW': 0.4,
+    'LElbow': 1.0, 'LWristUD': 0.0, 'LWristIO': 0.0,
+    'RArmUp': -0.6, 'RArmFB': 0.1, 'RArmTW': 0.4,
+    'RElbow': 1.0, 'RWristUD': 0.0, 'RWristIO': 0.0,
     'LLegFB': 0.58, 'LLegIO': 0.0, 'LKnee': 0.85, 'LFootUD': -0.3,
     'RLegFB': 0.58, 'RLegIO': 0.0, 'RKnee': 0.85, 'RFootUD': -0.3,
 }
@@ -70,34 +74,34 @@ NEUTRAL = {
 # convention below. subtracted so standing maps exactly to NEUTRAL.
 # regenerate with probe_axes.py after model/prompt changes.
 REST_RAD = {
-    'HeadNod': -0.0102,
-    'HeadTilt': -0.0499,
-    'HeadTurn': -0.1997,
-    'HipsPitch': -0.0501,
-    'HipsRoll': -0.0223,
-    'LArmFB': +0.1328,
-    'LArmTW': +0.1515,
-    'LArmUp': +0.3143,
-    'LElbow': -0.3560,
-    'LFootUD': +0.0808,
-    'LKnee': -0.1251,
-    'LLegFB': -0.1195,
-    'LLegIO': -0.0746,
-    'LWristIO': +0.0263,
-    'LWristUD': -0.1089,
-    'RArmFB': +0.1480,
-    'RArmTW': -0.2324,
-    'RArmUp': +0.3136,
-    'RElbow': -0.3364,
-    'RFootUD': +0.0333,
-    'RKnee': -0.0961,
-    'RLegFB': -0.0854,
-    'RLegIO': +0.0674,
-    'RWristIO': +0.0116,
-    'RWristUD': -0.1516,
-    'SpineFB': +0.1397,
-    'SpineLR': -0.0304,
-    'SpineTW': -0.0196,
+    'HeadNod': -0.0351,
+    'HeadTilt': -0.0935,
+    'HeadTurn': -0.0984,
+    'HipsPitch': -0.1169,
+    'HipsRoll': -0.0220,
+    'LArmFB': -0.2782,
+    'LArmTW': +0.0301,
+    'LArmUp': +0.1336,
+    'LElbow': -0.6319,
+    'LFootUD': +0.0915,
+    'LKnee': -0.1592,
+    'LLegFB': -0.1898,
+    'LLegIO': -0.1065,
+    'LWristIO': +0.1369,
+    'LWristUD': -0.0044,
+    'RArmFB': -0.2133,
+    'RArmTW': -0.1597,
+    'RArmUp': +0.1766,
+    'RElbow': -0.4371,
+    'RFootUD': -0.0044,
+    'RKnee': -0.1559,
+    'RLegFB': -0.1528,
+    'RLegIO': +0.1262,
+    'RWristIO': +0.0732,
+    'RWristUD': -0.0895,
+    'SpineFB': +0.1831,
+    'SpineLR': -0.0329,
+    'SpineTW': -0.0516,
 }
 
 # raw anatomical convention: forward/left/up positive, twist by right hand
@@ -136,8 +140,11 @@ def _clamp(v, lo=-1.0, hi=1.0):
     return max(lo, min(hi, v))
 
 
-def extract_angles(rotmats):
-    """raw anatomical angles (radians) per param plus root pitch/roll/yaw."""
+def extract_angles(rotmats, joints):
+    """raw anatomical angles (radians) per param plus root pitch/roll/yaw.
+    arms are solved from predicted joint positions (shoulder->elbow->wrist)
+    so the hands end up where the model put them, rotation chains only
+    supply the wrist orientation and everything below the hips."""
     R = rotmats
     ang = {}
 
@@ -162,24 +169,49 @@ def extract_angles(rotmats):
     ball(R[SPINE1] @ R[SPINE2] @ R[SPINE3], 'SpineFB', 'SpineLR', 'SpineTW')
     ball(R[NECK] @ R[HEAD], 'HeadNod', 'HeadTilt', 'HeadTurn')
 
-    for side, collar, shoulder, elbow, wrist, lat in (
-            ('L', L_COLLAR, L_SHOULDER, L_ELBOW, L_WRIST, LEFT),
-            ('R', R_COLLAR, R_SHOULDER, R_ELBOW, R_WRIST, -LEFT)):
-        R_arm = R[collar] @ R[shoulder]
-        d = R_arm @ lat
+    # body frame: rows of R0^T map world -> model space
+    R0T = R[0].T
+
+    def norm(v):
+        n = np.linalg.norm(v)
+        return v / n if n > 1e-8 else v
+
+    for side, sh, el, wr, wrist_j, lat in (
+            ('L', L_SHOULDER, L_ELBOW, L_WRIST, L_WRIST, LEFT),
+            ('R', R_SHOULDER, R_ELBOW, R_WRIST, R_WRIST, -LEFT)):
+        u = R0T @ norm(joints[el] - joints[sh])   # upper arm dir, model frame
+        f = R0T @ norm(joints[wr] - joints[el])   # forearm dir, model frame
+
         # coronal plane angle: hanging = 0 (after +90 shift), t-pose = +90,
-        # adduction past the body goes negative, continuous through a wave.
-        # the old spherical azimuth had its pole AT the hanging arm, so tiny
-        # wobbles read as wild front/back swings and pulled the hands inward.
-        raw_up = math.atan2(float(d @ UP), float(d @ lat)) + math.pi / 2
-        coronal = math.hypot(float(d @ UP), float(d @ lat))
-        w = min(1.0, coronal / 0.25)  # pure-forward reach leaves the angle ill defined, hold rest
-        rest_up = REST_RAD.get(f'{side}ArmUp', 0.0)
-        ang[f'{side}ArmUp'] = w * raw_up + (1.0 - w) * rest_up
-        ang[f'{side}ArmFB'] = math.asin(_clamp(float(d @ FWD)))
-        ang[f'{side}ArmTW'] = _twist_angle(R_arm, lat)
-        ang[f'{side}Elbow'] = -math.acos(_clamp(float((R[elbow] @ lat) @ lat)))  # 0 straight, negative bent
-        d_hand = R[wrist] @ lat
+        # adduction goes negative, continuous through a wave. pole only at a
+        # pure forward point, held at rest there.
+        raw_up = math.atan2(float(u @ UP), float(u @ lat)) + math.pi / 2
+        coronal = math.hypot(float(u @ UP), float(u @ lat))
+        w = min(1.0, coronal / 0.25)
+        ang[f'{side}ArmUp'] = w * raw_up + (1.0 - w) * REST_RAD.get(f'{side}ArmUp', 0.0)
+        ang[f'{side}ArmFB'] = math.asin(_clamp(float(u @ FWD)))
+
+        # elbow bend straight from the joint angle
+        bend = math.acos(_clamp(float(u @ f)))
+        ang[f'{side}Elbow'] = -bend
+
+        # twist = azimuth of the forearm around the upper arm axis, measured
+        # from the forward flexion plane (unity muscle 0 bends forward).
+        # undefined for a straight arm, blend to rest as the bend vanishes.
+        ref = FWD - float(FWD @ u) * u
+        ref_n = np.linalg.norm(ref)
+        f_perp = f - float(f @ u) * u
+        f_n = np.linalg.norm(f_perp)
+        if ref_n > 1e-6 and f_n > 1e-6:
+            ref = ref / ref_n
+            f_perp = f_perp / f_n
+            tw_raw = math.atan2(float(f_perp @ np.cross(u, ref)), float(f_perp @ ref))
+        else:
+            tw_raw = REST_RAD.get(f'{side}ArmTW', 0.0)
+        wt = min(1.0, bend / 0.15)
+        ang[f'{side}ArmTW'] = wt * tw_raw + (1.0 - wt) * REST_RAD.get(f'{side}ArmTW', 0.0)
+
+        d_hand = R[wrist_j] @ lat
         ang[f'{side}WristUD'] = math.asin(_clamp(float(d_hand @ UP)))
         ang[f'{side}WristIO'] = math.atan2(float(d_hand @ FWD), float(d_hand @ lat))
 
@@ -234,7 +266,7 @@ class Retargeter:
 
     def frame_to_params(self, transl, rotmats, joints):
         """transl [3], rotmats [22,3,3] (0=global orient world zup, 1..21 local), joints [22,3] world."""
-        ang = extract_angles(rotmats)
+        ang = extract_angles(rotmats, joints)
         out = {}
         for param in PARAM_MUSCLES:
             out[param] = self._map(param, ang[param])

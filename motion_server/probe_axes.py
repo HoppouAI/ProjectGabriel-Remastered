@@ -23,7 +23,7 @@ for i in range(n):
     f = engine.next_frame()
     if i < 30:  # skip transition from seed
         continue
-    ang = extract_angles(f['rotmats'])
+    ang = extract_angles(f['rotmats'], f['joints'])
     for k, v in ang.items():
         sums[k] = sums.get(k, 0.0) + v
     zs.append(float(f['joints'][0][2]))
