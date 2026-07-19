@@ -70,34 +70,34 @@ NEUTRAL = {
 # convention below. subtracted so standing maps exactly to NEUTRAL.
 # regenerate with probe_axes.py after model/prompt changes.
 REST_RAD = {
-    'HeadNod': -0.0998,
-    'HeadTilt': -0.0489,
-    'HeadTurn': -0.1431,
-    'HipsPitch': -0.0783,
-    'HipsRoll': -0.0339,
-    'LArmFB': +0.5169,
-    'LArmTW': +0.0937,
-    'LArmUp': +0.3391,
-    'LElbow': -0.3482,
-    'LFootUD': +0.0247,
-    'LKnee': -0.2010,
-    'LLegFB': -0.1755,
-    'LLegIO': -0.0881,
-    'LWristIO': +0.0103,
-    'LWristUD': -0.1195,
-    'RArmFB': +0.4167,
-    'RArmTW': -0.2211,
-    'RArmUp': +0.3748,
-    'RElbow': -0.4237,
-    'RFootUD': -0.0425,
-    'RKnee': -0.1838,
-    'RLegFB': -0.1368,
-    'RLegIO': +0.1121,
-    'RWristIO': +0.0075,
-    'RWristUD': -0.1533,
-    'SpineFB': +0.1954,
-    'SpineLR': -0.0479,
-    'SpineTW': -0.0540,
+    'HeadNod': -0.0102,
+    'HeadTilt': -0.0499,
+    'HeadTurn': -0.1997,
+    'HipsPitch': -0.0501,
+    'HipsRoll': -0.0223,
+    'LArmFB': +0.1328,
+    'LArmTW': +0.1515,
+    'LArmUp': +0.3143,
+    'LElbow': -0.3560,
+    'LFootUD': +0.0808,
+    'LKnee': -0.1251,
+    'LLegFB': -0.1195,
+    'LLegIO': -0.0746,
+    'LWristIO': +0.0263,
+    'LWristUD': -0.1089,
+    'RArmFB': +0.1480,
+    'RArmTW': -0.2324,
+    'RArmUp': +0.3136,
+    'RElbow': -0.3364,
+    'RFootUD': +0.0333,
+    'RKnee': -0.0961,
+    'RLegFB': -0.0854,
+    'RLegIO': +0.0674,
+    'RWristIO': +0.0116,
+    'RWristUD': -0.1516,
+    'SpineFB': +0.1397,
+    'SpineLR': -0.0304,
+    'SpineTW': -0.0196,
 }
 
 # raw anatomical convention: forward/left/up positive, twist by right hand
@@ -167,9 +167,16 @@ def extract_angles(rotmats):
             ('R', R_COLLAR, R_SHOULDER, R_ELBOW, R_WRIST, -LEFT)):
         R_arm = R[collar] @ R[shoulder]
         d = R_arm @ lat
-        # elevation relative to hanging at the side (t-pose lateral = +90)
-        ang[f'{side}ArmUp'] = math.asin(_clamp(float(d @ UP))) + math.pi / 2
-        ang[f'{side}ArmFB'] = math.atan2(float(d @ FWD), float(d @ lat))
+        # coronal plane angle: hanging = 0 (after +90 shift), t-pose = +90,
+        # adduction past the body goes negative, continuous through a wave.
+        # the old spherical azimuth had its pole AT the hanging arm, so tiny
+        # wobbles read as wild front/back swings and pulled the hands inward.
+        raw_up = math.atan2(float(d @ UP), float(d @ lat)) + math.pi / 2
+        coronal = math.hypot(float(d @ UP), float(d @ lat))
+        w = min(1.0, coronal / 0.25)  # pure-forward reach leaves the angle ill defined, hold rest
+        rest_up = REST_RAD.get(f'{side}ArmUp', 0.0)
+        ang[f'{side}ArmUp'] = w * raw_up + (1.0 - w) * rest_up
+        ang[f'{side}ArmFB'] = math.asin(_clamp(float(d @ FWD)))
         ang[f'{side}ArmTW'] = _twist_angle(R_arm, lat)
         ang[f'{side}Elbow'] = -math.acos(_clamp(float((R[elbow] @ lat) @ lat)))  # 0 straight, negative bent
         d_hand = R[wrist] @ lat
