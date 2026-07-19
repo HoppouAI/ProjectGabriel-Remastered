@@ -104,19 +104,54 @@ REST_PRESETS = {
         'SpineLR': -0.0329,
         'SpineTW': -0.0516,
     },
-    # hml3d: run probe_axes.py with the server on --model hml3d and paste here
-    'hml3d': {},
+    # measured off 150 frames of 'a person stands still without moving'
+    'hml3d': {
+        'HeadNod': +0.2841,
+        'HeadTilt': +0.1776,
+        'HeadTurn': +0.3153,
+        'HipsPitch': -0.0634,
+        'HipsRoll': +0.0007,
+        'LArmFB': -0.0679,
+        'LArmTW': +0.0991,
+        'LArmUp': +0.1147,
+        'LElbow': -0.3791,
+        'LFootUD': -0.0772,
+        'LKnee': -0.0494,
+        'LLegFB': -0.1272,
+        'LLegIO': -0.0442,
+        'LWristIO': -0.0294,
+        'LWristUD': -0.1218,
+        'RArmFB': -0.2066,
+        'RArmTW': +0.1026,
+        'RArmUp': +0.0600,
+        'RElbow': -0.4169,
+        'RFootUD': +0.0583,
+        'RKnee': -0.0543,
+        'RLegFB': -0.1191,
+        'RLegIO': +0.0291,
+        'RWristIO': -0.0676,
+        'RWristUD': -0.0366,
+        'SpineFB': +0.0987,
+        'SpineLR': -0.0090,
+        'SpineTW': -0.0428,
+    },
 }
 REST_RAD = REST_PRESETS['babel']
 
+# lowest joint z of each models standing pose (origin at seed pelvis), the
+# dart floor plane sits there. measured alongside the rest probe.
+FLOOR_DROP = {'babel': 0.984, 'hml3d': 0.971}
+FLOOR_DROP_M = FLOOR_DROP['babel']
+
 
 def set_rest(name):
-    global REST_RAD
+    global REST_RAD, FLOOR_DROP_M
     preset = REST_PRESETS.get(name)
     if not preset:
         print(f'warning: no rest preset for {name!r}, using babel values')
         preset = REST_PRESETS['babel']
     REST_RAD = preset
+    FLOOR_DROP_M = FLOOR_DROP.get(name, FLOOR_DROP['babel'])
 
 # raw anatomical convention: forward/left/up positive, twist by right hand
 # rule about the rest bone axis. unity muscle naming has the FIRST word as
@@ -298,10 +333,10 @@ class Retargeter:
 
         # ground clamp: rollout drift can sink the whole body below the dart
         # floor and it never recovers. the floor plane sits where the standing
-        # feet are (min joint z ~= -0.984, origin is at the seed pelvis).
+        # feet are (FLOOR_DROP per model, origin is at the seed pelvis).
         # shift up so the lowest joint stays at/above the floor, never push
         # down (jumps stay real).
-        floor_z = self.smpl_stand_z - 0.984
+        floor_z = self.smpl_stand_z - FLOOR_DROP_M
         ground_shift = max(0.0, floor_z - float(joints[:, 2].min()))
         pelvis_z = float(joints[PELVIS][2]) + ground_shift
         dz = pelvis_z - self.smpl_stand_z
