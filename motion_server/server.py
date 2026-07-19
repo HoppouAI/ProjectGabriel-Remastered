@@ -163,6 +163,17 @@ class MotionEngine:
             # drop queued future frames so the new prompt kicks in next primitive
             self.motion_tensor = self.motion_tensor[:, :max(self.frame_idx + 1, self.history_length), :]
 
+    def reset(self):
+        """wipe rollout context back to the seed standing pose."""
+        with self.lock:
+            batch = self.dataset.get_batch(batch_size=1)
+            input_motions = batch[0]['motion_tensor_normalized'].to(self.device)
+            motion = input_motions.squeeze(2).permute(0, 2, 1)
+            self.motion_tensor = self.dataset.denormalize(motion[:, :self.history_length, :])
+            self.frame_idx = 0
+            self.prompt = DEFAULT_PROMPT
+            self.text_embedding = self._encode(DEFAULT_PROMPT)
+
     @torch.no_grad()
     def _rollout(self):
         sample_fn = self.diffusion.ddim_sample_loop if self.respacing else self.diffusion.p_sample_loop
@@ -244,6 +255,7 @@ class MotionEngine:
 
 async def client_loop(ws, engine, retargeter, send_raw):
     print(f'client connected: {ws.remote_address}')
+    state = {'paused': False}
 
     async def receiver():
         async for raw in ws:
@@ -251,19 +263,34 @@ async def client_loop(ws, engine, retargeter, send_raw):
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            if msg.get('type') == 'prompt':
+            mtype = msg.get('type')
+            if mtype == 'prompt':
                 text = str(msg.get('text', '')).strip() or DEFAULT_PROMPT
                 print(f'prompt: {text!r}')
                 await asyncio.to_thread(engine.set_prompt, text)
-            elif msg.get('type') == 'stop':
+                state['paused'] = False
+            elif mtype == 'stop':
                 print('prompt: stop -> stand')
                 await asyncio.to_thread(engine.set_prompt, DEFAULT_PROMPT)
+            elif mtype == 'pause':
+                print('paused')
+                state['paused'] = True
+            elif mtype == 'reset':
+                print('reset -> seed stand, paused')
+                await asyncio.to_thread(engine.reset)
+                if retargeter is not None:
+                    retargeter.reset_root()
+                state['paused'] = True
 
     recv_task = asyncio.create_task(receiver())
     frame_interval = 1.0 / FPS
     next_send = time.monotonic()
     try:
         while not recv_task.done():
+            if state['paused']:
+                await asyncio.sleep(0.05)
+                next_send = time.monotonic()
+                continue
             frame = await asyncio.to_thread(engine.next_frame)
             payload = {'type': 'frame', 't': frame['t']}
             if retargeter is not None:

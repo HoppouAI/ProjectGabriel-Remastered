@@ -30,6 +30,7 @@ class ToolHandler:
             emotions_tools,
             mapping,
             memory_tools,
+            motion,
             movement,
             music,
             personalities,

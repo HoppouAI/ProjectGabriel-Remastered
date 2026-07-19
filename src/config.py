@@ -565,6 +565,26 @@ class Config:
         return self.get("yolo", "enabled", default=True)
 
     @property
+    def motion_enabled(self):
+        return self.get("motion", "enabled", default=False)
+
+    @property
+    def motion_server_host(self):
+        return self.get("motion", "server_host", default="127.0.0.1")
+
+    @property
+    def motion_server_port(self):
+        return self.get("motion", "server_port", default=8765)
+
+    @property
+    def motion_walk_full_speed(self):
+        return self.get("motion", "walk_full_speed", default=2.0)
+
+    @property
+    def motion_turn_full_rate(self):
+        return self.get("motion", "turn_full_rate", default=1.8)
+
+    @property
     def face_tracker_enabled(self):
         return self.get("face_tracker", "enabled", default=False)
 

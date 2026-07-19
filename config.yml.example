@@ -515,6 +515,22 @@ wanderer:
   # random_turn_chance: 0.02  # chance per tick to make an exploratory turn
   # jump_chance: 0.012        # chance per tick to hop (clears small ledges)
 
+motion:
+  # Full body motion generation (dance, sit, wave, etc). Needs the motion
+  # server from motion_server/ running, usually on a separate PC with a GPU,
+  # plus the DesktopFBT puppet rig on your avatar. When enabled the AI gets
+  # tools to perform motions, stop them, and reset its pose.
+  enabled: false
+  # Where the motion server is listening (ip of the GPU PC on your LAN)
+  server_host: "127.0.0.1"
+  server_port: 8765
+  # How generated movement maps to VRChat inputs. walk_full_speed is the
+  # avatar speed in meters per second at full stick, turn_full_rate is how
+  # fast he turns (radians per second) at full look input. Only touch these
+  # if walking looks like sliding or turning overshoots.
+  walk_full_speed: 2.0
+  turn_full_rate: 1.8
+
 vision:
   # Screen capture for Gemini Live vision
   # Allows the AI to SEE what's on your screen
