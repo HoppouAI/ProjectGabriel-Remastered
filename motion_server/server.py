@@ -57,12 +57,16 @@ MODELS = {
         'checkpoint': './mld_denoiser/mld_fps_clip_repeat_euler/checkpoint_300000.pt',
         'seed': './data/stand.pkl',
         'idle_prompt': 'stand',
+        # 30fps playback cant afford full sampling (24fps gen), ddim5 keeps margin
+        'respacing': 'ddim5',
     },
     # hml3d variant understands full sentence prompts, runs 20fps, smplh bodies
     'hml3d': {
         'checkpoint': './mld_denoiser/smplh_hml3d_2_8_4/checkpoint_300000.pt',
         'seed': './data/stand_20fps.pkl',
         'idle_prompt': 'a person stands still',
+        # full 10 step sampling, what it was trained for, still 37fps vs 20 needed
+        'respacing': '',
     },
 }
 
@@ -117,14 +121,16 @@ def load_mld(denoiser_checkpoint, device):
 class MotionEngine:
     """owns the DART rollout state. all methods must be called from one thread."""
 
-    def __init__(self, device='cuda', guidance=5.0, use_predicted_joints=True, respacing='ddim5',
+    def __init__(self, device='cuda', guidance=5.0, use_predicted_joints=True, respacing=None,
                  model='babel'):
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
         self.guidance = guidance
         self.use_predicted_joints = use_predicted_joints
+        spec = MODELS[model]
+        if respacing is None:
+            respacing = spec['respacing']
         self.respacing = respacing
         self.model_name = model
-        spec = MODELS[model]
         self.lock = threading.Lock()
 
         print(f'loading models ({model})...')
@@ -359,7 +365,7 @@ async def main():
     ap.add_argument('--host', default='0.0.0.0')
     ap.add_argument('--port', type=int, default=8765)
     ap.add_argument('--guidance', type=float, default=5.0)
-    ap.add_argument('--respacing', default='ddim5', help="'' for full 10 step sampling")
+    ap.add_argument('--respacing', default=None, help="override sampling: '' = full 10 step, 'ddim5' fast. default follows the model")
     ap.add_argument('--model', default='babel', choices=list(MODELS), help='babel = verb prompts 30fps, hml3d = sentence prompts 20fps (needs smplh bodies)')
     ap.add_argument('--raw', action='store_true', help='include raw smplx data in frames')
     args = ap.parse_args()
