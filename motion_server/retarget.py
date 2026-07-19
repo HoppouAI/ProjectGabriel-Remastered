@@ -238,6 +238,7 @@ class Retargeter:
         self.smpl_stand_z = data.get('smplStandZ', 0.0)
         self.hipsy_down_m = data.get('hipsYDownMeters', 0.65)
         self.hipsy_up_m = data.get('hipsYUpMeters', 0.14)
+        self._prev_root = None  # (x, y, yaw) of the previous frame
 
         # chain gain (radians of joint motion per unit of param) each side of 0
         self.pos_gain = {}
@@ -288,7 +289,22 @@ class Retargeter:
         out['HipsY'] = _clamp(dz / self.hipsy_up_m if dz >= 0 else dz / self.hipsy_down_m)
 
         # extras for the client locomotion layer (not muscle params)
-        out['_yaw'] = ang['_yaw']
-        out['_x'] = float(joints[PELVIS][0])
-        out['_y'] = float(joints[PELVIS][1])
+        x, y, yaw = float(joints[PELVIS][0]), float(joints[PELVIS][1]), ang['_yaw']
+        out['_yaw'] = yaw
+        out['_x'] = x
+        out['_y'] = y
+        # body frame velocities at 30fps: forward, rightward (m/s), yaw rate
+        # (rad/s, positive = turn right)
+        if self._prev_root is not None:
+            px, py, pyaw = self._prev_root
+            dt = 1.0 / 30.0
+            dx, dy = x - px, y - py
+            s, c = math.sin(yaw), math.cos(yaw)
+            out['_vfwd'] = (dx * s + dy * c) / dt
+            out['_vside'] = (dx * c - dy * s) / dt
+            dyaw = (yaw - pyaw + math.pi) % (2.0 * math.pi) - math.pi
+            out['_vyaw'] = dyaw / dt
+        else:
+            out['_vfwd'] = out['_vside'] = out['_vyaw'] = 0.0
+        self._prev_root = (x, y, yaw)
         return out
