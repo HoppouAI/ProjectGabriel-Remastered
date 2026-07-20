@@ -585,6 +585,14 @@ class Config:
         return self.get("motion", "turn_full_rate", default=1.8)
 
     @property
+    def motion_pose_tracking(self):
+        return self.get("motion", "pose_tracking", default=False)
+
+    @property
+    def motion_pose_monitor(self):
+        return self.get("motion", "pose_monitor", default=1)
+
+    @property
     def face_tracker_enabled(self):
         return self.get("face_tracker", "enabled", default=False)
 

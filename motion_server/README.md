@@ -214,6 +214,36 @@ The client maps velocities to VRChat analog inputs (`/input/Vertical`,
 and a slower smoothing tau (0.4s) than the muscles (0.07s) because gait
 velocity pulses every step.
 
+### Closed loop locomotion (pose_tracking)
+
+By default locomotion is open loop: DART velocities go straight to the
+analog sticks and nothing checks where the avatar actually ended up, so
+long walks drift (stick response, collisions, frame pacing). With the pose
+exfil shader strip on the avatar (the same one voxel nav uses) the client
+can close the loop. Turn it on in `config.yml` under `motion:` by setting
+`pose_tracking: true` (and `pose_monitor` if VRChat is not on the primary
+monitor).
+
+How it works (`PoseTracker` in `src/motion_client.py`):
+- a `PoseExfilReader` polls the screen strip at 20 Hz for the real world
+  position + yaw
+- when the puppet activates (and after every reset) the first good pose is
+  paired with DART's `_x`/`_y`/`_yaw` as an anchor mapping DART world onto
+  VRChat world. DART is z-up (ground x/y), Unity y-up (ground x/z), both
+  yaws are right-positive, so the mapping is a plain 2d rotation by the
+  anchor heading offset
+- every frame the target pose = anchor ⊕ DART displacement, error is taken
+  in the avatar's body frame and fed as a P correction ON TOP of the
+  velocity feedforward: KP_POS 1.5 /s capped at 1.2 m/s, KP_YAW 2.0 /s
+  capped at 1.5 rad/s
+- poses older than 0.6s are ignored (decode hiccup, correction free-wheels
+  on feedforward alone); blind for 3s drops the anchor; error over 5m
+  (teleport/respawn) re-anchors instead of chasing
+
+If the strip can't be read at all it behaves exactly like open loop, so
+the option is safe to leave on.
+
+
 ## Calibration workflow (after retarget math or model changes)
 
 1. `python probe_axes.py "<stand prompt>" 150 <model>` prints a REST dict.

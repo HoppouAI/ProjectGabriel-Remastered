@@ -530,6 +530,15 @@ motion:
   # if walking looks like sliding or turning overshoots.
   walk_full_speed: 2.0
   turn_full_rate: 1.8
+  # Precise movement using the pose shader. If your avatar has the pose
+  # strip shader on it (the same one the voxel navigation system uses), set
+  # this to true and motions will track the real avatar position on screen
+  # and steer to match the generated path 1:1 instead of moving blindly.
+  # Falls back to blind movement automatically whenever the strip can't be
+  # read (shader off screen, wrong window, etc).
+  pose_tracking: false
+  # Which monitor VRChat is on (1 = primary). Only used by pose_tracking.
+  pose_monitor: 1
 
 vision:
   # Screen capture for Gemini Live vision

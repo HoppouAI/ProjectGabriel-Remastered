@@ -78,6 +78,8 @@ class MotionTools(BaseTool):
                 self.config.motion_server_port,
                 walk_full=self.config.motion_walk_full_speed,
                 turn_full=self.config.motion_turn_full_rate,
+                pose_tracking=self.config.motion_pose_tracking,
+                pose_monitor=self.config.motion_pose_monitor,
             )
         return self._client
 

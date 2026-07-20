@@ -39,8 +39,104 @@ def _snap_axis(v):
     return math.copysign(min(1.0, max(AXIS_DEADZONE, abs(v))), v)
 
 
+def _wrap_pi(a):
+    return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+
+class PoseTracker:
+    """closed loop locomotion using the pose exfil shader strip.
+
+    anchors darts world to vrchats world when tracking starts, then servos
+    the position/heading error on top of the velocity feedforward so the
+    avatar follows the generated trajectory 1:1 instead of dead reckoning.
+    dart is z-up (ground = x/y), vrchat is y-up (ground = x/z), both yaws
+    increase turning right, so the mapping is a plain 2d rotation.
+    """
+
+    KP_POS = 1.5        # m/s of correction per meter of error
+    KP_YAW = 2.0        # rad/s per rad
+    CORR_MAX = 1.2      # cap position correction so a desync cant send him sprinting
+    YAW_CORR_MAX = 1.5
+    STALE_S = 0.6       # ignore poses older than this (decode hiccup)
+    DROP_ANCHOR_S = 3.0 # long blind stretch, re-anchor on the next good pose
+    REANCHOR_DIST = 5.0 # error this big means a teleport/respawn, dont chase it
+
+    def __init__(self, monitor_index=1):
+        self._monitor = max(1, int(monitor_index))
+        self._reader = None
+        self._anchor = None  # (dart_x, dart_y, dart_yaw, vr_x, vr_z, vr_yaw_rad)
+
+    def start(self):
+        if self._reader is not None:
+            return
+        try:
+            from src.pose_decoder import PoseExfilReader
+            self._reader = PoseExfilReader(poll_hz=20.0, monitor_index=self._monitor)
+            self._reader.start()
+            logger.info("motion pose tracking: exfil reader started")
+        except Exception as e:
+            logger.warning(f"motion pose tracking unavailable ({e}), falling back to open loop")
+            self._reader = None
+
+    def stop(self):
+        if self._reader is not None:
+            self._reader.stop()
+            self._reader = None
+        self._anchor = None
+
+    def reset_anchor(self):
+        self._anchor = None
+
+    def correction(self, dart_x, dart_y, dart_yaw, now):
+        """returns (dv_fwd, dv_side, dv_yaw) to add to the feedforward, in
+        m/s / m/s / rad/s body frame. zeros when blind or just anchored."""
+        if self._reader is None:
+            return 0.0, 0.0, 0.0
+        pose = self._reader.get()
+        if pose is None:
+            return 0.0, 0.0, 0.0
+        age = now - pose.timestamp
+        if age > self.STALE_S:
+            if age > self.DROP_ANCHOR_S:
+                self._anchor = None
+            return 0.0, 0.0, 0.0
+
+        vr_yaw = math.radians(pose.yaw)
+        if self._anchor is None:
+            self._anchor = (dart_x, dart_y, dart_yaw, pose.x, pose.z, vr_yaw)
+            return 0.0, 0.0, 0.0
+
+        ax, ay, ayaw, vx0, vz0, vyaw0 = self._anchor
+        # dart displacement since anchor, mapped onto vrchats ground plane
+        # (dart x,y -> vr x,z) and rotated by the anchor heading offset
+        dx, dz = dart_x - ax, dart_y - ay
+        h = vyaw0 - ayaw
+        ch, sh = math.cos(h), math.sin(h)
+        tx = vx0 + dx * ch + dz * sh
+        tz = vz0 + dz * ch - dx * sh
+        tyaw = vyaw0 + _wrap_pi(dart_yaw - ayaw)
+
+        ex, ez = tx - pose.x, tz - pose.z
+        dist = math.hypot(ex, ez)
+        if dist > self.REANCHOR_DIST:
+            logger.info(f"motion pose tracking: {dist:.1f}m off target, re-anchoring")
+            self._anchor = (dart_x, dart_y, dart_yaw, pose.x, pose.z, vr_yaw)
+            return 0.0, 0.0, 0.0
+
+        # world error into body frame of the actual avatar heading
+        fwd_err = ex * math.sin(vr_yaw) + ez * math.cos(vr_yaw)
+        side_err = ex * math.cos(vr_yaw) - ez * math.sin(vr_yaw)
+        yaw_err = _wrap_pi(tyaw - vr_yaw)
+
+        clamp = lambda v, m: max(-m, min(m, v))
+        return (clamp(self.KP_POS * fwd_err, self.CORR_MAX),
+                clamp(self.KP_POS * side_err, self.CORR_MAX),
+                clamp(self.KP_YAW * yaw_err, self.YAW_CORR_MAX))
+
+
 class MotionClient:
-    def __init__(self, osc_client, host, port, walk_full=2.0, turn_full=1.8):
+    def __init__(self, osc_client, host, port, walk_full=2.0, turn_full=1.8,
+                 pose_tracking=False, pose_monitor=1):
         self._osc = osc_client
         self._uri = f"ws://{host}:{port}"
         self._ws = None
@@ -52,9 +148,11 @@ class MotionClient:
         self._target = {p: 0.0 for p in PARAMS}
         self._current = {p: 0.0 for p in PARAMS}
         self._vfwd = self._vside = self._vyaw = 0.0
+        self._dart_x = self._dart_y = self._dart_yaw = 0.0
         self._got_frame = False
         self._walk_full = walk_full
         self._turn_full = turn_full
+        self._tracker = PoseTracker(pose_monitor) if pose_tracking else None
         self.current_prompt = None
 
     # -- lifecycle --
@@ -78,6 +176,8 @@ class MotionClient:
         self._recv_task = self._send_task = None
         if self._active:
             self._set_active(False)
+        if self._tracker is not None:
+            self._tracker.stop()
 
     # -- commands --
 
@@ -106,6 +206,8 @@ class MotionClient:
             await self._send({"type": "reset"})
         self.current_prompt = None
         self._got_frame = False
+        if self._tracker is not None:
+            self._tracker.reset_anchor()
         if self._active:
             self._set_active(False)
 
@@ -132,6 +234,10 @@ class MotionClient:
     def _set_active(self, on):
         self._active = on
         self._osc.send_message(PREFIX + "Enable", bool(on))
+        if self._tracker is not None:
+            self._tracker.reset_anchor()
+            if on:
+                self._tracker.start()
         if not on:
             self._zero_inputs()
 
@@ -162,6 +268,9 @@ class MotionClient:
                         self._vfwd = float(params.get("_vfwd", 0.0))
                         self._vside = float(params.get("_vside", 0.0))
                         self._vyaw = float(params.get("_vyaw", 0.0))
+                        self._dart_x = float(params.get("_x", 0.0))
+                        self._dart_y = float(params.get("_y", 0.0))
+                        self._dart_yaw = float(params.get("_yaw", 0.0))
                         if not self._got_frame:
                             self._current.update(self._target)
                             self._got_frame = True
@@ -192,9 +301,13 @@ class MotionClient:
                         cur += (self._target[p] - cur) * alpha
                         self._current[p] = cur
                         self._osc.send_message(PREFIX + p, float(cur))
-                    sv += (self._vfwd / self._walk_full - sv) * beta
-                    sh += (self._vside / self._walk_full - sh) * beta
-                    sl += (self._vyaw / self._turn_full - sl) * beta
+                    cf = cs = cy = 0.0
+                    if self._tracker is not None:
+                        cf, cs, cy = self._tracker.correction(
+                            self._dart_x, self._dart_y, self._dart_yaw, now)
+                    sv += ((self._vfwd + cf) / self._walk_full - sv) * beta
+                    sh += ((self._vside + cs) / self._walk_full - sh) * beta
+                    sl += ((self._vyaw + cy) / self._turn_full - sl) * beta
                     self._osc.send_message("/input/Vertical", float(_snap_axis(sv)))
                     self._osc.send_message("/input/Horizontal", float(_snap_axis(sh)))
                     self._osc.send_message("/input/LookHorizontal", float(max(-1.0, min(1.0, sl))))
