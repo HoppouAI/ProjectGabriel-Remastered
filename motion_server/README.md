@@ -161,7 +161,10 @@ Rig facts (mirrored in retarget.py, keep in sync):
   Each param is a Simple1D tree over min/max clips writing humanoid muscle
   curves with chain weights (SpineFB = Spine 1.0 + Chest 0.7 + UpperChest 0.5).
 - HipsY = humanoid RootT.y. mid is the avatar standing body height
-  (0.98475 for gabriel), +0.15 up, -0.94811 down (0.90 smpl meters).
+  (0.98475 for gabriel), +0.80 smpl meters up (real jump apex, dart lifts
+  the pelvis ~0.74m on "a person jumps up high"), -1.00 down (pelvis
+  exactly on the floor at param -1). rig units = smpl meters * 1.05346
+  (in-game fudge measured against the 1.0148 humanScale avatar).
 - Hips rotation: pitch +-90 deg (+1 = forward), roll +-90 (+1 = his right),
   via two proxy transforms under the avatar root
   (FBT_HipsPitchProxy euler x -> FBT_HipsRollProxy euler z) and a

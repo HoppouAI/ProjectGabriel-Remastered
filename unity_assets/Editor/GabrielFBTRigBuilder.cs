@@ -53,10 +53,13 @@ namespace ProjectGabriel.Editor
 
         // HipsY drop below standing at param -1, in RootT units. derived as
         // smpl_meters * 1.05346 (in-game fudge measured against a 1.0148
-        // humanScale avatar). retarget.py hipsy_down_m must be the smpl value.
-        private const float HIPSY_DOWN_SMPL_M = 0.90f;
-        private const float HIPSY_DOWN_RIG = 0.94811f;
-        private const float HIPSY_UP_RIG = 0.15f;      // retarget hipsy_up_m 0.14
+        // humanScale avatar). retarget.py hipsy_down_m/up_m must be the smpl
+        // values. down 1.00 puts the pelvis exactly on the floor at -1, up
+        // 0.80 covers a real jump apex (dart lifts the pelvis ~0.74m).
+        private const float HIPSY_DOWN_SMPL_M = 1.00f;
+        private const float HIPSY_UP_SMPL_M = 0.80f;
+        private const float HIPSY_DOWN_RIG = HIPSY_DOWN_SMPL_M * 1.05346f;
+        private const float HIPSY_UP_RIG = HIPSY_UP_SMPL_M * 1.05346f;
 
         // param -> (unity muscle name, chain weight). mirrors PARAM_MUSCLES
         // in motion_server/retarget.py, keep the two in sync.
@@ -259,7 +262,7 @@ namespace ProjectGabriel.Editor
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("{");
             sb.AppendLine($"  \"humanScale\": {animator.humanScale:R},");
-            sb.AppendLine($"  \"hipsYUpMeters\": 0.14,");
+            sb.AppendLine($"  \"hipsYUpMeters\": {HIPSY_UP_SMPL_M:R},");
             sb.AppendLine($"  \"hipsYDownMeters\": {HIPSY_DOWN_SMPL_M:R},");
             sb.AppendLine("  \"muscles\": {");
             var names = HumanTrait.MuscleName;

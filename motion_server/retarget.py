@@ -293,8 +293,8 @@ class Retargeter:
         self.fps = fps
         # dart world floor is z=0 with the seed standing on it
         self.smpl_stand_z = data.get('smplStandZ', 0.0)
-        self.hipsy_down_m = data.get('hipsYDownMeters', 0.90)
-        self.hipsy_up_m = data.get('hipsYUpMeters', 0.14)
+        self.hipsy_down_m = data.get('hipsYDownMeters', 1.00)
+        self.hipsy_up_m = data.get('hipsYUpMeters', 0.80)
         self._prev_root = None  # (x, y, yaw) of the previous frame
 
         # chain gain (radians of joint motion per unit of param) each side of 0
