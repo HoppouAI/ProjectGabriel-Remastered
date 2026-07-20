@@ -121,6 +121,14 @@ def load_mld(denoiser_checkpoint, device):
 class MotionEngine:
     """owns the DART rollout state. all methods must be called from one thread."""
 
+    # gravity: pelvis height is model input, so a rollout that drifts airborne
+    # is out of distribution and never comes down on its own (and later
+    # prompts generate garbage from the floating history). after a real
+    # jump's worth of airtime, sink the whole state until floor contact.
+    CONTACT_TOL = 0.05   # lowest joint within this of the floor counts as grounded
+    AIR_GRACE_S = 0.7    # allowed continuous airtime before gravity kicks in
+    FALL_SPEED = 1.5     # m/s descent once it does
+
     def __init__(self, device='cuda', guidance=5.0, use_predicted_joints=True, respacing=None,
                  model='babel'):
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
@@ -175,6 +183,17 @@ class MotionEngine:
         self.idle_prompt = spec['idle_prompt']
         self.prompt = self.idle_prompt
         self.text_embedding = self._encode(self.idle_prompt)
+
+        # z columns of the feature layout (transl + every joint), used by the
+        # gravity shift. deltas are frame-to-frame so a rigid shift skips them.
+        offsets, off = {}, 0
+        for k, dim in self.primitive_utility.motion_repr.items():
+            offsets[k] = off
+            off += dim
+        self._z_cols = [offsets['transl'] + 2] + [offsets['joints'] + 3 * j + 2 for j in range(22)]
+        # seed pelvis stands at z=0, feet FLOOR_DROP below
+        self.floor_z = -retarget_mod.FLOOR_DROP[model]
+        self._air_time = 0.0
         print(f'engine ready on {self.device}, fps={self.fps} history={self.history_length} future={self.future_length}')
 
     def _encode(self, text):
@@ -217,6 +236,7 @@ class MotionEngine:
             self.frame_idx = 0
             self.prompt = self.idle_prompt
             self.text_embedding = self._encode(self.idle_prompt)
+            self._air_time = 0.0
 
     @torch.no_grad()
     def _rollout(self):
@@ -281,11 +301,26 @@ class MotionEngine:
         with self.lock:
             while self.frame_idx >= self.motion_tensor.shape[1]:
                 self._rollout()
-            feat = self.primitive_utility.tensor_to_dict(
-                self.motion_tensor[:, self.frame_idx:self.frame_idx + 1, :])
+            frame = self.motion_tensor[:, self.frame_idx:self.frame_idx + 1, :]
+            feat = self.primitive_utility.tensor_to_dict(frame)
+            joints = feat['joints'][0, 0].reshape(22, 3)
+
+            clearance = float(joints[:, 2].min()) - self.floor_z
+            if clearance > self.CONTACT_TOL:
+                self._air_time += 1.0 / self.fps
+            else:
+                self._air_time = 0.0
+            if self._air_time > self.AIR_GRACE_S and clearance > 0.0:
+                # sink history + queued future together so velocities stay
+                # clean and the next rollout sees a grounded history
+                dz = min(clearance, self.FALL_SPEED / self.fps)
+                self.motion_tensor[..., self._z_cols] -= dz
+                frame = self.motion_tensor[:, self.frame_idx:self.frame_idx + 1, :]
+                feat = self.primitive_utility.tensor_to_dict(frame)
+                joints = feat['joints'][0, 0].reshape(22, 3)
+
             transl = feat['transl'][0, 0]  # [3] world zup
             poses_6d = feat['poses_6d'][0, 0]  # [132]
-            joints = feat['joints'][0, 0].reshape(22, 3)  # world zup
             rotmats = transforms.rotation_6d_to_matrix(poses_6d.reshape(22, 6))  # [22,3,3]
             idx = self.frame_idx
             self.frame_idx += 1

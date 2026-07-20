@@ -287,6 +287,13 @@ the option is safe to leave on.
   pitch carries the rest of a deep bow, works fine in practice.
 - 8-bit param sync means 0.7 deg steps on the 90 deg hips ranges for REMOTE
   viewers (local is float precision, and vrchat interpolates).
+- Rollouts can drift airborne (jumps that never land). Pelvis height is
+  model input, so a floating history is out of distribution and gets worse
+  on its own. The engine applies gravity: if the lowest joint stays more
+  than 5cm off the floor past 0.7s of continuous airtime, the whole rollout
+  state (history + queued future, rigid shift so deltas stay consistent)
+  sinks at 1.5 m/s until floor contact. Tunables are constants on
+  MotionEngine in server.py.
 - The generation quality ceiling is DART itself (2022). The researched
   upgrade path is CLoSD DiP (realtime autoregressive, hml3d trained), a
   proper porting project.
