@@ -17,10 +17,16 @@ logger = logging.getLogger(__name__)
 PREFIX = "/avatar/parameters/FBT/"
 
 SEND_HZ = 60.0
-SMOOTH_TAU = 0.07   # muscle smoothing time constant, seconds
 LOCO_TAU = 0.4      # axes smooth over most of a stride so speed doesnt pulse per step
 AXIS_DEADZONE = 0.3
 AXIS_CUTOFF = 0.15
+
+# one euro filter for the muscle params: cutoff rises with signal speed, so a
+# still pose gets heavy smoothing (idle jitter would otherwise flicker across
+# vrchats 8-bit sync steps for remote viewers) while fast motion stays snappy.
+EURO_MIN_CUTOFF = 1.0   # hz at rest
+EURO_BETA = 3.0         # cutoff gain per unit/s of speed
+EURO_D_CUTOFF = 1.0     # hz, derivative low-pass
 
 PARAMS = [
     "SpineFB", "SpineLR", "SpineTW",
@@ -37,6 +43,31 @@ def _snap_axis(v):
     if abs(v) < AXIS_CUTOFF:
         return 0.0
     return math.copysign(min(1.0, max(AXIS_DEADZONE, abs(v))), v)
+
+
+def _lp_alpha(cutoff, dt):
+    r = 2.0 * math.pi * cutoff * dt
+    return r / (r + 1.0)
+
+
+class OneEuro:
+    def __init__(self):
+        self._x = None
+        self._dx = 0.0
+
+    def reset(self):
+        self._x = None
+        self._dx = 0.0
+
+    def __call__(self, x, dt):
+        if self._x is None:
+            self._x = x
+            return x
+        dx = (x - self._x) / dt
+        self._dx += (dx - self._dx) * _lp_alpha(EURO_D_CUTOFF, dt)
+        cutoff = EURO_MIN_CUTOFF + EURO_BETA * abs(self._dx)
+        self._x += (x - self._x) * _lp_alpha(cutoff, dt)
+        return self._x
 
 
 def _wrap_pi(a):
@@ -146,7 +177,7 @@ class MotionClient:
         self._connected = asyncio.Event()
         self._active = False  # puppet enabled and streaming to osc
         self._target = {p: 0.0 for p in PARAMS}
-        self._current = {p: 0.0 for p in PARAMS}
+        self._filters = {p: OneEuro() for p in PARAMS}
         self._vfwd = self._vside = self._vyaw = 0.0
         self._dart_x = self._dart_y = self._dart_yaw = 0.0
         self._got_frame = False
@@ -272,7 +303,9 @@ class MotionClient:
                         self._dart_y = float(params.get("_y", 0.0))
                         self._dart_yaw = float(params.get("_yaw", 0.0))
                         if not self._got_frame:
-                            self._current.update(self._target)
+                            # snap to the first frame, no glide from a stale pose
+                            for f in self._filters.values():
+                                f.reset()
                             self._got_frame = True
             except asyncio.CancelledError:
                 break
@@ -292,14 +325,11 @@ class MotionClient:
                 now = time.monotonic()
                 dt = max(1e-3, now - last)
                 last = now
-                alpha = 1.0 - math.exp(-dt / SMOOTH_TAU)
                 beta = 1.0 - math.exp(-dt / LOCO_TAU)
 
                 if self._active and self._got_frame:
                     for p in PARAMS:
-                        cur = self._current[p]
-                        cur += (self._target[p] - cur) * alpha
-                        self._current[p] = cur
+                        cur = self._filters[p](self._target[p], dt)
                         self._osc.send_message(PREFIX + p, float(cur))
                     cf = cs = cy = 0.0
                     if self._tracker is not None:
