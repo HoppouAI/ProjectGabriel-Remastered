@@ -520,6 +520,8 @@ motion:
   # server from motion_server/ running, usually on a separate PC with a GPU,
   # plus the DesktopFBT puppet rig on your avatar. When enabled the AI gets
   # tools to perform motions, stop them, and reset its pose.
+  # The server picks the model (--model babel/hml3d/core8), the client here
+  # doesn't care which backend is running.
   enabled: false
   # Where the motion server is listening (ip of the GPU PC on your LAN)
   server_host: "127.0.0.1"

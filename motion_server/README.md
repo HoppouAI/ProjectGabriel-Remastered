@@ -1,10 +1,18 @@
 # Motion Server
 
 Real time full body motion generation for Gabriel. Type a text prompt, a
-diffusion model ([DART](https://github.com/zkf1997/DART)) generates human
-motion frame by frame, and the frames stream over a websocket into VRChat as
-avatar puppet parameters. He dances, sits, bows, lies down, waves, and
-walking motions physically move him through the world.
+diffusion model generates human motion frame by frame, and the frames stream
+over a websocket into VRChat as avatar puppet parameters. He dances, sits,
+bows, lies down, waves, and walking motions physically move him through the
+world.
+
+Two backends share one server and one protocol:
+
+- [DART](https://github.com/zkf1997/DART) (`babel`, `hml3d`): the original
+  backend, vendored tree in `DART/`, runs in `.venv`
+- [ARDY](https://github.com/nv-tlabs/ardy) (`core8`): nvidia's autoregressive
+  motion diffusion, noticeably higher quality and better style control,
+  clone in `ARDY/`, runs in `.venv-ardy`
 
 This README documents the ENTIRE system, including the parts that live
 outside this repo (the Unity rig), so everything can be rebuilt from nothing.
@@ -15,17 +23,17 @@ outside this repo (the Unity rig), so everything can be rebuilt from nothing.
 prompt ("a person dances energetically")
    |
    v
-DART rollout engine (server.py, GPU)          motion primitives, 8 future
-   |   SMPL body frames at model fps          frames per denoise step
+rollout engine (dart_engine.py or ardy_engine.py, GPU)
+   |   world space body frames at model fps
    v
-retarget.py                                   SMPL world frames -> 29 FBT
+retarget.py / retarget_core.py               world frames -> 29 FBT
    |   muscle params + locomotion velocities  params + body frame velocity
    v
-websocket (port 8765, json frames)
+websocket (port 8765, json frames, server.py)
    |
    v
-src/motion_client.py (main app)               60hz OSC sender, exponential
-   |   smoothing, locomotion mapping          smoothing tau 0.07s
+src/motion_client.py (main app)               60hz OSC sender, one euro
+   |   smoothing, locomotion mapping          filter per param
    v
 VRChat OSC (/avatar/parameters/FBT/*, /input/Vertical ...)
    |
@@ -34,15 +42,16 @@ DesktopFBT puppet rig on the avatar           direct blend tree + VRC
                                               rotation constraint
 ```
 
-Two model variants, selectable with `--model`:
+Three models, selectable with `--model`:
 
-| | `babel` (default) | `hml3d` |
-|---|---|---|
-| prompts | bare action verbs ("dance", "sit down") | full sentences ("a person dances energetically") |
-| fps | 30 | 20 |
-| bodies | SMPL-X | SMPL-H |
-| sampling | ddim5 (full 10 step cant hold 30fps) | full 10 step (trained config) |
-| quality | okay | noticeably better, use this one |
+| | `babel` (default) | `hml3d` | `core8` (ARDY) |
+|---|---|---|---|
+| prompts | bare action verbs ("dance") | full sentences | full sentences, best style following |
+| fps | 30 | 20 | 20 |
+| bodies | SMPL-X | SMPL-H | Core-27 skeleton |
+| sampling | ddim5 | full 10 step | 8 of 10 steps (realtime margin on a 3060) |
+| venv | `.venv` | `.venv` | `.venv-ardy` |
+| quality | okay | better | best, understands zombie/limp/sneak style prompts |
 
 The server normalizes incoming prompts to whichever style its model was
 trained on (wraps terse verbs in "a person ..." for hml3d, strips the
@@ -186,16 +195,60 @@ Rig facts (mirrored in retarget.py, keep in sync):
 humanScale + hips travel used by retarget.py. Regenerate with
 Tools > ProjectGabriel > Export muscle_ranges.json if the avatar changes.
 
+### 6. ARDY backend (optional, the good one)
+
+Separate venv because it wants modern torch/transformers that DART's
+vendored 2022 code can't share. From `motion_server/`:
+
+```
+..\bin\uv.exe venv .venv-ardy --python 3.11
+git clone https://github.com/nv-tlabs/ardy ARDY
+..\bin\uv.exe pip install --python .venv-ardy\Scripts\python.exe -e ARDY
+..\bin\uv.exe pip install --python .venv-ardy\Scripts\python.exe torch --index-url https://download.pytorch.org/whl/cu126
+..\bin\uv.exe pip install --python .venv-ardy\Scripts\python.exe bitsandbytes websockets
+```
+
+ARDY's foot skate cleanup is a small C++ extension (`motion_correction`),
+build it with MinGW if the editable install didn't
+(`python -c "from motion_correction import motion_postprocess"` to check).
+
+The `core8` checkpoint (nvidia/ARDY-Core-RP-20FPS-Horizon8, 765MB,
+Apache/NVIDIA Open Model) downloads itself into the HF cache on first run.
+
+The text encoder is the gated part upstream: ARDY wants LLM2Vec on top of
+meta-llama/Meta-Llama-3-8B-Instruct (16GB, meta approval wall). We skip the
+wall with a community NF4 quant of the already-merged encoder:
+
+```
+huggingface-cli download Aero-Ex/KIMODO-Meta3_llm2vec_NF4 --local-dir text_encoders/llm2vec_nf4
+```
+
+5.5GB on disk, 4.65GB VRAM, loads through ARDY's own `LLM2VecEncoder` with
+`peft_model_name_or_path=None` (the adapters are already merged in). Total
+server VRAM ~5.7GB. If that repo ever disappears, the merge can be rebuilt
+from the kuotient Llama-3-8B-Instruct mirror + McGill-NLP llm2vec adapters
+(mntp then supervised): merge both LoRAs, quantize NF4, and mind the key
+prefixes, the adapters were saved on a bare LlamaModel so their keys sit one
+level shallower than the merged model expects, and mntp vs supervised nest
+differently. Keep `_name_or_path` pointing at the meta repo name in
+config.json so ARDY applies the right prompt wrapping.
+
+Speed on an RTX 3060 12GB (Gate A, 6s clips): 8 denoise steps = 27fps mean /
+24fps worst chunk, 10 steps = 22fps mean / 18fps worst. Default is 8 steps
+(`--steps`), which holds 20fps realtime with margin.
+
 ## Running
 
 ```
 motion_server\.venv\Scripts\python.exe motion_server\server.py --model hml3d
+motion_server\.venv-ardy\Scripts\python.exe motion_server\server.py --model core8
 ```
 
-Flags: `--model babel|hml3d`, `--port 8765`, `--guidance 5.0` (3 = looser
-and more natural, 7 = obeys prompts harder but stiff), `--respacing`
-(override sampling, `''` = full 10 step, `ddim5` = fast; default follows the
-model), `--raw` (include raw smpl data in frames).
+Flags: `--model babel|hml3d|core8`, `--port 8765`, `--raw` (include raw
+joint data in frames). DART only: `--guidance 5.0` (3 = looser and more
+natural, 7 = obeys prompts harder but stiff), `--respacing` (override
+sampling, `''` = full 10 step, `ddim5` = fast). ARDY only: `--steps 8`
+(denoise steps, 10 max).
 
 Main app side: `config.yml` -> `motion:` section (`enabled: true`,
 `server_host`/`server_port` pointing at the GPU box). Gemini gets three
@@ -249,6 +302,8 @@ the option is safe to leave on.
 
 ## Calibration workflow (after retarget math or model changes)
 
+DART models:
+
 1. `python probe_axes.py "<stand prompt>" 150 <model>` prints a REST dict.
    Paste into `REST_PRESETS[<model>]` in retarget.py. Stand prompts:
    babel "stand", hml3d "a person stands still without moving".
@@ -257,6 +312,16 @@ the option is safe to leave on.
    clamp shifts frames up so nothing sinks under the dart floor, never down.
 3. `python test_generate.py "<prompt>" <seconds> <model>` sanity checks
    speed and param ranges without vrchat.
+
+ARDY (`.venv-ardy` python):
+
+1. `python probe_core.py [stand clip .npz]` prints CORE_REST plus the stand
+   height constants, paste into retarget_core.py.
+2. `python test_generate_ardy.py "<prompt>" <seconds>` sanity checks speed
+   and param ranges, writes test_frames.json for the unity sampler.
+
+Either backend:
+
 4. `python ../scripts/test_motion_stream.py <host> "<prompt>"` streams to
    vrchat from a terminal, stdin switches prompts.
 5. `python ../scripts/test_hips_axes.py` sweeps HipsPitch/HipsRoll over OSC
@@ -281,6 +346,25 @@ the option is safe to leave on.
 - Yaw extraction blends the pelvis forward axis with the up axis so lying
   or bowing does not gimbal the locomotion heading.
 
+### ARDY conventions (retarget_core.py)
+
+- ARDY world is y-up meters, floor exactly y=0, faces +z at heading 0,
+  +x is the model's LEFT. `global_root_heading = (cos t, sin t)` with
+  positive t turning LEFT. Conversion to the DART/client convention the
+  protocol speaks: `x = -x`, `y = z`, `yaw = -atan2(h1, h0)`.
+- Core-27 skeleton (`cskel27`): hips/spine/neck/head chain, 6-joint arms
+  (shoulder/arm/forearm/hand/handEnd/thumb), 4-joint legs. Torso and foot
+  bind orientations are world aligned at stand so the anatomical basis is
+  the model frame itself; arm binds are NOT world aligned, so arms, wrists
+  and legs are all solved from joint positions (same formulas as the SMPL
+  path), with the constant bind offsets absorbed by CORE_REST calibration.
+- Yaw comes from the model's own smoothed heading channel instead of the
+  pelvis axes, which is more stable when lying or tumbling.
+- The engine keeps a normalized rollout tensor and feeds its tail (2s cap,
+  multiple of the 4-frame token) back as history each `autoregressive_step`,
+  exactly like nvidia's interactive demo. Prompt switches truncate queued
+  frames but keep at least one token of history so transitions blend.
+
 ## Known limits
 
 - Spine chain maxes at ~78 deg of flexion (unity muscle limits); pelvis
@@ -289,11 +373,13 @@ the option is safe to leave on.
   viewers (local is float precision, and vrchat interpolates).
 - Rollouts can drift airborne (jumps that never land). Pelvis height is
   model input, so a floating history is out of distribution and gets worse
-  on its own. The engine applies gravity: if the lowest joint stays more
-  than 5cm off the floor past 0.7s of continuous airtime, the whole rollout
-  state (history + queued future, rigid shift so deltas stay consistent)
-  sinks at 1.5 m/s until floor contact. Tunables are constants on
-  MotionEngine in server.py.
-- The generation quality ceiling is DART itself (2022). The researched
-  upgrade path is CLoSD DiP (realtime autoregressive, hml3d trained), a
-  proper porting project.
+  on its own. The DART engine applies gravity: if the lowest joint stays
+  more than 5cm off the floor past 0.7s of continuous airtime, the whole
+  rollout state (history + queued future, rigid shift so deltas stay
+  consistent) sinks at 1.5 m/s until floor contact. Tunables are constants
+  on MotionEngine in dart_engine.py. ARDY hasn't needed this so far (its
+  training data grounds much harder); if it starts floating, port the same
+  trick into ardy_engine.py.
+- ARDY generates in 0.4s chunks, so a chunk that takes longer than realtime
+  shows up as a burst. The server carries up to 0.6s of catch-up debt and
+  the client's one euro filter smooths the bursts out.
