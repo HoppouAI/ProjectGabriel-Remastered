@@ -66,6 +66,15 @@ class ArdyEngine:
         self.frame_idx = 0         # absolute index of the next frame to serve
         self.prompt = self.idle_prompt
         self._text_feat = self._encode(self.idle_prompt)
+
+        # lookahead worker: generates the next chunk on the gpu while the
+        # current one streams out, otherwise every chunk boundary is a ~300ms
+        # stall followed by an 8 frame burst and motion looks like a slideshow
+        self._cond = threading.Condition(self.lock)
+        self._epoch = 0            # bumped on prompt switch / reset, voids in-flight chunks
+        self._lookahead = 2 * self._horizon
+        self._worker_err = None
+        threading.Thread(target=self._worker_loop, daemon=True).start()
         print(f'ardy engine ready on {self.device}, fps={self.fps} patch={self._patch} '
               f'horizon={self._horizon} steps={self._steps}')
 
@@ -94,6 +103,8 @@ class ArdyEngine:
         """drop frames generated under the previous prompt. with cut_history,
         also shrink kept history to one token so the old pose stops acting as
         an attractor (long history dominates the text condition)."""
+        self._epoch += 1  # void any chunk the worker has in flight
+        self._cond.notify_all()
         if self._motion is None:
             return
         keep = max(self.frame_idx + 1 - self._motion_base, self._patch)
@@ -132,11 +143,34 @@ class ArdyEngine:
             self.prompt = self.idle_prompt
             self._recover_at = None
             self._text_feat = self._encode(self.idle_prompt)
+            self._epoch += 1
+            self._cond.notify_all()
 
-    # -- generation --
+    # -- generation (worker thread) --
 
-    @torch.no_grad()
-    def _generate_chunk(self):
+    def _worker_loop(self):
+        try:
+            while True:
+                with self._cond:
+                    while (len(self._frames) - (self.frame_idx - self._frames_base)
+                           >= self._lookahead):
+                        self._cond.wait(0.05)
+                    snap = self._snapshot()
+                samples, frames = self._run_step(snap)
+                with self._cond:
+                    if snap['epoch'] == self._epoch:
+                        self._append(samples, frames)
+                        self._cond.notify_all()
+                    # else: prompt/reset landed mid generation, discard
+        except Exception as e:
+            with self._cond:
+                self._worker_err = e
+                self._cond.notify_all()
+
+    def _snapshot(self):
+        """grab everything a generation step needs, under the lock. tensors
+        are immutable once created (truncation reslices, append cats), so
+        holding references is safe."""
         if self._motion is None:
             hist, hist_len = None, 0
             init_t = torch.zeros(1, 3, device=self.device)
@@ -145,26 +179,27 @@ class ArdyEngine:
             hist_len = min(self._motion.shape[1], self._hist_cap) // self._patch * self._patch
             hist = self._motion[:, -hist_len:]
             init_t = init_h = None
+        return {'epoch': self._epoch, 'text_feat': self._text_feat,
+                'hist': hist, 'hist_len': hist_len, 'init_t': init_t, 'init_h': init_h}
 
-        mask = torch.ones(1, self._text_feat.shape[1], device=self.device, dtype=torch.bool)
+    @torch.no_grad()
+    def _run_step(self, snap):
+        """the gpu heavy part, runs outside the lock."""
+        hist_len = snap['hist_len']
+        text_feat = snap['text_feat']
+        mask = torch.ones(1, text_feat.shape[1], device=self.device, dtype=torch.bool)
         samples = self.model.autoregressive_step(
             num_frames=hist_len + self._horizon,
             num_denoising_steps=self._steps,
             motion_mask=None, observed_motion=None,
             cfg_weight=self._cfg,
-            texts=None, text_feat=self._text_feat, text_pad_mask=mask,
-            init_history_sequence=hist,
-            init_global_translation=init_t,
-            init_first_heading_angle=init_h,
+            texts=None, text_feat=text_feat, text_pad_mask=mask,
+            init_history_sequence=snap['hist'],
+            init_global_translation=snap['init_t'],
+            init_first_heading_angle=snap['init_h'],
         )
         out = self.model.motion_rep.inverse(
             self.model.motion_rep.unnormalize(samples), is_normalized=False)
-
-        new = samples[:, hist_len:]
-        if self._motion is None:
-            self._motion = new
-        else:
-            self._motion = torch.cat([self._motion, new], dim=1)
 
         def np_of(key):
             return out[key][0, hist_len:].float().cpu().numpy()
@@ -174,14 +209,21 @@ class ArdyEngine:
         heading = np_of('global_root_heading')
         root = np_of('root_positions')
         smooth = np_of('smooth_root_pos')
-        for i in range(joints.shape[0]):
-            self._frames.append({
-                'joints': joints[i], 'rotmats': rots[i], 'heading': heading[i],
-                'root_pos': root[i], 'smooth_root': smooth[i],
-            })
+        frames = [{'joints': joints[i], 'rotmats': rots[i], 'heading': heading[i],
+                   'root_pos': root[i], 'smooth_root': smooth[i]}
+                  for i in range(joints.shape[0])]
+        return samples[:, hist_len:], frames
+
+    def _append(self, new, frames):
+        """attach a finished chunk, under the lock."""
+        if self._motion is None:
+            self._motion = new
+        else:
+            self._motion = torch.cat([self._motion, new], dim=1)
+        self._frames.extend(frames)
 
         # trim tails so hour-long sessions dont grow without bound
-        max_keep = self._hist_cap * 2
+        max_keep = max(self._hist_cap * 2, self._lookahead + self._hist_cap)
         if self._motion.shape[1] > max_keep:
             cut = self._motion.shape[1] - max_keep
             self._motion = self._motion[:, cut:]
@@ -201,10 +243,10 @@ class ArdyEngine:
         f = self._frames[i]
         return float(f['root_pos'][1]) > 0.75 and float(f['rotmats'][0][1, 1]) > 0.7
 
-    @torch.no_grad()
     def next_frame(self):
-        """generate as needed and return the next frame as plain python data."""
-        with self.lock:
+        """return the next frame as plain python data, waiting on the worker
+        if the buffer is empty (fresh prompt, cold start)."""
+        with self._cond:
             if self._recover_at is not None and self.frame_idx >= self._recover_at:
                 if self._upright() or self.frame_idx >= self._recover_cap:
                     # get-up transition played out, settle into the real idle.
@@ -217,8 +259,11 @@ class ArdyEngine:
                     # still mid rise (lying takes longer), check again shortly
                     self._recover_at = self.frame_idx + self._patch
             while self.frame_idx - self._frames_base >= len(self._frames):
-                self._generate_chunk()
+                if self._worker_err is not None:
+                    raise RuntimeError('ardy generation worker died') from self._worker_err
+                self._cond.wait(0.1)
             f = self._frames[self.frame_idx - self._frames_base]
             idx = self.frame_idx
             self.frame_idx += 1
+            self._cond.notify_all()  # buffer shrank, wake the worker
         return {'t': idx, **f}

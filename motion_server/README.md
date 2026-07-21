@@ -385,6 +385,8 @@ Either backend:
   on MotionEngine in dart_engine.py. ARDY hasn't needed this so far (its
   training data grounds much harder); if it starts floating, port the same
   trick into ardy_engine.py.
-- ARDY generates in 0.4s chunks, so a chunk that takes longer than realtime
-  shows up as a burst. The server carries up to 0.6s of catch-up debt and
-  the client's one euro filter smooths the bursts out.
+- ARDY generates in 0.4s chunks on a lookahead worker thread: the next chunk
+  renders on the gpu while the current one streams, so frames leave evenly at
+  20fps (measured p50 gap 47ms) instead of stall-then-burst. The server also
+  carries up to 0.6s of catch-up debt for chunks that overrun. If it still
+  hiccups on a shared gpu (vrchat on the same machine), drop to `--steps 6`.
