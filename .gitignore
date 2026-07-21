@@ -10,8 +10,13 @@ sfx/soundfonts/*
 
 # motion server -- upstream repo clone, models and checkpoints are huge
 motion_server/DART/
+motion_server/ARDY/
 motion_server/.venv/
+motion_server/.venv-ardy/
+motion_server/text_encoders/
 motion_server/body_models/
+motion_server/*.npz
+motion_server/test_frames.json
 
 __pycache__/
 *.py[cod]
