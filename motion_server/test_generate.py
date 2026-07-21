@@ -10,7 +10,7 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 
-from server import MotionEngine  # noqa: E402  (server sets up sys.path/chdir)
+from dart_engine import MotionEngine  # noqa: E402  (dart_engine sets up sys.path/chdir)
 from retarget import Retargeter  # noqa: E402
 
 

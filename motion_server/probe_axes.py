@@ -7,7 +7,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-from server import MotionEngine
+from dart_engine import MotionEngine
 from retarget import extract_angles
 import numpy as np
 
