@@ -90,12 +90,23 @@ def extract_angles_core(rotmats, joints, heading):
 
     ang['_yaw'] = -math.atan2(h1, h0)  # dart convention, + = right turn
 
-    # hips lean, yaw removed
+    # hips lean, yaw removed. decomposed as pitch-about-left THEN
+    # roll-about-body-fwd, exactly how the rig proxy chain composes it
+    # (pitch proxy parent, roll proxy child). the forward axis is invariant
+    # under the inner roll so pitch reads directly off it for the full
+    # -180..180, and roll is measured against the PITCHED frame, so there is
+    # no gimbal lock at lying flat (the old atan2(-up_x, up_y) went
+    # degenerate at pitch 90 and noise flipped it back and forth).
     R_hips_l = R_face.T @ R[HIPS]
     up_l = R_hips_l @ UP
     fwd_l = R_hips_l @ FWD
-    ang['HipsPitch'] = math.atan2(-fwd_l[1], fwd_l[2])   # lean forward positive
-    ang['HipsRoll'] = math.atan2(-up_l[0], up_l[1])      # lean right positive
+    p = math.atan2(-fwd_l[1], fwd_l[2])   # lean forward positive
+    cos_r = up_l[1] * math.cos(p) + up_l[2] * math.sin(p)
+    ang['HipsPitch'] = p
+    ang['HipsRoll'] = math.atan2(-up_l[0], cos_r)  # lean right positive
+    # roll confidence: near 0 when body-up lines up with the pitched forward
+    # axis (extreme twist), roll reading is then noise
+    ang['_roll_conf'] = math.hypot(up_l[0], cos_r)
 
     # body frame: everything below measured relative to the pelvis like the
     # smpl path, so bowing/lying keeps limb params sane
@@ -164,6 +175,26 @@ class CoreRetargeter(Retargeter):
         base.REST_PRESETS['core'] = CORE_REST
         base.set_rest('core')
         super().__init__(ranges_path, fps=fps)
+        self._prev_pitch = None
+        self._prev_roll = 0.0
+
+    def reset_root(self):
+        super().reset_root()
+        self._prev_pitch = None
+        self._prev_roll = 0.0
+
+    @staticmethod
+    def _continuous(angle, prev):
+        """pick the 2pi-equivalent closest to the previous frame so pitching
+        through 90 keeps going to 180 instead of folding back at the atan2
+        wrap. re-snap toward the principal value past 1.5 turns of buildup
+        (multiple continuous flips, accept one visible wrap there)."""
+        if prev is None:
+            return angle
+        c = angle + round((prev - angle) / (2.0 * math.pi)) * 2.0 * math.pi
+        if abs(c) > 1.5 * math.pi:
+            c -= math.copysign(2.0 * math.pi, c)
+        return c
 
     def frame_to_params(self, joints, rotmats, heading, root_pos, smooth_root):
         """joints [27,3], rotmats [27,3,3], heading [2], root_pos [3],
@@ -173,10 +204,16 @@ class CoreRetargeter(Retargeter):
         for param in PARAM_MUSCLES:
             out[param] = self._map(param, ang[param])
 
-        out['HipsPitch'] = _clamp(
-            math.degrees(ang['HipsPitch'] - base.REST_RAD.get('HipsPitch', 0.0)) / HIPS_PITCH_MAX_DEG)
-        out['HipsRoll'] = _clamp(
-            math.degrees(ang['HipsRoll'] - base.REST_RAD.get('HipsRoll', 0.0)) / HIPS_ROLL_MAX_DEG)
+        pitch = self._continuous(ang['HipsPitch'] - base.REST_RAD.get('HipsPitch', 0.0),
+                                 self._prev_pitch)
+        roll = ang['HipsRoll'] - base.REST_RAD.get('HipsRoll', 0.0)
+        if ang['_roll_conf'] < 0.2:
+            roll = self._prev_roll  # gimbal region, hold the last good value
+        else:
+            roll = self._continuous(roll, self._prev_roll)
+        self._prev_pitch, self._prev_roll = pitch, roll
+        out['HipsPitch'] = _clamp(math.degrees(pitch) / HIPS_PITCH_MAX_DEG)
+        out['HipsRoll'] = _clamp(math.degrees(roll) / HIPS_ROLL_MAX_DEG)
 
         # floor is y=0 exactly; only ever shift up (jumps stay real)
         ground_shift = max(0.0, STAND_FLOOR_CLEAR - float(joints[:, 1].min()))

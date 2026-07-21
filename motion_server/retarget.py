@@ -171,8 +171,11 @@ SCALE = {p: 1.0 for p in PARAM_MUSCLES}
 
 # rig blend grid ranges (FBT_HipsRot clips). regenerated 2026-07 at +-90 so
 # he can actually bow and lie down, was +-40/+-30 before
-HIPS_PITCH_MAX_DEG = 90.0
-HIPS_ROLL_MAX_DEG = 90.0
+# hips rotation range mapped over param -1..1. the rig proxy clips must
+# match (GabrielFBTRigBuilder PITCH_RANGE_DEG / ROLL_RANGE_DEG). 180 covers
+# handstands and lying face down/up in either direction.
+HIPS_PITCH_MAX_DEG = 180.0
+HIPS_ROLL_MAX_DEG = 180.0
 
 
 def _twist_angle(R, axis):

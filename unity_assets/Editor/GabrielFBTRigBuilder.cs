@@ -47,9 +47,11 @@ namespace ProjectGabriel.Editor
         private const string CLIP_DIR = OUT_DIR + "/Clips";
 
         // hips rotation range mapped over param -1..1. retarget.py
-        // HIPS_PITCH_MAX_DEG / HIPS_ROLL_MAX_DEG must match.
-        private const float PITCH_RANGE_DEG = 90f;
-        private const float ROLL_RANGE_DEG = 90f;
+        // HIPS_PITCH_MAX_DEG / HIPS_ROLL_MAX_DEG must match. 180 covers
+        // handstands and lying face down/up (proxy transforms blend euler
+        // curves per-curve, so the full range interpolates cleanly).
+        private const float PITCH_RANGE_DEG = 180f;
+        private const float ROLL_RANGE_DEG = 180f;
 
         // HipsY drop below standing at param -1, in RootT units. derived as
         // smpl_meters * 1.05346 (in-game fudge measured against a 1.0148
