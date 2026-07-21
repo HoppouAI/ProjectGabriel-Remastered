@@ -21,7 +21,7 @@ ENCODER_PATH = str(Path(__file__).parent / 'text_encoders' / 'llm2vec_nf4')
 class ArdyEngine:
     """owns the ARDY rollout state. all methods must be called from one thread."""
 
-    def __init__(self, model='core8', device='cuda', steps=8, hist_cap_s=2.0,
+    def __init__(self, model='core8', device='cuda', steps=8, hist_cap_s=0.6,
                  cfg_text=2.0, cfg_constraint=2.0):
         from ardy.model.llm2vec.llm2vec_wrapper import LLM2VecEncoder
         from ardy.model.load_model import load_model
@@ -48,6 +48,15 @@ class ArdyEngine:
         self._hist_cap = max(self._patch, int(hist_cap_s * self.fps) // self._patch * self._patch)
 
         self.idle_prompt = 'a person stands still'
+        # 'stands still' describes a state, not a transition: from a seated
+        # or lying history the model just keeps holding the pose. going to
+        # idle therefore plays a get-up prompt first (breaks the attractor in
+        # ~2.5s measured), then settles into the real idle.
+        self.recover_prompt = 'a person stands up'
+        self._recover_s = 3.0
+        self._recover_max_s = 10.0
+        self._recover_at = None   # earliest absolute frame to swap recover -> idle
+        self._recover_cap = None  # hard cap, settle even if not upright
         self._emb_cache = {}
 
         self._motion = None        # [1, T, D] normalized, tail of the rollout
@@ -81,20 +90,36 @@ class ArdyEngine:
             text = f'a person {text}'
         return text
 
+    def _truncate_to_served(self, cut_history):
+        """drop frames generated under the previous prompt. with cut_history,
+        also shrink kept history to one token so the old pose stops acting as
+        an attractor (long history dominates the text condition)."""
+        if self._motion is None:
+            return
+        keep = max(self.frame_idx + 1 - self._motion_base, self._patch)
+        keep = min(keep, self._motion.shape[1])
+        self._motion = self._motion[:, :keep]
+        fkeep = min(max(self.frame_idx + 1 - self._frames_base, 0), len(self._frames))
+        del self._frames[fkeep:]
+        if cut_history and self._motion.shape[1] > self._patch:
+            cut = self._motion.shape[1] - self._patch
+            self._motion = self._motion[:, cut:]
+            self._motion_base += cut
+
     def set_prompt(self, text):
         text = self.normalize_prompt(text)
         with self.lock:
-            self.prompt = text
-            self._text_feat = self._encode(text)
-            # drop frames generated under the old prompt, but keep at least
-            # one token of history so the transition stays continuous
-            if self._motion is not None:
-                keep = max(self.frame_idx + 1 - self._motion_base, self._patch)
-                keep = min(keep, self._motion.shape[1])
-                self._motion = self._motion[:, :keep]
-                fkeep = min(max(self.frame_idx + 1 - self._frames_base, 0), len(self._frames))
-                del self._frames[fkeep:]
-        return text
+            if text == self.idle_prompt and self._motion is not None:
+                # stop request: play the get-up transition first
+                self.prompt = self.recover_prompt
+                self._recover_at = self.frame_idx + int(self._recover_s * self.fps)
+                self._recover_cap = self.frame_idx + int(self._recover_max_s * self.fps)
+            else:
+                self.prompt = text
+                self._recover_at = None
+            self._text_feat = self._encode(self.prompt)
+            self._truncate_to_served(cut_history=True)
+        return self.prompt
 
     def reset(self):
         """forget the rollout, next motion spawns fresh at the origin."""
@@ -105,6 +130,7 @@ class ArdyEngine:
             self._frames_base = 0
             self.frame_idx = 0
             self.prompt = self.idle_prompt
+            self._recover_at = None
             self._text_feat = self._encode(self.idle_prompt)
 
     # -- generation --
@@ -166,10 +192,30 @@ class ArdyEngine:
             del self._frames[:cut]
             self._frames_base += cut
 
+    def _upright(self):
+        """is the currently served pose standing? hips near stand height and
+        the pelvis up axis pointing up."""
+        i = self.frame_idx - self._frames_base - 1
+        if not (0 <= i < len(self._frames)):
+            return True
+        f = self._frames[i]
+        return float(f['root_pos'][1]) > 0.75 and float(f['rotmats'][0][1, 1]) > 0.7
+
     @torch.no_grad()
     def next_frame(self):
         """generate as needed and return the next frame as plain python data."""
         with self.lock:
+            if self._recover_at is not None and self.frame_idx >= self._recover_at:
+                if self._upright() or self.frame_idx >= self._recover_cap:
+                    # get-up transition played out, settle into the real idle.
+                    # standing history is fine to keep, so no history cut.
+                    self._recover_at = None
+                    self.prompt = self.idle_prompt
+                    self._text_feat = self._encode(self.idle_prompt)
+                    self._truncate_to_served(cut_history=False)
+                else:
+                    # still mid rise (lying takes longer), check again shortly
+                    self._recover_at = self.frame_idx + self._patch
             while self.frame_idx - self._frames_base >= len(self._frames):
                 self._generate_chunk()
             f = self._frames[self.frame_idx - self._frames_base]

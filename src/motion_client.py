@@ -227,7 +227,8 @@ class MotionClient:
         self._cancel_timer()
         if self._ws is None:
             return
-        await self._send({"type": "prompt", "text": "stand"})
+        # server side 'stop' switches to the models own idle prompt
+        await self._send({"type": "stop"})
         self.current_prompt = "stand"
 
     async def reset(self):

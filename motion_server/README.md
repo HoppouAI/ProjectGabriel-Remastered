@@ -360,10 +360,15 @@ Either backend:
   path), with the constant bind offsets absorbed by CORE_REST calibration.
 - Yaw comes from the model's own smoothed heading channel instead of the
   pelvis axes, which is more stable when lying or tumbling.
-- The engine keeps a normalized rollout tensor and feeds its tail (2s cap,
-  multiple of the 4-frame token) back as history each `autoregressive_step`,
-  exactly like nvidia's interactive demo. Prompt switches truncate queued
-  frames but keep at least one token of history so transitions blend.
+- The engine keeps a normalized rollout tensor and feeds its tail back as
+  history each `autoregressive_step`. History is deliberately SHORT: on a
+  prompt switch it is cut to one 4-frame token, because a long history is an
+  attractor (2s of seated history and no prompt ever gets him up again,
+  nvidia's demo defaults to 4 frames for the same reason).
+- Stop requests play 'a person stands up' first and only settle into the
+  'stands still' idle once the pose is actually upright (hips above 0.75m,
+  pelvis up axis vertical, 10s hard cap). 'stands still' describes a state,
+  not a transition, so from sitting/lying it would just hold the pose.
 
 ## Known limits
 
