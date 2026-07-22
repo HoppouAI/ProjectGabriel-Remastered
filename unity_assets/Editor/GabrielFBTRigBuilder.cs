@@ -235,7 +235,14 @@ namespace ProjectGabriel.Editor
                 conType.GetField("RotationOffset").SetValue(con, offQ.eulerAngles);
                 conType.GetField("RotationAtRest").SetValue(con, hips.localRotation.eulerAngles);
                 conType.GetField("IsActive").SetValue(con, true);
-                conType.GetField("GlobalWeight").SetValue(con, 0f);  // released until puppet engages
+                // android's client does NOT apply animations to VRC constraint
+                // properties (found the hard way: quest saw zero hips rotation
+                // while PC worked). quest builds therefore run the constraint
+                // always-on (scene weight 1, hips slightly stiff outside the
+                // puppet), PC builds keep weight 0 and animate it to 1 inside
+                // the puppet state.
+                bool android = EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android;
+                conType.GetField("GlobalWeight").SetValue(con, android ? 1f : 0f);
                 conType.GetField("Locked").SetValue(con, true);
                 EditorUtility.SetDirty(con);
             }

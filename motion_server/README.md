@@ -390,3 +390,10 @@ Either backend:
   20fps (measured p50 gap 47ms) instead of stall-then-burst. The server also
   carries up to 0.6s of catch-up debt for chunks that overrun. If it still
   hiccups on a shared gpu (vrchat on the same machine), drop to `--steps 6`.
+- Android/Quest VRChat does not apply animations to VRC constraint
+  properties, so the hips rotation constraint can't be engaged by the puppet
+  state there. Quest builds of the rig run the constraint always-on instead
+  (GlobalWeight 1 in the scene, set automatically by the rig builder when the
+  active build target is Android). Cost: hips don't sway during normal
+  locomotion on quest. Both platform uploads must be redone whenever the
+  pitch/roll/HipsY ranges change, each carries its own baked clips.
