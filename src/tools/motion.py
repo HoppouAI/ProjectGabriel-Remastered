@@ -30,9 +30,11 @@ class MotionTools(BaseTool):
                     "forward slowly', 'a person waves with their right hand', 'a person jumps up and down'. "
                     "Style words strongly shape how it looks: slowly, excitedly, sneakily, 'like a zombie', "
                     "'while limping', 'like a gorilla', crawling, marching. Combos work too, e.g. 'a person "
-                    "walks in a circle while flapping their arms'. The motion keeps "
+                    "walks in a circle while flapping their arms'. With loop=true the motion keeps "
                     "going until you call playMotion again with a new description (switch directly, no "
-                    "stop needed in between) or stopMotion. Give seconds for one-off gestures that should "
+                    "stop needed in between) or stopMotion. With loop=false the action plays exactly once "
+                    "and you settle back to standing on your own, use it for flips, jumps, bows and other "
+                    "tricks so they don't repeat forever. Give seconds for looped gestures that should "
                     "auto-return to standing, like a 3 second wave."
                     "\n**Invocation Condition:** Call when you want to physically perform an action with "
                     "your body, when someone asks you to dance, sit, jump, act something out, or when it "
@@ -45,9 +47,10 @@ class MotionTools(BaseTool):
                     "type": "OBJECT",
                     "properties": {
                         "prompt": {"type": "STRING", "description": "Third-person action sentence, e.g. 'a person dances energetically'. One action per call."},
-                        "seconds": {"type": "NUMBER", "description": "Optional duration; auto-returns to standing after this many seconds"},
+                        "loop": {"type": "BOOLEAN", "description": "true = continuous motion that keeps going (walking, dancing, holding a pose like sitting or lying down). false = one-shot trick that ends back on your feet (backflip, jump, bow, spin, kick); it plays exactly once, then you return to standing automatically. It waits for the landing, so a continuous double flip completes fine. For counted repetitions with pauses in between ('do 3 backflips'), use loop=true with seconds instead."},
+                        "seconds": {"type": "NUMBER", "description": "Optional duration for looped motions; auto-returns to standing after this many seconds"},
                     },
-                    "required": ["prompt"],
+                    "required": ["prompt", "loop"],
                 },
             ),
             types.FunctionDeclaration(
@@ -91,12 +94,15 @@ class MotionTools(BaseTool):
             if not prompt:
                 return {"result": "error", "message": "prompt is required"}
             seconds = args.get("seconds")
+            once = not bool(args.get("loop", True))
             try:
-                await self._get_client().play(prompt, seconds=seconds)
+                await self._get_client().play(prompt, seconds=seconds, once=once)
             except ConnectionError as e:
                 return {"result": "error", "message": str(e)}
             msg = f"performing motion: {prompt}"
-            if seconds:
+            if once:
+                msg += " (one-shot, will return to standing when it lands)"
+            elif seconds:
                 msg += f" for {seconds:.0f}s, then back to standing"
             return {"result": "ok", "message": msg}
         elif name == "stopMotion":

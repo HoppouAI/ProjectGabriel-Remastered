@@ -212,10 +212,10 @@ class MotionClient:
 
     # -- commands --
 
-    async def play(self, prompt, seconds=None):
+    async def play(self, prompt, seconds=None, once=False):
         await self.ensure_connected()
         self._cancel_timer()
-        await self._send({"type": "prompt", "text": prompt})
+        await self._send({"type": "prompt", "text": prompt, "once": bool(once)})
         self.current_prompt = prompt
         if not self._active:
             self._set_active(True)

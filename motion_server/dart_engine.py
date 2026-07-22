@@ -211,7 +211,8 @@ class MotionEngine:
             text = f'a person {text}'
         return text
 
-    def set_prompt(self, text):
+    def set_prompt(self, text, once=False):
+        # once is an ardy backend feature (one-shot actions), dart just loops
         text = self.normalize_prompt(text)
         with self.lock:
             self.prompt = text

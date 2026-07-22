@@ -63,6 +63,16 @@ class ArdyEngine:
         self._recover_max_s = 10.0
         self._recover_at = None   # earliest absolute frame to swap recover -> idle
         self._recover_cap = None  # hard cap, settle even if not upright
+        # one-shot actions (backflip etc): instead of looping the prompt
+        # forever, watch for the body to leave the standing pose and come
+        # back to it, then settle into idle. a timer cap catches actions
+        # that never return upright (or never leave it, like waving).
+        self._once_active = False
+        self._once_left = False
+        self._once_run = 0
+        self._once_deadline = 0
+        self._once_max_s = 8.0
+        self._once_settle_s = 0.5
         self._emb_cache = {}
 
         self._motion = None        # [1, T, D] normalized, tail of the rollout
@@ -123,9 +133,10 @@ class ArdyEngine:
             self._motion = self._motion[:, cut:]
             self._motion_base += cut
 
-    def set_prompt(self, text):
+    def set_prompt(self, text, once=False):
         text = self.normalize_prompt(text)
         with self.lock:
+            self._once_active = False
             if text == self.idle_prompt and self._motion is not None:
                 # stop request: play the get-up transition first
                 self.prompt = self.recover_prompt
@@ -134,6 +145,11 @@ class ArdyEngine:
             else:
                 self.prompt = text
                 self._recover_at = None
+                if once:
+                    self._once_active = True
+                    self._once_left = False
+                    self._once_run = 0
+                    self._once_deadline = self.frame_idx + int(self._once_max_s * self.fps)
             self._text_feat = self._encode(self.prompt)
             self._truncate_to_served(cut_history=True)
         return self.prompt
@@ -148,6 +164,7 @@ class ArdyEngine:
             self.frame_idx = 0
             self.prompt = self.idle_prompt
             self._recover_at = None
+            self._once_active = False
             self._text_feat = self._encode(self.idle_prompt)
             self._epoch += 1
             self._cond.notify_all()
@@ -264,6 +281,29 @@ class ArdyEngine:
                 else:
                     # still mid rise (lying takes longer), check again shortly
                     self._recover_at = self.frame_idx + self._patch
+            if self._once_active:
+                # one-shot action: done once he leaves the standing pose and
+                # comes back to it for a settle period (a double flip stays
+                # non-upright between the flips, so it completes both first)
+                if not self._upright():
+                    self._once_left = True
+                    self._once_run = 0
+                elif self._once_left:
+                    self._once_run += 1
+                    if self._once_run >= int(self._once_settle_s * self.fps):
+                        self._once_active = False
+                        self.prompt = self.idle_prompt
+                        self._text_feat = self._encode(self.idle_prompt)
+                        self._truncate_to_served(cut_history=False)
+                if self._once_active and self.frame_idx >= self._once_deadline:
+                    # never came back on its own (held a pose, or the action
+                    # never leaves upright like waving), force the stop path
+                    self._once_active = False
+                    self.prompt = self.recover_prompt
+                    self._recover_at = self.frame_idx + int(self._recover_s * self.fps)
+                    self._recover_cap = self.frame_idx + int(self._recover_max_s * self.fps)
+                    self._text_feat = self._encode(self.prompt)
+                    self._truncate_to_served(cut_history=True)
             while self.frame_idx - self._frames_base >= len(self._frames):
                 if self._worker_err is not None:
                     raise RuntimeError('ardy generation worker died') from self._worker_err

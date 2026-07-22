@@ -77,8 +77,9 @@ async def client_loop(ws, engine, retargeter, params_of, raw_of, send_raw):
             mtype = msg.get('type')
             if mtype == 'prompt':
                 text = str(msg.get('text', '')).strip()
-                used = await asyncio.to_thread(engine.set_prompt, text)
-                print(f'prompt: {text!r} -> {used!r}')
+                once = bool(msg.get('once', False))
+                used = await asyncio.to_thread(engine.set_prompt, text, once)
+                print(f'prompt: {text!r} -> {used!r}{" (once)" if once else ""}')
                 state['paused'] = False
             elif mtype == 'stop':
                 print('prompt: stop -> idle')
