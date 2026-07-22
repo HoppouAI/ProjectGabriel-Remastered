@@ -13,6 +13,8 @@
 # speaks (x=right, y=forward, yaw positive = right turn): x=-x, y=z, yaw=-t.
 
 import math
+from collections import deque
+
 import numpy as np
 
 import retarget as base
@@ -69,6 +71,17 @@ CORE_REST = {
 # measured stand pose: hips height and lowest joint above the y=0 floor
 STAND_HIPS_Y = 0.952
 STAND_FLOOR_CLEAR = 0.006
+
+# adaptive floor: the autoregressive rollout sometimes settles with the whole
+# body floating above y=0 (bad landing, drift) and its own history keeps it
+# there, so every height read stays offset until a reset: standing looks
+# stretched and sitting only reaches half depth. absorb any hover that lasts
+# the whole window (real air time is much shorter) by slewing a floor
+# estimate up to meet it. lowering back is always safe because the per-frame
+# below-floor lift masks an over-high estimate.
+HOVER_WIN_S = 1.5    # must stay airborne this long before it counts as drift
+HOVER_MIN_M = 0.05   # ignore hovers smaller than this (idle noise)
+HOVER_SLEW_M_S = 0.2 # how fast the estimate glides, keeps the fix invisible
 
 
 def _norm(v):
@@ -177,11 +190,17 @@ class CoreRetargeter(Retargeter):
         super().__init__(ranges_path, fps=fps)
         self._prev_pitch = None
         self._prev_roll = 0.0
+        self._floor = 0.0
+        self._absorbing = False
+        self._hover_buf = deque(maxlen=max(2, int(round(HOVER_WIN_S * self.fps))))
 
     def reset_root(self):
         super().reset_root()
         self._prev_pitch = None
         self._prev_roll = 0.0
+        self._floor = 0.0
+        self._absorbing = False
+        self._hover_buf.clear()
 
     @staticmethod
     def _continuous(angle, prev):
@@ -215,9 +234,23 @@ class CoreRetargeter(Retargeter):
         out['HipsPitch'] = _clamp(math.degrees(pitch) / HIPS_PITCH_MAX_DEG)
         out['HipsRoll'] = _clamp(math.degrees(roll) / HIPS_ROLL_MAX_DEG)
 
-        # floor is y=0 exactly; only ever shift up (jumps stay real)
-        ground_shift = max(0.0, STAND_FLOOR_CLEAR - float(joints[:, 1].min()))
-        dz = (float(root_pos[1]) + ground_shift) - STAND_HIPS_Y
+        # floor is y=0 exactly; below-floor frames get lifted per frame
+        # (jumps stay real), sustained hovers get absorbed by the tracker
+        fmin = float(joints[:, 1].min())
+        self._hover_buf.append(fmin)
+        if len(self._hover_buf) == self._hover_buf.maxlen:
+            lo = min(self._hover_buf)
+            target = max(0.0, lo - STAND_FLOOR_CLEAR)
+            # deadband gates engaging only; once absorbing, converge fully
+            gate = 0.01 if self._absorbing else HOVER_MIN_M
+            if target < self._floor or target > self._floor + gate:
+                self._absorbing = target > self._floor
+                step = HOVER_SLEW_M_S / self.fps
+                self._floor += max(-step, min(step, target - self._floor))
+            else:
+                self._absorbing = False
+        ground_shift = max(0.0, STAND_FLOOR_CLEAR - (fmin - self._floor))
+        dz = (float(root_pos[1]) - self._floor + ground_shift) - STAND_HIPS_Y
         out['HipsY'] = _clamp(dz / self.hipsy_up_m if dz >= 0 else dz / self.hipsy_down_m)
 
         # locomotion extras in the dart convention (x=right, y=fwd, yaw +=right)
