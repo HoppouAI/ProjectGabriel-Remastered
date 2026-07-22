@@ -21,8 +21,14 @@ ENCODER_PATH = str(Path(__file__).parent / 'text_encoders' / 'llm2vec_nf4')
 class ArdyEngine:
     """owns the ARDY rollout state. all methods must be called from one thread."""
 
-    def __init__(self, model='core8', device='cuda', steps=8, hist_cap_s=0.6,
+    def __init__(self, model='core8', device='cuda', steps=8, hist_cap_s=2.0,
                  cfg_text=2.0, cfg_constraint=2.0):
+        # hist_cap_s is the STEADY STATE context fed back each step. long =
+        # stable poses (less drift during long holds), short = the model
+        # forgets where it is and starts drifting/freaking after ~30s of
+        # sitting still. prompt switches always cut to one token regardless,
+        # thats what keeps poses from becoming attractors, so this knob only
+        # trades stability vs a bit of gpu time.
         from ardy.model.llm2vec.llm2vec_wrapper import LLM2VecEncoder
         from ardy.model.load_model import load_model
 
