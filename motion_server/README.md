@@ -59,6 +59,12 @@ narration for babel), so the Gemini tool always writes sentences.
 
 ## Setup from nothing
 
+The short way: run `motion_server\setup.bat` (or `python motion_server\install.py`)
+and pick a backend. It creates the venvs, clones the repos, downloads the
+checkpoints and text encoder, and walks you through the only manual part
+(DART's registration-walled SMPL body models). Re-run safe. The sections
+below document what it does and how to do each step by hand.
+
 ### 1. venv
 
 Python 3.10 venv in `motion_server/.venv`. From the repo root:
