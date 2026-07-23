@@ -193,7 +193,7 @@ The python side uses VRCRaycast components for forward collision checks,
 ledge detection, ceiling height, "what am I looking at", etc.
 
 VRChat caps avatars at 80 raycasts total (shared with FinalIK). The
-builder adds 11. Plenty of headroom.
+builder adds 12. Plenty of headroom.
 
 ### Build the prefab
 
@@ -206,8 +206,8 @@ builder adds 11. Plenty of headroom.
 ### Wire it onto your avatar
 
 1. Drag `GabrielSensorRig.prefab` onto your **avatar root**. You'll see
-   two children: `HeadAnchor` and `HipsAnchor`, each containing several
-   `Ray_*` empties.
+   three children: `HeadAnchor`, `HipsAnchor` and `RootAnchor`, each
+   containing `Ray_*` empties.
 
 2. **Anchor the bones.** If VRCFury was installed when the prefab was
    built, each `*Anchor` already has a **VRC Fury > Armature Link**
@@ -234,6 +234,10 @@ builder adds 11. Plenty of headroom.
      these manually.
    - Repeat on `HipsAnchor` with **Hips** as the target (same
      Align Position + Align Rotation tick).
+   - `RootAnchor` gets **no armature link at all**, on purpose. It must
+     stay parented to the avatar root so its `FloorDown` ray always
+     points at the real ground even when the hips are pitched or
+     dropped (sitting, lying, flips). Just leave it alone.
 
    *Optional:* with `HeadAnchor` selected you can bump its local Y up a
    little so the head rays originate near the visual center of your
@@ -277,6 +281,7 @@ builder adds 11. Plenty of headroom.
 | `Down`      | Hips | straight down           | 2m     | floor distance                |
 | `Up`        | Head | straight up             | 3m     | ceiling height                |
 | `Gaze`      | Head | camera forward          | 30m    | "what is the AI looking at"   |
+| `FloorDown` | Root | world down, from y+1m   | 2.5m   | floor auto-calibration for the motion puppet (sit/lie ground height) |
 
 `Gaze` is configured with `Collision Mode = Hit Both` (worlds + players),
 the rest are `Hit Worlds`. The builder sets this for you.

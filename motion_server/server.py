@@ -81,6 +81,10 @@ async def client_loop(ws, engine, retargeter, params_of, raw_of, send_raw):
                 used = await asyncio.to_thread(engine.set_prompt, text, once)
                 print(f'prompt: {text!r} -> {used!r}{" (once)" if once else ""}')
                 state['paused'] = False
+            elif mtype == 'floor':
+                # world floor offset under the avatar root, from the client's
+                # FloorDown raycast reading. small and frequent, no logging.
+                retargeter.set_world_floor(msg.get('offset', 0.0))
             elif mtype == 'stop':
                 print('prompt: stop -> idle')
                 await asyncio.to_thread(engine.set_prompt, engine.idle_prompt)

@@ -299,6 +299,12 @@ class Retargeter:
         self.hipsy_down_m = data.get('hipsYDownMeters', 1.00)
         self.hipsy_up_m = data.get('hipsYUpMeters', 0.80)
         self._prev_root = None  # (x, y, yaw) of the previous frame
+        # world floor correction from the avatar's root-mounted FloorDown
+        # raycast: real vrchat ground under the root vs the capsule plane
+        # (slopes, step edges, hovering capsule). positive = floor above the
+        # root, raise the body. slewed so corrections glide instead of pop.
+        self._wfloor = 0.0
+        self._wfloor_target = 0.0
 
         # chain gain (radians of joint motion per unit of param) each side of 0
         self.pos_gain = {}
@@ -320,6 +326,29 @@ class Retargeter:
     def reset_root(self):
         """forget the previous root sample so velocities dont spike after an engine reset."""
         self._prev_root = None
+        self._wfloor = 0.0
+        self._wfloor_target = 0.0
+
+    WFLOOR_MAX_M = 0.75
+    WFLOOR_SLEW_M_S = 0.5
+
+    def set_world_floor(self, offset_m):
+        """measured vrchat floor height relative to the avatar root (meters),
+        fed by the client from the FloorDown raycast. folded into HipsY so
+        sitting and lying land on the real floor instead of the capsule plane."""
+        try:
+            off = float(offset_m)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(off):
+            return
+        self._wfloor_target = max(-self.WFLOOR_MAX_M, min(self.WFLOOR_MAX_M, off))
+
+    def _world_floor_step(self):
+        step = self.WFLOOR_SLEW_M_S / self.fps
+        d = self._wfloor_target - self._wfloor
+        self._wfloor += max(-step, min(step, d))
+        return self._wfloor
 
     def _map(self, param, raw_rad):
         delta = raw_rad - REST_RAD.get(param, 0.0)
@@ -349,7 +378,7 @@ class Retargeter:
         floor_z = self.smpl_stand_z - FLOOR_DROP_M
         ground_shift = max(0.0, floor_z - float(joints[:, 2].min()))
         pelvis_z = float(joints[PELVIS][2]) + ground_shift
-        dz = pelvis_z - self.smpl_stand_z
+        dz = pelvis_z - self.smpl_stand_z + self._world_floor_step()
         out['HipsY'] = _clamp(dz / self.hipsy_up_m if dz >= 0 else dz / self.hipsy_down_m)
 
         # extras for the client locomotion layer (not muscle params)

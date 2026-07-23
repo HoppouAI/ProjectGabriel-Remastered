@@ -250,7 +250,7 @@ class CoreRetargeter(Retargeter):
             else:
                 self._absorbing = False
         ground_shift = max(0.0, STAND_FLOOR_CLEAR - (fmin - self._floor))
-        dz = (float(root_pos[1]) - self._floor + ground_shift) - STAND_HIPS_Y
+        dz = (float(root_pos[1]) - self._floor + ground_shift) - STAND_HIPS_Y + self._world_floor_step()
         out['HipsY'] = _clamp(dz / self.hipsy_up_m if dz >= 0 else dz / self.hipsy_down_m)
 
         # locomotion extras in the dart convention (x=right, y=fwd, yaw +=right)

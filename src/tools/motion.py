@@ -85,6 +85,7 @@ class MotionTools(BaseTool):
                 turn_full=self.config.motion_turn_full_rate,
                 pose_tracking=self.config.motion_pose_tracking,
                 pose_monitor=self.config.motion_pose_monitor,
+                raycast_state=getattr(self.osc, "raycast_state", None),
             )
         return self._client
 

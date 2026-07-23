@@ -34,12 +34,18 @@ namespace ProjectGabriel.Editor
             public string Bone;
             public string Name;
             public Vector3 LocalEuler;  // applied to the empty so its forward = ray dir
+            public Vector3 LocalPos;    // offset from the anchor (meters)
             public float Length;
             public bool HitPlayers;     // false = worlds only, true = both
 
             public RayDef(string bone, string name, Vector3 euler, float length, bool hitPlayers = false)
             {
-                Bone = bone; Name = name; LocalEuler = euler; Length = length; HitPlayers = hitPlayers;
+                Bone = bone; Name = name; LocalEuler = euler; LocalPos = Vector3.zero; Length = length; HitPlayers = hitPlayers;
+            }
+
+            public RayDef(string bone, string name, Vector3 euler, Vector3 pos, float length, bool hitPlayers = false)
+            {
+                Bone = bone; Name = name; LocalEuler = euler; LocalPos = pos; Length = length; HitPlayers = hitPlayers;
             }
         }
 
@@ -59,6 +65,12 @@ namespace ProjectGabriel.Editor
             new RayDef("Hips", "FwdNear",  new Vector3(0,   0,   0), 1.5f),
             new RayDef("Hips", "DropFwd",  new Vector3(45,  0,   0), 3f),
             new RayDef("Hips", "Down",     new Vector3(90,  0,   0), 2f),
+
+            // root mounted (no armature link): rides the locomotion capsule,
+            // never pitches with the pose. measures the real world floor under
+            // the avatar so sit/lie heights can be auto-calibrated even when
+            // the hips-mounted rays are rotated away from the ground.
+            new RayDef("Root", "FloorDown", new Vector3(90, 0, 0), new Vector3(0, 1f, 0), 2.5f),
         };
 
         [MenuItem("Tools/ProjectGabriel/Build Sensor Rig")]
@@ -102,14 +114,16 @@ namespace ProjectGabriel.Editor
 
                     // try to attach the Armature Link now so the user doesnt
                     // have to. if VRCFury isnt installed we fall back to the
-                    // manual instructions in AVATAR_SETUP.md.
-                    TryAddVRCFuryArmatureLink(anchor, boneName);
+                    // manual instructions in AVATAR_SETUP.md. "Root" anchors
+                    // stay unlinked on purpose: they ride the avatar root.
+                    if (boneName != "Root")
+                        TryAddVRCFuryArmatureLink(anchor, boneName);
 
                     foreach (var ray in kv.Value)
                     {
                         var rayGo = new GameObject("Ray_" + ray.Name);
                         rayGo.transform.SetParent(anchor.transform, false);
-                        rayGo.transform.localPosition = Vector3.zero;
+                        rayGo.transform.localPosition = ray.LocalPos;
                         rayGo.transform.localEulerAngles = ray.LocalEuler;
 
                         if (!TryAddVRCRaycast(rayGo, ray))

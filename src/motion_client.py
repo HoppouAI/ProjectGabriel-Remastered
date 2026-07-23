@@ -38,6 +38,18 @@ PARAMS = [
     "HipsY", "HipsPitch", "HipsRoll",
 ]
 
+# floor auto-calibration from the root-mounted FloorDown VRCRaycast. while
+# standing, the reading slow-follows into a baseline (auto-zeros avatar
+# scale, capsule hover, whatever). when the pose goes low the baseline
+# freezes and the difference = real ground level under the root (slopes,
+# step edges), which the server folds into HipsY so he sits ON the floor
+# instead of inside or above it. inert if the avatar has no FloorDown ray.
+FLOOR_RAY = "FloorDown"
+FLOOR_BASE_TAU = 2.0        # s, baseline follow speed while standing
+FLOOR_FREEZE_HIPSY = -0.15  # pose lower than this freezes the baseline
+FLOOR_SEND_EPS = 0.01       # m, resend threshold
+FLOOR_SEND_HZ = 5.0
+
 
 def _snap_axis(v):
     if abs(v) < AXIS_CUTOFF:
@@ -167,7 +179,7 @@ class PoseTracker:
 
 class MotionClient:
     def __init__(self, osc_client, host, port, walk_full=2.0, turn_full=1.8,
-                 pose_tracking=False, pose_monitor=1):
+                 pose_tracking=False, pose_monitor=1, raycast_state=None):
         self._osc = osc_client
         self._uri = f"ws://{host}:{port}"
         self._ws = None
@@ -184,6 +196,10 @@ class MotionClient:
         self._walk_full = walk_full
         self._turn_full = turn_full
         self._tracker = PoseTracker(pose_monitor) if pose_tracking else None
+        self._rays = raycast_state
+        self._floor_base = None   # standing-ground distance baseline (m)
+        self._floor_sent = 0.0
+        self._floor_next = 0.0
         self.current_prompt = None
 
     # -- lifecycle --
@@ -238,6 +254,7 @@ class MotionClient:
             await self._send({"type": "reset"})
         self.current_prompt = None
         self._got_frame = False
+        self._floor_sent = 0.0  # server zeroed its copy in reset_root
         if self._tracker is not None:
             self._tracker.reset_anchor()
         if self._active:
@@ -285,6 +302,7 @@ class MotionClient:
                 async with websockets.connect(self._uri, max_size=None) as ws:
                     self._ws = ws
                     self._connected.set()
+                    self._floor_sent = 0.0  # fresh server, fresh retargeter
                     logger.info(f"motion server connected: {self._uri}")
                     async for raw in ws:
                         try:
@@ -317,6 +335,29 @@ class MotionClient:
             self._got_frame = False
             await asyncio.sleep(3.0)
 
+    async def _floor_update(self, now, dt):
+        """track the FloorDown ray and stream ground offsets to the server."""
+        if self._rays is None or self._ws is None:
+            return
+        r = self._rays.get(FLOOR_RAY)
+        if r is None or not r.hit or r.distance <= 0.05 or not r.is_fresh(2.0):
+            return  # no rig / ray miss / osc quiet: hold whatever was sent
+        d = float(r.distance)
+        low = (self._active and self._got_frame
+               and self._target["HipsY"] < FLOOR_FREEZE_HIPSY)
+        if self._floor_base is None:
+            self._floor_base = d
+        elif not low:
+            self._floor_base += (d - self._floor_base) * (1.0 - math.exp(-dt / FLOOR_BASE_TAU))
+        offset = (self._floor_base - d) if self._active else 0.0
+        if now >= self._floor_next and abs(offset - self._floor_sent) > FLOOR_SEND_EPS:
+            self._floor_next = now + 1.0 / FLOOR_SEND_HZ
+            try:
+                await self._send({"type": "floor", "offset": round(offset, 3)})
+                self._floor_sent = offset
+            except Exception:
+                pass
+
     async def _sender(self):
         interval = 1.0 / SEND_HZ
         last = time.monotonic()
@@ -327,6 +368,7 @@ class MotionClient:
                 dt = max(1e-3, now - last)
                 last = now
                 beta = 1.0 - math.exp(-dt / LOCO_TAU)
+                await self._floor_update(now, dt)
 
                 if self._active and self._got_frame:
                     for p in PARAMS:

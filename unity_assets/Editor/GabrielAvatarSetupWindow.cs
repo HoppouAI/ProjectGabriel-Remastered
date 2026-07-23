@@ -142,7 +142,7 @@ namespace ProjectGabriel.Editor
 
             _installSensorRig = EditorGUILayout.ToggleLeft(
                 new GUIContent("Sensor Rig (raycast empties)",
-                    "Adds the GabrielSensorRig child with 11 VRCRaycast empties grouped under HeadAnchor / HipsAnchor."),
+                    "Adds the GabrielSensorRig child with 12 VRCRaycast empties grouped under HeadAnchor / HipsAnchor / RootAnchor."),
                 _installSensorRig);
 
             EditorGUILayout.Space(4);
