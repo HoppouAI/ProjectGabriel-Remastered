@@ -6,6 +6,8 @@ over a websocket into VRChat as avatar puppet parameters. He dances, sits,
 bows, lies down, waves, and walking motions physically move him through the
 world.
 
+https://github.com/user-attachments/assets/ea35eeeb-7c44-4c7f-af70-9b1d3386fbef
+
 Two backends share one server and one protocol:
 
 - [DART](https://github.com/zkf1997/DART) (`babel`, `hml3d`): the original

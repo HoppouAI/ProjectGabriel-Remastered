@@ -21,6 +21,14 @@ Most of the well known VRChat AI companions out there are either closed source, 
 
 ---
 
+## Generated full body motion
+
+Ask him to dance, sit down, or do a backflip and a text-to-motion diffusion model generates it live, streamed onto his avatar at 20fps. No mocap, no canned animations, no SteamVR. Currently on the `motion-server` branch.
+
+https://github.com/user-attachments/assets/ea35eeeb-7c44-4c7f-af70-9b1d3386fbef
+
+---
+
 ## Features
 
 <table>
@@ -59,6 +67,12 @@ Most of the well known VRChat AI companions out there are either closed source, 
     <td><strong>API key rotation</strong><br>Add backup Gemini API keys and Gabriel cycles through them automatically when he hits a rate limit. No downtime, no manual intervention.</td>
     <td>🏠</td>
     <td><strong>Local backend</strong><br>Optionally run everything on your own machine with LM Studio, parakeet.cpp speech recognition, and any TTS provider. Nothing leaves your computer.</td>
+  </tr>
+  <tr>
+    <td>🤸</td>
+    <td><strong>Generated motion</strong><br>A text-to-motion diffusion model drives his whole body in real time. Dancing, sitting, lying down, backflips, and walking that actually moves him through the world. On the <code>motion-server</code> branch.</td>
+    <td>📡</td>
+    <td><strong>Raycast sensor rig</strong><br>Avatar mounted raycasts give him engine-truth distances for walls, ledges, ceilings and floors, so he navigates worlds without walking into things.</td>
   </tr>
 </table>
 
