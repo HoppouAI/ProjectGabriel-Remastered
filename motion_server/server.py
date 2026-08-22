@@ -142,10 +142,10 @@ async def main():
     ap.add_argument('--respacing', default=None,
                     help="dart sampling override: '' = full 10 step, 'ddim5' fast. default follows the model")
     ap.add_argument('--steps', type=int, default=8, help='ardy denoising steps (10 max, 8 keeps realtime margin)')
-    ap.add_argument('--history', type=float, default=2.0,
-                    help='ardy context seconds fed back each step. longer = steadier long '
-                         'holds (sitting still), shorter = snappier but drifts and freaks '
-                         'out over time. prompt switches always cut to one token regardless')
+    ap.add_argument('--history', type=float, default=0.6,
+                    help='ardy context seconds fed back each step. longer holds static '
+                         'poses better but smothers the prompt so loops stall out, '
+                         'shorter is snappier but drops the pose. 0.6 measured best')
     ap.add_argument('--raw', action='store_true', help='include raw joint data in frames')
     args = ap.parse_args()
 

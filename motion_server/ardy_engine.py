@@ -21,14 +21,20 @@ ENCODER_PATH = str(Path(__file__).parent / 'text_encoders' / 'llm2vec_nf4')
 class ArdyEngine:
     """owns the ARDY rollout state. all methods must be called from one thread."""
 
-    def __init__(self, model='core8', device='cuda', steps=8, hist_cap_s=2.0,
+    def __init__(self, model='core8', device='cuda', steps=8, hist_cap_s=0.6,
                  cfg_text=2.0, cfg_constraint=2.0):
-        # hist_cap_s is the STEADY STATE context fed back each step. long =
-        # stable poses (less drift during long holds), short = the model
-        # forgets where it is and starts drifting/freaking after ~30s of
-        # sitting still. prompt switches always cut to one token regardless,
-        # thats what keeps poses from becoming attractors, so this knob only
-        # trades stability vs a bit of gpu time.
+        # hist_cap_s is the STEADY STATE context fed back each step, and it
+        # is a real tradeoff, measured in benchmarks/ardy_history.py over 3
+        # runs each at 0.2 / 0.6 / 2.0s:
+        #   long history smothers the text condition. a 'walks forward' loop
+        #   averaged 0.87 m/s at 2.0s with its worst 5s window down at 0.43,
+        #   ie he just stops walking mid prompt. at 0.6s thats 1.04 mean and
+        #   0.90 worst, the loop actually keeps looping.
+        #   short history loses the pose instead. holding a sit for 30s at
+        #   0.2s had him standing back up 45% of the time, at 0.6s 0.7%.
+        # 0.6s (3 tokens) is the only setting that wins both. the upstream
+        # interactive demo defaults to 1 token, but it is driven by a human
+        # retyping prompts, not by held poses.
         from ardy.model.llm2vec.llm2vec_wrapper import LLM2VecEncoder
         from ardy.model.load_model import load_model
 
@@ -89,6 +95,10 @@ class ArdyEngine:
         self._cond = threading.Condition(self.lock)
         self._epoch = 0            # bumped on prompt switch / reset, voids in-flight chunks
         self._lookahead = 2 * self._horizon
+        # frames of already-generated motion kept past the playhead on a
+        # prompt switch, to cover the ~300ms it takes to make the first chunk
+        # of the new prompt. two tokens is 400ms at 20fps.
+        self._replan_bridge = 2 * self._patch
         self._worker_err = None
         threading.Thread(target=self._worker_loop, daemon=True).start()
         print(f'ardy engine ready on {self.device}, fps={self.fps} patch={self._patch} '
@@ -118,31 +128,55 @@ class ArdyEngine:
     def _truncate_to_served(self, cut_history):
         """drop frames generated under the previous prompt. with cut_history,
         also shrink kept history to one token so the old pose stops acting as
-        an attractor (long history dominates the text condition)."""
+        an attractor (long history dominates the text condition).
+
+        keeps _replan_bridge frames past the playhead on purpose: cutting
+        exactly at the playhead leaves nothing to serve while the first chunk
+        of the new prompt generates, so every switch stalls ~300ms and then
+        bursts. the bridge is old-prompt motion but it is only a fifth of a
+        second and the new chunk conditions on it, so it joins cleanly."""
         self._epoch += 1  # void any chunk the worker has in flight
         self._cond.notify_all()
         if self._motion is None:
             return
-        keep = max(self.frame_idx + 1 - self._motion_base, self._patch)
+        keep = max(self.frame_idx + 1 - self._motion_base + self._replan_bridge, self._patch)
         keep = min(keep, self._motion.shape[1])
         self._motion = self._motion[:, :keep]
-        fkeep = min(max(self.frame_idx + 1 - self._frames_base, 0), len(self._frames))
+        fkeep = min(max(self.frame_idx + 1 - self._frames_base + self._replan_bridge, 0),
+                    len(self._frames))
         del self._frames[fkeep:]
         if cut_history and self._motion.shape[1] > self._patch:
             cut = self._motion.shape[1] - self._patch
             self._motion = self._motion[:, cut:]
             self._motion_base += cut
 
+    def _begin_stop(self):
+        """head for idle, returns whether history needs cutting.
+
+        from a seated or lying pose 'stands still' describes a state the body
+        is already in, so it just keeps sitting: play a get-up prompt first
+        and cut history to break the attractor. already standing, go straight
+        to idle, otherwise every stop costs a phantom crouch and rise, which
+        the expression layer triggers constantly between gestures."""
+        if self._upright():
+            self.prompt = self.idle_prompt
+            self._recover_at = self._recover_cap = None
+            self._text_feat = self._encode(self.prompt)
+            return False
+        self.prompt = self.recover_prompt
+        self._recover_at = self.frame_idx + int(self._recover_s * self.fps)
+        self._recover_cap = self.frame_idx + int(self._recover_max_s * self.fps)
+        self._text_feat = self._encode(self.prompt)
+        return True
+
     def set_prompt(self, text, once=False):
         text = self.normalize_prompt(text)
         with self.lock:
             self._once_active = False
             if text == self.idle_prompt and self._motion is not None:
-                # stop request: play the get-up transition first
-                self.prompt = self.recover_prompt
-                self._recover_at = self.frame_idx + int(self._recover_s * self.fps)
-                self._recover_cap = self.frame_idx + int(self._recover_max_s * self.fps)
+                cut = self._begin_stop()
             else:
+                cut = True
                 self.prompt = text
                 self._recover_at = None
                 if once:
@@ -150,8 +184,8 @@ class ArdyEngine:
                     self._once_left = False
                     self._once_run = 0
                     self._once_deadline = self.frame_idx + int(self._once_max_s * self.fps)
-            self._text_feat = self._encode(self.prompt)
-            self._truncate_to_served(cut_history=True)
+                self._text_feat = self._encode(self.prompt)
+            self._truncate_to_served(cut_history=cut)
         return self.prompt
 
     def reset(self):
@@ -299,11 +333,7 @@ class ArdyEngine:
                     # never came back on its own (held a pose, or the action
                     # never leaves upright like waving), force the stop path
                     self._once_active = False
-                    self.prompt = self.recover_prompt
-                    self._recover_at = self.frame_idx + int(self._recover_s * self.fps)
-                    self._recover_cap = self.frame_idx + int(self._recover_max_s * self.fps)
-                    self._text_feat = self._encode(self.prompt)
-                    self._truncate_to_served(cut_history=True)
+                    self._truncate_to_served(cut_history=self._begin_stop())
             while self.frame_idx - self._frames_base >= len(self._frames):
                 if self._worker_err is not None:
                     raise RuntimeError('ardy generation worker died') from self._worker_err

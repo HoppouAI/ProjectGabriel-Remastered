@@ -384,14 +384,25 @@ Either backend:
 - Yaw comes from the model's own smoothed heading channel instead of the
   pelvis axes, which is more stable when lying or tumbling.
 - The engine keeps a normalized rollout tensor and feeds its tail back as
-  history each `autoregressive_step`. History is deliberately SHORT: on a
-  prompt switch it is cut to one 4-frame token, because a long history is an
-  attractor (2s of seated history and no prompt ever gets him up again,
-  nvidia's demo defaults to 4 frames for the same reason).
-- Stop requests play 'a person stands up' first and only settle into the
-  'stands still' idle once the pose is actually upright (hips above 0.75m,
-  pelvis up axis vertical, 10s hard cap). 'stands still' describes a state,
-  not a transition, so from sitting/lying it would just hold the pose.
+  history each `autoregressive_step`. Length is a genuine tradeoff, measured
+  by `benchmarks/ardy_history.py` (3 runs each at 0.2 / 0.6 / 2.0s): long
+  history smothers the text condition, so a `walks forward` loop averaged
+  0.87 m/s at 2.0s with its worst 5s window down at 0.43, ie he stops
+  walking mid prompt. Short history drops the pose instead, holding a sit
+  for 30s at 0.2s had him standing back up 45% of the time. `--history 0.6`
+  (3 tokens) is the only setting that wins both and is the default. On a
+  prompt switch history is cut further, to one token, so the old pose stops
+  acting as an attractor.
+- Prompt switches keep 8 already-generated frames past the playhead as a
+  bridge. Cutting exactly at the playhead leaves nothing to serve while the
+  first chunk of the new prompt generates, which showed up as a 150-250ms
+  stall and a burst on every single switch.
+- Stop requests from a non-upright pose play 'a person stands up' first and
+  only settle into the 'stands still' idle once the pose is actually upright
+  (hips above 0.75m, pelvis up axis vertical, 10s hard cap). 'stands still'
+  describes a state, not a transition, so from sitting/lying it would just
+  hold the pose. Already standing, stops go straight to idle, otherwise the
+  expression layer buys a phantom crouch-and-rise between every gesture.
 
 ## Known limits
 
