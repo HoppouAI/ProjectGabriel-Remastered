@@ -147,9 +147,10 @@ class LocalLiveSession:
             if _ConvLogger else None
         )
 
-        # emotion system
+        # emotion system (also owns the generated motion expression layer,
+        # so it runs even with canned emotions off)
         self._emotion_system = None
-        if config.emotion_enabled:
+        if config.emotion_enabled or config.motion_enabled:
             self._emotion_system = init_emotion_system(config, osc)
             self._emotion_system.start()
             logger.info("emotion system initialized")

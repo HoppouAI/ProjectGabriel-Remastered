@@ -104,17 +104,13 @@ class MovementTools(BaseTool):
             self.osc.toggle_crouch()
             emo = get_emotion_system()
             if emo:
-                emo._crouching = not emo._crouching
-                if emo._crouching and emo._is_speaking:
-                    emo.stop_speaking()
+                emo.set_crouching(not emo._crouching)
             return {"result": "ok"}
         elif name == "vrchatCrawl":
             self.osc.toggle_crawl()
             emo = get_emotion_system()
             if emo:
-                emo._crouching = not emo._crouching
-                if emo._crouching and emo._is_speaking:
-                    emo.stop_speaking()
+                emo.set_crouching(not emo._crouching)
             return {"result": "ok"}
         elif name == "vrchatMove":
             return await self._vrchat_move(args["direction"], args["duration"], args.get("speed", "normal"))

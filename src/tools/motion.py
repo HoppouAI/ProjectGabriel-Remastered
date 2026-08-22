@@ -76,17 +76,8 @@ class MotionTools(BaseTool):
 
     def _get_client(self):
         if self._client is None:
-            from src.motion_client import MotionClient
-            self._client = MotionClient(
-                self.osc.client,
-                self.config.motion_server_host,
-                self.config.motion_server_port,
-                walk_full=self.config.motion_walk_full_speed,
-                turn_full=self.config.motion_turn_full_rate,
-                pose_tracking=self.config.motion_pose_tracking,
-                pose_monitor=self.config.motion_pose_monitor,
-                raycast_state=getattr(self.osc, "raycast_state", None),
-            )
+            from src.motion_client import get_motion_client
+            self._client = get_motion_client(self.config, self.osc)
         return self._client
 
     async def handle(self, name, args):

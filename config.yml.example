@@ -542,6 +542,35 @@ motion:
   # Which monitor VRChat is on (1 = primary). Only used by pose_tracking.
   pose_monitor: 1
 
+  # Automatic expression using generated motion. Replaces the canned emotion
+  # animations for body language: gesture motions play while he talks, a
+  # fidget kicks in once he's been quiet, and the puppet is handed back to
+  # VRChat entirely when nothing is going on (which also stops the GPU work).
+  # Anything he asks for himself with playMotion takes priority.
+  # Needs the ARDY backend (--model core8), the server tells the client which
+  # one it is running and this stays off on DART.
+  expression:
+    enabled: true
+    # Gestures while speaking, rotated so a long answer isn't one looping wave.
+    talking:
+      - "a person talks while gesturing with both hands"
+      - "a person speaks and shrugs lightly"
+      - "a person talks casually, one hand moving as they explain"
+      - "a person nods while talking, hands relaxed"
+    # Played while he is thinking or digging through memories.
+    thinking: "a person stands still and looks up thoughtfully, hand near their chin"
+    # Fidgets once he's been quiet for idle_after seconds.
+    idle:
+      - "a person shifts their weight and glances around"
+      - "a person stretches their arms and rolls their shoulders"
+      - "a person stands and looks around slowly, bored"
+    # Seconds before the talking gesture switches to a different one.
+    switch_interval: 6.0
+    # Seconds of quiet before the idle fidgets start.
+    idle_after: 25.0
+    # Seconds of quiet before the body is released back to VRChat entirely.
+    release_after: 180.0
+
 vision:
   # Screen capture for Gemini Live vision
   # Allows the AI to SEE what's on your screen

@@ -50,6 +50,11 @@ FLOOR_FREEZE_HIPSY = -0.15  # pose lower than this freezes the baseline
 FLOOR_SEND_EPS = 0.01       # m, resend threshold
 FLOOR_SEND_HZ = 5.0
 
+# how long the model keeps the body after a motion that ends by itself. the
+# engine settles a one-shot within ~8s, this just decides when the automatic
+# expression layer is allowed to take the body back.
+MODEL_ONCE_HOLD_S = 12.0
+
 
 def _snap_axis(v):
     if abs(v) < AXIS_CUTOFF:
@@ -201,6 +206,29 @@ class MotionClient:
         self._floor_sent = 0.0
         self._floor_next = 0.0
         self.current_prompt = None
+        self.backend = None       # 'ardy' or 'dart', from the server hello
+        self.model = None
+        self.owner = None         # 'model' or 'expression', who asked for the current motion
+        self._owner_until = 0.0   # model ownership lapses here for finite motions
+        self._locomotion = True   # expression gestures shouldn't walk him off
+
+    @property
+    def is_ardy(self):
+        return self.backend == "ardy"
+
+    @property
+    def active(self):
+        return self._active
+
+    @property
+    def owned_by_model(self):
+        """True while a motion the AI asked for should be left alone."""
+        if self.owner != "model":
+            return False
+        if self._owner_until and time.monotonic() >= self._owner_until:
+            self.owner = None
+            return False
+        return True
 
     # -- lifecycle --
 
@@ -228,19 +256,28 @@ class MotionClient:
 
     # -- commands --
 
-    async def play(self, prompt, seconds=None, once=False):
+    async def play(self, prompt, seconds=None, once=False, owner="model"):
         await self.ensure_connected()
         self._cancel_timer()
         await self._send({"type": "prompt", "text": prompt, "once": bool(once)})
         self.current_prompt = prompt
+        self.owner = owner
+        self._owner_until = time.monotonic() + MODEL_ONCE_HOLD_S if once else 0.0
+        self._locomotion = owner == "model"
         if not self._active:
             self._set_active(True)
         if seconds is not None and seconds > 0:
             self._timer_task = asyncio.create_task(self._auto_stop(float(seconds)))
 
+    def set_locomotion(self, enabled):
+        """Whether generated root motion drives VRChat move inputs."""
+        self._locomotion = bool(enabled)
+
     async def stop_motion(self):
         """back to a generated standing idle, puppet stays up."""
         self._cancel_timer()
+        self.owner = None
+        self._owner_until = 0.0
         if self._ws is None:
             return
         # server side 'stop' switches to the models own idle prompt
@@ -253,6 +290,8 @@ class MotionClient:
         if self._ws is not None:
             await self._send({"type": "reset"})
         self.current_prompt = None
+        self.owner = None
+        self._owner_until = 0.0
         self._got_frame = False
         self._floor_sent = 0.0  # server zeroed its copy in reset_root
         if self._tracker is not None:
@@ -309,7 +348,13 @@ class MotionClient:
                             msg = json.loads(raw)
                         except json.JSONDecodeError:
                             continue
-                        if msg.get("type") != "frame":
+                        mtype = msg.get("type")
+                        if mtype == "hello":
+                            self.backend = msg.get("backend")
+                            self.model = msg.get("model")
+                            logger.info(f"motion server backend: {self.backend} ({self.model})")
+                            continue
+                        if mtype != "frame":
                             continue
                         params = msg.get("params") or {}
                         for p in PARAMS:
@@ -374,19 +419,46 @@ class MotionClient:
                     for p in PARAMS:
                         cur = self._filters[p](self._target[p], dt)
                         self._osc.send_message(PREFIX + p, float(cur))
-                    cf = cs = cy = 0.0
-                    if self._tracker is not None:
-                        cf, cs, cy = self._tracker.correction(
-                            self._dart_x, self._dart_y, self._dart_yaw, now)
-                    sv += ((self._vfwd + cf) / self._walk_full - sv) * beta
-                    sh += ((self._vside + cs) / self._walk_full - sh) * beta
-                    sl += ((self._vyaw + cy) / self._turn_full - sl) * beta
-                    self._osc.send_message("/input/Vertical", float(_snap_axis(sv)))
-                    self._osc.send_message("/input/Horizontal", float(_snap_axis(sh)))
-                    self._osc.send_message("/input/LookHorizontal", float(max(-1.0, min(1.0, sl))))
+                    if not self._locomotion:
+                        # gesturing in place, keep the generated root motion
+                        # out of the move inputs so he doesn't drift away
+                        sv = sh = sl = 0.0
+                        self._zero_inputs()
+                    else:
+                        cf = cs = cy = 0.0
+                        if self._tracker is not None:
+                            cf, cs, cy = self._tracker.correction(
+                                self._dart_x, self._dart_y, self._dart_yaw, now)
+                        sv += ((self._vfwd + cf) / self._walk_full - sv) * beta
+                        sh += ((self._vside + cs) / self._walk_full - sh) * beta
+                        sl += ((self._vyaw + cy) / self._turn_full - sl) * beta
+                        self._osc.send_message("/input/Vertical", float(_snap_axis(sv)))
+                        self._osc.send_message("/input/Horizontal", float(_snap_axis(sh)))
+                        self._osc.send_message("/input/LookHorizontal", float(max(-1.0, min(1.0, sl))))
                 else:
                     sv = sh = sl = 0.0
 
                 await asyncio.sleep(max(0.0, interval - (time.monotonic() - now)))
         except asyncio.CancelledError:
             pass
+
+
+_client = None
+
+
+def get_motion_client(config, osc):
+    """Shared client so the motion tools and the expression layer drive one
+    connection instead of fighting over two."""
+    global _client
+    if _client is None:
+        _client = MotionClient(
+            osc.client,
+            config.motion_server_host,
+            config.motion_server_port,
+            walk_full=config.motion_walk_full_speed,
+            turn_full=config.motion_turn_full_rate,
+            pose_tracking=config.motion_pose_tracking,
+            pose_monitor=config.motion_pose_monitor,
+            raycast_state=getattr(osc, "raycast_state", None),
+        )
+    return _client

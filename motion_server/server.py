@@ -64,9 +64,13 @@ def build_backend(args):
     return engine, retargeter, params_of, raw_of
 
 
-async def client_loop(ws, engine, retargeter, params_of, raw_of, send_raw):
+async def client_loop(ws, engine, retargeter, params_of, raw_of, send_raw, backend, model):
     print(f'client connected: {ws.remote_address}')
     state = {'paused': False}
+    # tell the client what it connected to, some client side features
+    # (auto expression) only make sense on the ardy backend
+    await ws.send(json.dumps({'type': 'hello', 'backend': backend, 'model': model,
+                              'fps': engine.fps}))
 
     async def receiver():
         async for raw in ws:
@@ -146,11 +150,13 @@ async def main():
     args = ap.parse_args()
 
     engine, retargeter, params_of, raw_of = build_backend(args)
+    backend = 'ardy' if args.model in ARDY_MODELS else 'dart'
 
     import websockets
 
     async def handler(ws):
-        await client_loop(ws, engine, retargeter, params_of, raw_of, send_raw=args.raw)
+        await client_loop(ws, engine, retargeter, params_of, raw_of, send_raw=args.raw,
+                          backend=backend, model=args.model)
 
     async with websockets.serve(handler, args.host, args.port, max_size=None):
         print(f'motion server listening on ws://{args.host}:{args.port} (model {args.model})')

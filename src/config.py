@@ -348,6 +348,17 @@ class Config:
         except Exception as e:
             logger.warning(f"plugin prompt contributors failed: {e}")
 
+        # generated body: how to express himself with it, and how it relates
+        # to the older canned animation tool when both are on
+        if self.motion_enabled:
+            try:
+                from src.motion_expression import build_instruction
+                block = build_instruction(self)
+                if block:
+                    parts.append(block)
+            except Exception as e:
+                logger.warning(f"motion instruction failed: {e}")
+
         # when dynamic tools are on the model only sees the meta tools, so
         # drop in the catalog of what it can reach via searchTools/executeTool
         if self.gemini_dynamic_tools:
@@ -591,6 +602,10 @@ class Config:
     @property
     def motion_pose_monitor(self):
         return self.get("motion", "pose_monitor", default=1)
+
+    @property
+    def motion_expression(self):
+        return self.get("motion", "expression", default={}) or {}
 
     @property
     def face_tracker_enabled(self):

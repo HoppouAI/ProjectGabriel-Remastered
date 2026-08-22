@@ -21,7 +21,17 @@ class EmotionSystem:
     def __init__(self, config, osc_client=None):
         self.config = config
         self.osc_client = osc_client
-        
+
+        # generated motion expression layer. when it is driving the body the
+        # canned OSC animations below would just lose to the puppet anyway,
+        # so they stand down while it is active.
+        self.motion = None
+        if getattr(config, "motion_enabled", False) and osc_client is not None:
+            from src.motion_expression import MotionExpression
+            m = MotionExpression(config, osc_client)
+            if m.enabled:
+                self.motion = m
+
         # Animation state
         self._current_animation: Optional[str] = None
         self._animation_lock = threading.RLock()
@@ -93,6 +103,8 @@ class EmotionSystem:
 
     def start(self):
         """Start the emotion system. Clears any leftover animation state from previous runs."""
+        if self.motion:
+            self.motion.start()
         if not self.enabled:
             logger.info("Emotion system disabled in config")
             return
@@ -103,6 +115,8 @@ class EmotionSystem:
 
     def stop(self):
         """Stop the emotion system."""
+        if self.motion:
+            self.motion.stop()
         self.stop_speaking()
         self.stop_thinking()
         self._stop_idle_animation()
@@ -112,12 +126,16 @@ class EmotionSystem:
     def mark_activity(self):
         """Mark that activity occurred (user speech, AI speech, etc). Resets idle timer."""
         self._last_activity_time = time.time()
+        if self.motion:
+            self.motion.mark_activity()
         if self._idle_active:
             self._stop_idle_animation()
 
     def check_idle(self):
         """Check if idle animation should start. Call periodically from a loop."""
         if not self.enabled or not self._idle_enabled or not self._idle_animation_name:
+            return
+        if self.motion and self.motion.active:
             return
         if self._idle_active or self._is_speaking or self._manual_animation_active or self._wandering or self._seated:
             return
@@ -129,6 +147,8 @@ class EmotionSystem:
         if seated == self._seated:
             return
         self._seated = seated
+        if self.motion:
+            self.motion.set_suppressed(seated or self._crouching or self._wandering)
         if seated:
             if self._is_speaking:
                 self.stop_speaking()
@@ -141,8 +161,18 @@ class EmotionSystem:
     def set_wandering(self, active: bool):
         """Suppress idle animation while wandering."""
         self._wandering = active
+        if self.motion:
+            self.motion.set_suppressed(active or self._seated or self._crouching)
         if active and self._idle_active:
             self._stop_idle_animation()
+
+    def set_crouching(self, active: bool):
+        """Crouch/crawl poses are held by OSC input, animations would cancel them."""
+        self._crouching = active
+        if self.motion:
+            self.motion.set_suppressed(active or self._seated or self._wandering)
+        if active and self._is_speaking:
+            self.stop_speaking()
 
     def _start_idle_animation(self):
         """Start the idle animation."""
@@ -170,7 +200,11 @@ class EmotionSystem:
 
     def start_thinking(self):
         """Start thinking animation (called when AI enters thinking/recall state)."""
+        if self.motion:
+            self.motion.set_thinking(True)
         if not self.enabled or not self._thinking_animation_name or self._thinking_active:
+            return
+        if self.motion and self.motion.active:
             return
         anim_data = self.animations.get(self._thinking_animation_name)
         if not anim_data:
@@ -188,6 +222,8 @@ class EmotionSystem:
 
     def stop_thinking(self):
         """Stop thinking animation."""
+        if self.motion:
+            self.motion.set_thinking(False)
         if not self._thinking_active:
             return
         self._thinking_active = False
@@ -203,6 +239,10 @@ class EmotionSystem:
         # Stop thinking animation when speech starts
         if self._thinking_active:
             self.stop_thinking()
+        if self.motion:
+            self.motion.set_speaking(True)
+            if self.motion.active:
+                return
         if not self.enabled or self._is_speaking or not self._talking_anims:
             return
         
@@ -229,6 +269,8 @@ class EmotionSystem:
 
     def stop_speaking(self):
         """Stop talking animations (called when AI stops speaking)."""
+        if self.motion:
+            self.motion.set_speaking(False)
         if not self._is_speaking:
             return
         self.mark_activity()

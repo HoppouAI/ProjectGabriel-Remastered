@@ -260,13 +260,28 @@ sampling, `''` = full 10 step, `ddim5` = fast). ARDY only: `--steps 8`
 
 Main app side: `config.yml` -> `motion:` section (`enabled: true`,
 `server_host`/`server_port` pointing at the GPU box). Gemini gets three
-tools: `playMotion(prompt, seconds?)`, `stopMotion()`, `resetPose()`.
+tools: `playMotion(prompt, loop, seconds?)`, `stopMotion()`, `resetPose()`.
+
+With `motion.expression` on (ARDY only) the client also drives the body by
+itself the way the canned emotion animations used to: gesture motions while
+he talks, a thinking motion while he thinks, idle fidgets after a quiet
+stretch, and a full `reset` once he has been quiet long enough, which hands
+the body back to VRChat and stops the GPU work. Anything the model asks for
+with `playMotion` takes the body and holds it until `stopMotion`, so the two
+layers never fight. Expression motions run with locomotion muted so a fidget
+can't walk him across the room.
 
 ## Websocket protocol
 
-Client -> server (json): `{"type": "prompt", "text": ...}` (unpauses),
+Client -> server (json): `{"type": "prompt", "text": ..., "once": bool}`
+(unpauses; `once` plays the action a single time and settles to idle),
 `{"type": "stop"}` (back to idle prompt), `{"type": "pause"}`,
-`{"type": "reset"}` (reseed rollout from the stand pose, pause, gpu idle).
+`{"type": "reset"}` (reseed rollout from the stand pose, pause, gpu idle),
+`{"type": "floor", "offset": meters}` (ground height under the avatar root
+from its FloorDown raycast, folded into HipsY).
+
+Server -> client on connect: `{"type": "hello", "backend": "ardy"|"dart",
+"model": ..., "fps": n}`, so the client can gate backend specific features.
 
 Server -> client at model fps: `{"type": "frame", "t": n, "params": {...}}`
 where params holds the 29 FBT values plus locomotion extras prefixed `_`:
