@@ -6,10 +6,21 @@ from src.emotions import get_emotion_system
 
 logger = logging.getLogger(__name__)
 
+# generated stand-ins for the engine crouch/prone keys, held until toggled off
+MOTION_POSES = {
+    "crouch": "a person crouches down low and stays crouched",
+    "crawl": "a person lies down flat on their stomach",
+}
+MOTION_CONNECT_TIMEOUT = 2.5
+
 
 @register_tool
 class MovementTools(BaseTool):
     tool_key = "movement"
+
+    def __init__(self, handler):
+        super().__init__(handler)
+        self._motion_pose = None  # 'crouch' | 'crawl' while held by generated motion
 
     def declarations(self, config=None):
         motion_on = getattr(config, "motion_enabled", False) if config is not None else False
@@ -22,15 +33,21 @@ class MovementTools(BaseTool):
             " Prefer playMotion ('a person jumps up and down') for expressive jumping; this is a "
             "plain engine hop for clearing obstacles." if motion_on else ""
         )
+        pose_note = (
+            " While the motion system is up this is performed as a real generated pose (your whole "
+            "body lowers and holds it); it falls back to the engine key if the motion server is "
+            "offline. Either way call this rather than playMotion so the toggle stays in sync."
+            if motion_on else ""
+        )
         return [
             types.FunctionDeclaration(
                 name="vrchatCrouch",
-                description="Toggle crouch in VRChat. Press once to crouch, press again to stand up.\n**Invocation Condition:** Call when asked to crouch or stand.",
+                description="Toggle crouch in VRChat. Press once to crouch, press again to stand up.\n**Invocation Condition:** Call when asked to crouch or stand." + pose_note,
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
                 name="vrchatCrawl",
-                description="Toggle crawl/prone position in VRChat. Press once to go prone, press again to stand up.\n**Invocation Condition:** Call when asked to crawl or go prone.",
+                description="Toggle crawl/prone position in VRChat. Press once to go prone, press again to stand up.\n**Invocation Condition:** Call when asked to crawl, lie down, or go prone." + pose_note,
                 parameters={"type": "OBJECT", "properties": {}},
             ),
             types.FunctionDeclaration(
@@ -99,19 +116,44 @@ class MovementTools(BaseTool):
             ),
         ]
 
+    async def _live_motion_client(self):
+        """Connected motion client, or None so callers fall back to the keys."""
+        if not getattr(self.config, "motion_enabled", False):
+            return None
+        try:
+            from src.motion_client import get_motion_client
+            client = get_motion_client(self.config, self.osc)
+            await client.ensure_connected(timeout=MOTION_CONNECT_TIMEOUT)
+            return client
+        except Exception as e:
+            logger.debug(f"motion server unavailable for pose, using engine key: {e}")
+            return None
+
+    async def _pose_toggle(self, pose, prompt, key_toggle):
+        """Crouch/prone as a generated pose when the motion server answers,
+        otherwise the plain engine keybind."""
+        client = await self._live_motion_client()
+        if client is not None:
+            if self._motion_pose == pose and client.current_prompt == prompt:
+                await client.stop_motion()
+                self._motion_pose = None
+                return {"result": "ok", "message": f"standing back up from {pose}"}
+            await client.play(prompt, owner="model")
+            self._motion_pose = pose
+            return {"result": "ok", "message": f"holding a generated {pose} pose"}
+
+        self._motion_pose = None
+        key_toggle()
+        emo = get_emotion_system()
+        if emo:
+            emo.set_crouching(not emo._crouching)
+        return {"result": "ok"}
+
     async def handle(self, name, args):
         if name == "vrchatCrouch":
-            self.osc.toggle_crouch()
-            emo = get_emotion_system()
-            if emo:
-                emo.set_crouching(not emo._crouching)
-            return {"result": "ok"}
+            return await self._pose_toggle("crouch", MOTION_POSES["crouch"], self.osc.toggle_crouch)
         elif name == "vrchatCrawl":
-            self.osc.toggle_crawl()
-            emo = get_emotion_system()
-            if emo:
-                emo.set_crouching(not emo._crouching)
-            return {"result": "ok"}
+            return await self._pose_toggle("crawl", MOTION_POSES["crawl"], self.osc.toggle_crawl)
         elif name == "vrchatMove":
             return await self._vrchat_move(args["direction"], args["duration"], args.get("speed", "normal"))
         elif name == "vrchatStop":
