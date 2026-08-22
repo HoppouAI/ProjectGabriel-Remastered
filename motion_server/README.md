@@ -275,6 +275,9 @@ can't walk him across the room.
 
 Client -> server (json): `{"type": "prompt", "text": ..., "once": bool}`
 (unpauses; `once` plays the action a single time and settles to idle),
+`{"type": "sequence", "steps": [...], "seconds_each": n, "loop_last": bool}`
+(ardy only, plays the prompts back to back, each advancing when it lands or
+after `seconds_each`; `loop_last` holds the final one instead of settling),
 `{"type": "stop"}` (back to idle prompt), `{"type": "pause"}`,
 `{"type": "reset"}` (reseed rollout from the stand pose, pause, gpu idle),
 `{"type": "floor", "offset": meters}` (ground height under the avatar root
@@ -397,6 +400,16 @@ Either backend:
   bridge. Cutting exactly at the playhead leaves nothing to serve while the
   first chunk of the new prompt generates, which showed up as a 150-250ms
   stall and a burst on every single switch.
+- Chaining actions has to be done as separate prompts, not as one sentence.
+  The paper describes long history context as the mechanism for non-cyclic
+  prompts like "walk forward, then bend over and pick something up before
+  continuing to walk", but core8 does not deliver it: chained sentences
+  freeze partway through, and the freeze scales with history (longest dead
+  stretch in a 26s rollout went 2s at 0.6s history, 7s at 2s, 11s at 5s,
+  19s at 7s, while active time fell from 19s to 6s). A "walk to a chair,
+  sit down, then stand back up and walk away" prompt barely moved at any
+  setting. So `sequence` plays each action as its own prompt and advances
+  when it lands, which also makes the ordering deterministic.
 - Stop requests from a non-upright pose play 'a person stands up' first and
   only settle into the 'stands still' idle once the pose is actually upright
   (hips above 0.75m, pelvis up axis vertical, 10s hard cap). 'stands still'

@@ -79,6 +79,14 @@ class ArdyEngine:
         self._once_deadline = 0
         self._once_max_s = 8.0
         self._once_settle_s = 0.5
+        # queued follow-up steps. one sentence describing several actions does
+        # NOT work on core8: chained prompts freeze instead of sequencing, and
+        # the freeze gets worse the more history you give it (measured 2s of
+        # dead time at 0.6s history vs 19s at 7s). so a chain is played as
+        # separate prompts, advancing when each one lands.
+        self._queue = []
+        self._step_until = None
+        self._loop_last = False
         self._emb_cache = {}
 
         self._motion = None        # [1, T, D] normalized, tail of the rollout
@@ -169,10 +177,55 @@ class ArdyEngine:
         self._text_feat = self._encode(self.prompt)
         return True
 
+    def _apply_step(self, prompt, once, seconds):
+        self.prompt = prompt
+        self._recover_at = None
+        self._once_active = bool(once)
+        self._once_left = False
+        self._once_run = 0
+        self._once_deadline = self.frame_idx + int(self._once_max_s * self.fps)
+        self._step_until = (self.frame_idx + int(seconds * self.fps)
+                            if seconds else None)
+        self._text_feat = self._encode(prompt)
+
+    def _advance(self):
+        """move to the next queued step, returns False if the queue is empty."""
+        if not self._queue:
+            return False
+        prompt, once, seconds = self._queue.pop(0)
+        hold = not self._queue and self._loop_last
+        self._apply_step(prompt, once and not hold, None if hold else seconds)
+        self._truncate_to_served(cut_history=True)
+        return True
+
+    def set_sequence(self, steps, seconds_each=None, loop_last=False):
+        """play prompts back to back, each advancing when it lands or times out."""
+        parsed = []
+        for s in steps:
+            if isinstance(s, str):
+                prompt, secs = s, seconds_each
+            else:
+                prompt = s.get('prompt', '')
+                secs = s.get('seconds', seconds_each)
+            prompt = self.normalize_prompt(prompt)
+            parsed.append((prompt, True, float(secs) if secs else None))
+        if not parsed:
+            return []
+        with self.lock:
+            self._loop_last = bool(loop_last)
+            self._queue = parsed[1:]
+            prompt, once, secs = parsed[0]
+            hold = not self._queue and self._loop_last
+            self._apply_step(prompt, once and not hold, None if hold else secs)
+            self._truncate_to_served(cut_history=True)
+        return [p for p, _, _ in parsed]
+
     def set_prompt(self, text, once=False):
         text = self.normalize_prompt(text)
         with self.lock:
             self._once_active = False
+            self._queue = []
+            self._step_until = None
             if text == self.idle_prompt and self._motion is not None:
                 cut = self._begin_stop()
             else:
@@ -199,6 +252,8 @@ class ArdyEngine:
             self.prompt = self.idle_prompt
             self._recover_at = None
             self._once_active = False
+            self._queue = []
+            self._step_until = None
             self._text_feat = self._encode(self.idle_prompt)
             self._epoch += 1
             self._cond.notify_all()
@@ -315,6 +370,11 @@ class ArdyEngine:
                 else:
                     # still mid rise (lying takes longer), check again shortly
                     self._recover_at = self.frame_idx + self._patch
+            if self._step_until is not None and self.frame_idx >= self._step_until:
+                self._step_until = None
+                if not self._advance():
+                    self._once_active = False
+                    self._truncate_to_served(cut_history=self._begin_stop())
             if self._once_active:
                 # one-shot action: done once he leaves the standing pose and
                 # comes back to it for a settle period (a double flip stays
@@ -326,14 +386,16 @@ class ArdyEngine:
                     self._once_run += 1
                     if self._once_run >= int(self._once_settle_s * self.fps):
                         self._once_active = False
-                        self.prompt = self.idle_prompt
-                        self._text_feat = self._encode(self.idle_prompt)
-                        self._truncate_to_served(cut_history=False)
+                        if not self._advance():
+                            self.prompt = self.idle_prompt
+                            self._text_feat = self._encode(self.idle_prompt)
+                            self._truncate_to_served(cut_history=False)
                 if self._once_active and self.frame_idx >= self._once_deadline:
                     # never came back on its own (held a pose, or the action
                     # never leaves upright like waving), force the stop path
                     self._once_active = False
-                    self._truncate_to_served(cut_history=self._begin_stop())
+                    if not self._advance():
+                        self._truncate_to_served(cut_history=self._begin_stop())
             while self.frame_idx - self._frames_base >= len(self._frames):
                 if self._worker_err is not None:
                     raise RuntimeError('ardy generation worker died') from self._worker_err

@@ -54,6 +54,34 @@ class MotionTools(BaseTool):
                 },
             ),
             types.FunctionDeclaration(
+                name="playMotionSequence",
+                description=(
+                    "Act out several motions back to back as one flowing routine. Each step is its "
+                    "own short third-person action sentence, and they blend into each other, e.g. "
+                    "['a person does a cartwheel', 'a person does a backflip', 'a person takes a bow']. "
+                    "Use this INSTEAD of writing one sentence with 'then' in it, a chained sentence "
+                    "makes the motion model freeze up partway through; separate steps are the only "
+                    "reliable way to chain. Each step plays once and automatically moves on when it "
+                    "lands, or after seconds_each if it never settles."
+                    "\n**Invocation Condition:** Call when asked for a routine, combo or several "
+                    "actions in a row ('do a flip then a spin then bow', 'dance then sit down'), or "
+                    "whenever you want to perform a little sequence rather than one action."
+                ),
+                parameters={
+                    "type": "OBJECT",
+                    "properties": {
+                        "steps": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"},
+                            "description": "Ordered action sentences, ONE action each, e.g. ['a person does a front flip', 'a person does a backflip', 'a person waves']. 2 to 8 steps.",
+                        },
+                        "seconds_each": {"type": "NUMBER", "description": "Optional max seconds to spend on each step before moving on. Leave empty to advance as soon as each action lands."},
+                        "loop_last": {"type": "BOOLEAN", "description": "true = the final step keeps going instead of returning to standing, e.g. finish a routine by settling into 'a person talks casually'. Default false."},
+                    },
+                    "required": ["steps"],
+                },
+            ),
+            types.FunctionDeclaration(
                 name="stopMotion",
                 description=(
                     "Stop the current motion and return to a natural generated standing idle. The motion "
@@ -96,6 +124,20 @@ class MotionTools(BaseTool):
                 msg += " (one-shot, will return to standing when it lands)"
             elif seconds:
                 msg += f" for {seconds:.0f}s, then back to standing"
+            return {"result": "ok", "message": msg}
+        elif name == "playMotionSequence":
+            steps = [str(s).strip() for s in (args.get("steps") or []) if str(s).strip()]
+            if not steps:
+                return {"result": "error", "message": "steps is required"}
+            seconds_each = args.get("seconds_each")
+            loop_last = bool(args.get("loop_last", False))
+            try:
+                await self._get_client().play_sequence(
+                    steps, seconds_each=seconds_each, loop_last=loop_last)
+            except ConnectionError as e:
+                return {"result": "error", "message": str(e)}
+            msg = f"performing {len(steps)} step routine: {' -> '.join(steps)}"
+            msg += " (holding the last one)" if loop_last else " (then back to standing)"
             return {"result": "ok", "message": msg}
         elif name == "stopMotion":
             if self._client is None:

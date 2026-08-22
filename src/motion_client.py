@@ -273,6 +273,22 @@ class MotionClient:
         """Whether generated root motion drives VRChat move inputs."""
         self._locomotion = bool(enabled)
 
+    async def play_sequence(self, steps, seconds_each=None, loop_last=False, owner="model"):
+        """chain actions back to back, each advancing when it lands or times out."""
+        await self.ensure_connected()
+        self._cancel_timer()
+        await self._send({"type": "sequence", "steps": list(steps),
+                          "seconds_each": seconds_each, "loop_last": bool(loop_last)})
+        self.current_prompt = steps[-1] if loop_last else "sequence"
+        self.owner = owner
+        self._locomotion = owner == "model"
+        # a chain runs longer than a single one-shot, hold ownership for the
+        # worst case (every step timing out) plus slack
+        span = (seconds_each or MODEL_ONCE_HOLD_S) * len(steps) + MODEL_ONCE_HOLD_S
+        self._owner_until = 0.0 if loop_last else time.monotonic() + span
+        if not self._active:
+            self._set_active(True)
+
     async def stop_motion(self):
         """back to a generated standing idle, puppet stays up."""
         self._cancel_timer()

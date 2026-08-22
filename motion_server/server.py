@@ -85,6 +85,16 @@ async def client_loop(ws, engine, retargeter, params_of, raw_of, send_raw, backe
                 used = await asyncio.to_thread(engine.set_prompt, text, once)
                 print(f'prompt: {text!r} -> {used!r}{" (once)" if once else ""}')
                 state['paused'] = False
+            elif mtype == 'sequence':
+                if not hasattr(engine, 'set_sequence'):
+                    print('sequence: unsupported on this backend, ignored')
+                    continue
+                steps = msg.get('steps') or []
+                used = await asyncio.to_thread(
+                    engine.set_sequence, steps, msg.get('seconds_each'),
+                    bool(msg.get('loop_last', False)))
+                print(f'sequence: {len(used)} steps -> {used}')
+                state['paused'] = False
             elif mtype == 'floor':
                 # world floor offset under the avatar root, from the client's
                 # FloorDown raycast reading. small and frequent, no logging.
