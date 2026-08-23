@@ -53,15 +53,16 @@ namespace ProjectGabriel.Editor
         private const float PITCH_RANGE_DEG = 180f;
         private const float ROLL_RANGE_DEG = 180f;
 
-        // HipsY drop below standing at param -1, in RootT units. derived as
-        // smpl_meters * 1.05346 (in-game fudge measured against a 1.0148
-        // humanScale avatar). retarget.py hipsy_down_m/up_m must be the smpl
-        // values. down 1.00 puts the pelvis exactly on the floor at -1, up
-        // 0.80 covers a real jump apex (dart lifts the pelvis ~0.74m).
+        // HipsY drop below standing at param -1. the param is in ARDY/smpl
+        // metres (retarget divides by hipsy_down_m), so the rig converts them
+        // to THIS avatar's build and then to RootT units, which Unity measures
+        // in metres/humanScale. doing that by hand with a fixed fudge put the
+        // hips 1.069m down for a requested 1.000, ~9% deep, which is why he
+        // sat with his ankles and backside through the floor.
         private const float HIPSY_DOWN_SMPL_M = 1.00f;
         private const float HIPSY_UP_SMPL_M = 0.80f;
-        private const float HIPSY_DOWN_RIG = HIPSY_DOWN_SMPL_M * 1.05346f;
-        private const float HIPSY_UP_RIG = HIPSY_UP_SMPL_M * 1.05346f;
+        // retarget_core.STAND_HIPS_Y, the ardy skeleton's standing pelvis height
+        private const float SMPL_STAND_HIPS_M = 0.952f;
 
         // OSCmooth style smoothing (github.com/regzo2/OSCmooth, Hai's feedback
         // loop blendtree). vrchat syncs avatar floats slowly and 8-bit
@@ -138,6 +139,12 @@ namespace ProjectGabriel.Editor
             var hips = animator.GetBoneTransform(HumanBodyBones.Hips);
             string hipsPath = AnimationUtility.CalculateTransformPath(hips, avatar.transform);
 
+            // must be sampled in the rest pose, same as midY above
+            float hipsStandY = hips.position.y - avatar.transform.position.y;
+            float rootPerSmplM = (hipsStandY / SMPL_STAND_HIPS_M) / animator.humanScale;
+            float hipsyDownRig = HIPSY_DOWN_SMPL_M * rootPerSmplM;
+            float hipsyUpRig = HIPSY_UP_SMPL_M * rootPerSmplM;
+
             // ---- clips ----
             var clips = new Dictionary<string, AnimationClip>();
             foreach (var (param, chain) in MUSCLE_PARAMS)
@@ -145,9 +152,9 @@ namespace ProjectGabriel.Editor
                 clips[param + "_min"] = MuscleClip($"FBT_{param}_min", chain, -1f);
                 clips[param + "_max"] = MuscleClip($"FBT_{param}_max", chain, +1f);
             }
-            clips["HipsY_min"] = FloatClip("FBT_HipsY_min", "", typeof(Animator), "RootT.y", midY - HIPSY_DOWN_RIG);
+            clips["HipsY_min"] = FloatClip("FBT_HipsY_min", "", typeof(Animator), "RootT.y", midY - hipsyDownRig);
             clips["HipsY_mid"] = FloatClip("FBT_HipsY_mid", "", typeof(Animator), "RootT.y", midY);
-            clips["HipsY_max"] = FloatClip("FBT_HipsY_max", "", typeof(Animator), "RootT.y", midY + HIPSY_UP_RIG);
+            clips["HipsY_max"] = FloatClip("FBT_HipsY_max", "", typeof(Animator), "RootT.y", midY + hipsyUpRig);
             // proxy rotation: pitch +1 = +X euler (lean forward), roll +1 = -Z (lean right)
             clips["Pitch_min"] = FloatClip("FBT_HipsPitch_min", "FBT_HipsPitchProxy", typeof(Transform), "localEulerAnglesRaw.x", -PITCH_RANGE_DEG);
             clips["Pitch_mid"] = FloatClip("FBT_HipsPitch_mid", "FBT_HipsPitchProxy", typeof(Transform), "localEulerAnglesRaw.x", 0f);
@@ -288,7 +295,9 @@ namespace ProjectGabriel.Editor
             WireDescriptor(avatar, ctrl, paramsAsset, menuAsset);
 
             AssetDatabase.SaveAssets();
-            Debug.Log($"[FBT] rig built for '{avatar.name}': midY={midY:F5}, hips='{hipsPath}', {children.Count} tree children. Reupload the avatar.");
+            Debug.Log($"[FBT] rig built for '{avatar.name}': midY={midY:F5}, hipsStandY={hipsStandY:F5}, " +
+                      $"RootT/smplM={rootPerSmplM:F5} (down={hipsyDownRig:F5} up={hipsyUpRig:F5}), " +
+                      $"hips='{hipsPath}', {children.Count} tree children. Reupload the avatar.");
         }
 
         /// <summary>
@@ -342,6 +351,7 @@ namespace ProjectGabriel.Editor
         [MenuItem("Tools/ProjectGabriel/Export muscle_ranges.json")]
         public static void ExportRanges()
         {
+            var Inv = System.Globalization.CultureInfo.InvariantCulture;
             var avatar = Selection.activeGameObject;
             var animator = avatar ? avatar.GetComponent<Animator>() : null;
             if (animator == null || !animator.isHuman)
@@ -355,15 +365,21 @@ namespace ProjectGabriel.Editor
 
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("{");
-            sb.AppendLine($"  \"humanScale\": {animator.humanScale:R},");
-            sb.AppendLine($"  \"hipsYUpMeters\": {HIPSY_UP_SMPL_M:R},");
-            sb.AppendLine($"  \"hipsYDownMeters\": {HIPSY_DOWN_SMPL_M:R},");
+            sb.AppendLine($"  \"humanScale\": {animator.humanScale.ToString("R", Inv)},");
+            sb.AppendLine($"  \"hipsYUpMeters\": {HIPSY_UP_SMPL_M.ToString("R", Inv)},");
+            sb.AppendLine($"  \"hipsYDownMeters\": {HIPSY_DOWN_SMPL_M.ToString("R", Inv)},");
             sb.AppendLine("  \"muscles\": {");
             var names = HumanTrait.MuscleName;
             for (int i = 0; i < names.Length; i++)
             {
                 string comma = i < names.Length - 1 ? "," : "";
-                sb.AppendLine($"    \"{names[i]}\": {{\"min\": {HumanTrait.GetMuscleDefaultMin(i):R}, \"max\": {HumanTrait.GetMuscleDefaultMax(i):R}}}{comma}");
+                // format outside the interpolation: "{x:R}}}" parses the }} as an
+                // escaped brace, so the specifier becomes "R}" and the number is
+                // dropped, writing a bare R. invariant culture keeps a comma
+                // decimal separator out of the json.
+                string lo = HumanTrait.GetMuscleDefaultMin(i).ToString("R", Inv);
+                string hi = HumanTrait.GetMuscleDefaultMax(i).ToString("R", Inv);
+                sb.AppendLine($"    \"{names[i]}\": {{\"min\": {lo}, \"max\": {hi}}}{comma}");
             }
             sb.AppendLine("  }");
             sb.AppendLine("}");
