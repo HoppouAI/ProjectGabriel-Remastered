@@ -116,6 +116,13 @@ class ArdyEngine:
         # the divergence test below stays as a net for a real blow-up.
         self._reanchor_every = 0
 
+        # a full window of the OLD action outvotes a new prompt until enough of
+        # it has scrolled out, which reads as him ignoring you for a few seconds.
+        # so ramp: start a new action on a short context the text can steer, and
+        # grow back to the cap once he is committed to it.
+        self._resp_ramp = int(2.5 * self.fps)
+        self._resp_floor = max(self._patch, int(0.8 * self.fps) // self._patch * self._patch)
+
         self._motion = None        # [1, T, D] normalized, tail of the rollout
         self._motion_base = 0      # absolute index of _motion[:, 0]
         self._frames = []          # decoded per-frame dicts, parallel tail
@@ -269,12 +276,17 @@ class ArdyEngine:
         return self.prompt
 
     def set_tuning(self, history=None, steps=None, postprocess=None,
-                   contact_threshold=None, root_margin=None, reanchor=None):
+                   contact_threshold=None, root_margin=None, reanchor=None,
+                   cfg_text=None, ramp=None):
         """live knobs so this can be dialled in from the client while in game."""
         with self.lock:
             if history is not None:
                 self._hist_cap = max(self._patch,
                                      int(float(history) * self.fps) // self._patch * self._patch)
+            if cfg_text is not None:
+                self._cfg = (float(cfg_text), self._cfg[1])
+            if ramp is not None:
+                self._resp_ramp = max(0, int(float(ramp) * self.fps))
             if steps is not None:
                 base = int(getattr(getattr(self.model, 'diffusion', None), 'num_base_steps', 10) or 10)
                 self._steps = max(1, min(int(steps), base))
@@ -297,7 +309,9 @@ class ArdyEngine:
                 'postprocess': self._postprocess,
                 'contact_threshold': self._contact_thresh,
                 'root_margin': self._root_margin,
-                'reanchor_s': round(self._reanchor_every / self.fps, 2)}
+                'reanchor_s': round(self._reanchor_every / self.fps, 2),
+                'cfg_text': self._cfg[0],
+                'ramp_s': round(self._resp_ramp / self.fps, 2)}
 
     def reset(self):
         """forget the rollout, next motion spawns fresh at the origin."""
@@ -364,11 +378,7 @@ class ArdyEngine:
         the anchor is captured once the prompt has landed, then reused either
         on a timer or as soon as |z| runs away from where it started. the
         threshold is relative because a healthy run sits higher than a broken
-        sit does."""
-        if self.prompt != self._anchor_prompt:
-            self._anchor = None
-            self._anchor_prompt = self.prompt
-            self._prompt_at = self.frame_idx
+        sit does. prompt changes are picked up by the caller."""
         z = float(hist.abs().max())
         age = self.frame_idx - self._prompt_at
         if age < self._anchor_after:
@@ -398,16 +408,31 @@ class ArdyEngine:
             return self._motion
         return hist
 
+    def _hist_cap_now(self):
+        """how much context this step gets, see _resp_ramp in __init__."""
+        age = self.frame_idx - self._prompt_at
+        if not self._resp_ramp or age >= self._resp_ramp:
+            return self._hist_cap
+        lo = min(self._resp_floor, self._hist_cap)
+        return lo + (self._hist_cap - lo) * age // self._resp_ramp
+
     def _snapshot(self):
         """grab everything a generation step needs, under the lock. tensors
         are immutable once created (truncation reslices, append cats), so
         holding references is safe."""
+        if self.prompt != self._anchor_prompt:
+            # checked here too, so the ramp starts on the same frame the prompt
+            # lands rather than one step late
+            self._anchor = None
+            self._anchor_prompt = self.prompt
+            self._prompt_at = self.frame_idx
+            self._anchor_z = 0.0
         if self._motion is None:
             hist, hist_len = None, 0
             init_t = torch.zeros(1, 3, device=self.device)
             init_h = torch.zeros(1, device=self.device)
         else:
-            hist_len = min(self._motion.shape[1], self._hist_cap) // self._patch * self._patch
+            hist_len = min(self._motion.shape[1], self._hist_cap_now()) // self._patch * self._patch
             hist = self._guard_history(self._motion[:, -hist_len:])
             hist_len = hist.shape[1]
             init_t = init_h = None

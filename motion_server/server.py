@@ -105,7 +105,8 @@ async def client_loop(ws, engine, retargeter, params_of, raw_of, send_raw, backe
                     postprocess=msg.get('postprocess'),
                     contact_threshold=msg.get('contact_threshold'),
                     root_margin=msg.get('root_margin'),
-                    reanchor=msg.get('reanchor'))
+                    reanchor=msg.get('reanchor'),
+                    cfg_text=msg.get('cfg_text'), ramp=msg.get('ramp'))
                 print(f'tune: {got}')
                 await ws.send(json.dumps({'type': 'tuning', 'tuning': got}))
             elif mtype == 'floor':
