@@ -592,6 +592,10 @@ class Config:
         return self.get("motion", "walk_full_speed", default=2.0)
 
     @property
+    def motion_run_full_speed(self):
+        return self.get("motion", "run_full_speed", default=4.0)
+
+    @property
     def motion_turn_full_rate(self):
         return self.get("motion", "turn_full_rate", default=1.8)
 

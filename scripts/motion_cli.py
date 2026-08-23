@@ -22,6 +22,12 @@ SEND_HZ = 60.0
 SMOOTH_TAU = 0.07        # muscle smoothing time constant
 LOCO_TAU = 0.4           # smooth axes over most of a stride so speed doesnt pulse
 WALK_FULL_MPS = 2.0      # vrchat desktop walk speed at full stick
+RUN_FULL_MPS = 4.0       # and with /input/Run held down
+# only hold Run when the motion actually asks for more than a walk. the axis is
+# scaled against whichever ceiling is live, so 2 m/s is stick 1.0 walking or
+# stick 0.5 running: the speed matches across the switch, only the cap changes.
+RUN_ON_MPS = 2.0
+RUN_OFF_MPS = 1.7        # drop out lower so it cannot chatter on the boundary
 TURN_FULL_RADS = 1.8     # yaw rate at full LookHorizontal
 AXIS_DEADZONE = 0.3      # vrchat ignores axes below this, snap up to it
 AXIS_CUTOFF = 0.15       # below this desired value just send 0
@@ -76,6 +82,7 @@ async def sender(osc, st):
     interval = 1.0 / SEND_HZ
     last = time.monotonic()
     sv = sh = sl = 0.0
+    running = False
     while True:
         now = time.monotonic()
         dt = max(1e-3, now - last)
@@ -89,14 +96,24 @@ async def sender(osc, st):
                 osc.send_message(PREFIX + p, float(st.current[p]))
 
             if st.loco:
-                sv += (st.vfwd / WALK_FULL_MPS - sv) * beta
-                sh += (st.vside / WALK_FULL_MPS - sh) * beta
+                speed = math.hypot(st.vfwd, st.vside)
+                if running and speed < RUN_OFF_MPS:
+                    running = False
+                elif not running and speed > RUN_ON_MPS:
+                    running = True
+                full = RUN_FULL_MPS if running else WALK_FULL_MPS
+                sv += (st.vfwd / full - sv) * beta
+                sh += (st.vside / full - sh) * beta
                 sl += (st.vyaw / TURN_FULL_RADS - sl) * beta
+                osc.send_message("/input/Run", 1 if running else 0)
                 osc.send_message("/input/Vertical", float(snap_axis(sv)))
                 osc.send_message("/input/Horizontal", float(snap_axis(sh)))
                 osc.send_message("/input/LookHorizontal", float(max(-1.0, min(1.0, sl))))
             else:
                 sv = sh = sl = 0.0
+                if running:
+                    running = False
+                    osc.send_message("/input/Run", 0)
 
         await asyncio.sleep(max(0.0, interval - (time.monotonic() - now)))
 
@@ -104,6 +121,7 @@ async def sender(osc, st):
 def zero_inputs(osc):
     for a in ("Vertical", "Horizontal", "LookHorizontal"):
         osc.send_message("/input/" + a, 0.0)
+    osc.send_message("/input/Run", 0)
 
 
 def split_steps(rest):

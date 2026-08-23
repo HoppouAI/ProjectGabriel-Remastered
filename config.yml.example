@@ -531,6 +531,10 @@ motion:
   # fast he turns (radians per second) at full look input. Only touch these
   # if walking looks like sliding or turning overshoots.
   walk_full_speed: 2.0
+  # Sprinting holds VRChat's run key, which raises the ceiling to this. It is
+  # only held when the generated motion actually asks for more than
+  # walk_full_speed, so normal walking is unaffected.
+  run_full_speed: 4.0
   turn_full_rate: 1.8
   # Precise movement using the pose shader. If your avatar has the pose
   # strip shader on it (the same one the voxel navigation system uses), set

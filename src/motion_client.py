@@ -208,7 +208,7 @@ class PoseTracker:
 class MotionClient:
     def __init__(self, osc_client, host, port, walk_full=2.0, turn_full=1.8,
                  pose_tracking=False, pose_monitor=1, raycast_state=None,
-                 nav_mode="pause"):
+                 nav_mode="pause", run_full=4.0):
         self._osc = osc_client
         self._uri = f"ws://{host}:{port}"
         self._ws = None
@@ -224,6 +224,11 @@ class MotionClient:
         self._got_frame = False
         self._walk_full = walk_full
         self._turn_full = turn_full
+        # only hold Run when the motion asks for more than a walk. the axis is
+        # scaled against whichever ceiling is live, so the speed matches across
+        # the switch and only the cap changes.
+        self._run_full = run_full
+        self._running = False
         self._tracker = PoseTracker(pose_monitor) if pose_tracking else None
         self._rays = raycast_state
         self._floor_base = None   # standing-ground distance baseline (m)
@@ -410,6 +415,9 @@ class MotionClient:
         self._osc.send_message("/input/Vertical", 0.0)
         self._osc.send_message("/input/Horizontal", 0.0)
         self._osc.send_message("/input/LookHorizontal", 0.0)
+        if self._running:
+            self._running = False
+        self._osc.send_message("/input/Run", 0)
 
     async def _receiver(self):
         import websockets
@@ -519,9 +527,16 @@ class MotionClient:
                         if self._tracker is not None:
                             cf, cs, cy = self._tracker.correction(
                                 self._dart_x, self._dart_y, self._dart_yaw, now)
-                        sv += ((self._vfwd + cf) / self._walk_full - sv) * beta
-                        sh += ((self._vside + cs) / self._walk_full - sh) * beta
+                        want = math.hypot(self._vfwd + cf, self._vside + cs)
+                        if self._running and want < self._walk_full * 0.85:
+                            self._running = False
+                        elif not self._running and want > self._walk_full:
+                            self._running = True
+                        full = self._run_full if self._running else self._walk_full
+                        sv += ((self._vfwd + cf) / full - sv) * beta
+                        sh += ((self._vside + cs) / full - sh) * beta
                         sl += ((self._vyaw + cy) / self._turn_full - sl) * beta
+                        self._osc.send_message("/input/Run", 1 if self._running else 0)
                         self._osc.send_message("/input/Vertical", float(_snap_axis(sv)))
                         self._osc.send_message("/input/Horizontal", float(_snap_axis(sh)))
                         self._osc.send_message("/input/LookHorizontal", float(max(-1.0, min(1.0, sl))))
@@ -546,6 +561,7 @@ def get_motion_client(config, osc):
             config.motion_server_host,
             config.motion_server_port,
             walk_full=config.motion_walk_full_speed,
+            run_full=config.motion_run_full_speed,
             turn_full=config.motion_turn_full_rate,
             pose_tracking=config.motion_pose_tracking,
             pose_monitor=config.motion_pose_monitor,
