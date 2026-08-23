@@ -63,6 +63,25 @@ namespace ProjectGabriel.Editor
         private const float HIPSY_DOWN_RIG = HIPSY_DOWN_SMPL_M * 1.05346f;
         private const float HIPSY_UP_RIG = HIPSY_UP_SMPL_M * 1.05346f;
 
+        // OSCmooth style smoothing (github.com/regzo2/OSCmooth, Hai's feedback
+        // loop blendtree). vrchat syncs avatar floats slowly and 8-bit
+        // quantized, so remote players see the puppet step between values even
+        // though it is smooth locally. each param gets a proxy that lerps
+        // toward it every frame, and the puppet reads the proxy instead.
+        // this is generated rather than applied with the OSCmooth tool because
+        // Build() deletes and recreates the controller, which would throw away
+        // anything the tool had written into it.
+        //
+        // value is the fraction of the old value kept per frame, so higher is
+        // smoother AND laggier, and the real time constant moves with the
+        // viewer's framerate (~0.1s at 90fps here). local is 0: the python
+        // client already one-euro filters at 60Hz and local response should
+        // stay instant.
+        private const float LOCAL_SMOOTHNESS = 0f;
+        private const float REMOTE_SMOOTHNESS = 0.92f;
+        private const string PROXY_PREFIX = "OSCm_Proxy/FBT/";
+        private const string SMOOTH_PARAM = "OSCm/Smoothing";
+
         // param -> (unity muscle name, chain weight). mirrors PARAM_MUSCLES
         // in motion_server/retarget.py, keep the two in sync.
         private static readonly (string param, (string muscle, float w)[] chain)[] MUSCLE_PARAMS =
@@ -144,8 +163,7 @@ namespace ProjectGabriel.Editor
 
             // ---- controller ----
             string ctrlPath = OUT_DIR + "/FBT_Action.controller";
-            AssetDatabase.DeleteAsset(ctrlPath);
-            var ctrl = AnimatorController.CreateAnimatorControllerAtPath(ctrlPath);
+            var ctrl = PrepareController(ctrlPath);
             ctrl.AddParameter("FBT/Enable", AnimatorControllerParameterType.Bool);
             var one = new AnimatorControllerParameter { name = "FBT/One", type = AnimatorControllerParameterType.Float, defaultFloat = 1f };
             ctrl.AddParameter(one);
@@ -153,6 +171,21 @@ namespace ProjectGabriel.Editor
                 ctrl.AddParameter("FBT/" + param, AnimatorControllerParameterType.Float);
             foreach (var p in new[] { "FBT/HipsY", "FBT/HipsPitch", "FBT/HipsRoll" })
                 ctrl.AddParameter(p, AnimatorControllerParameterType.Float);
+
+            // smoothing proxies. animator-only, never added to the expression
+            // parameters, so they cost nothing against the 256 sync bits.
+            var smoothed = new List<string>();
+            foreach (var (param, _) in MUSCLE_PARAMS) smoothed.Add("FBT/" + param);
+            smoothed.AddRange(new[] { "FBT/HipsY", "FBT/HipsPitch", "FBT/HipsRoll" });
+            foreach (var p in smoothed)
+                ctrl.AddParameter(PROXY_PREFIX + p.Substring(4), AnimatorControllerParameterType.Float);
+            ctrl.AddParameter(new AnimatorControllerParameter
+            {
+                name = SMOOTH_PARAM,
+                type = AnimatorControllerParameterType.Float,
+                defaultFloat = REMOTE_SMOOTHNESS,
+            });
+            ctrl.AddParameter("IsLocal", AnimatorControllerParameterType.Bool);
 
             var sm = ctrl.layers[0].stateMachine;
             var idle = sm.AddState("Idle", new Vector3(250, 0, 0));
@@ -168,13 +201,13 @@ namespace ProjectGabriel.Editor
 
             var children = new List<ChildMotion>();
             foreach (var (param, _) in MUSCLE_PARAMS)
-                children.Add(DirectChild(Tree1D(ctrl, "FBT " + param, "FBT/" + param,
+                children.Add(DirectChild(Tree1D(ctrl, "FBT " + param, PROXY_PREFIX + param,
                     (clips[param + "_min"], -1f), (clips[param + "_max"], 1f))));
-            children.Add(DirectChild(Tree1D(ctrl, "FBT HipsY", "FBT/HipsY",
+            children.Add(DirectChild(Tree1D(ctrl, "FBT HipsY", PROXY_PREFIX + "HipsY",
                 (clips["HipsY_min"], -1f), (clips["HipsY_mid"], 0f), (clips["HipsY_max"], 1f))));
-            children.Add(DirectChild(Tree1D(ctrl, "FBT HipsPitch", "FBT/HipsPitch",
+            children.Add(DirectChild(Tree1D(ctrl, "FBT HipsPitch", PROXY_PREFIX + "HipsPitch",
                 (clips["Pitch_min"], -1f), (clips["Pitch_mid"], 0f), (clips["Pitch_max"], 1f))));
-            children.Add(DirectChild(Tree1D(ctrl, "FBT HipsRoll2", "FBT/HipsRoll",
+            children.Add(DirectChild(Tree1D(ctrl, "FBT HipsRoll2", PROXY_PREFIX + "HipsRoll",
                 (clips["Roll_min"], -1f), (clips["Roll_mid"], 0f), (clips["Roll_max"], 1f))));
             if (clips.ContainsKey("ConstraintOn"))
                 children.Add(DirectChild(clips["ConstraintOn"]));
@@ -204,6 +237,8 @@ namespace ProjectGabriel.Editor
                 ("trackingHip", 1), ("trackingLeftFoot", 1), ("trackingRightFoot", 1));
             AddBehaviour(reset, "VRC.SDK3.Avatars.Components.VRCAnimatorLocomotionControl",
                 ("disableLocomotion", false));
+
+            BuildSmoothingLayers(ctrl, smoothed);
 
             // ---- vrc params + menu ----
             var paramsAsset = BuildExpressionParameters(OUT_DIR + "/FBT_Params.asset");
@@ -254,6 +289,54 @@ namespace ProjectGabriel.Editor
             Debug.Log($"[FBT] rig built for '{avatar.name}': midY={midY:F5}, hips='{hipsPath}', {children.Count} tree children. Reupload the avatar.");
         }
 
+        /// <summary>
+        /// Point a second avatar (the quest build) at the rig that's already on
+        /// disk, without rebuilding it. Quest needs the hips constraint pinned
+        /// on in the scene because android ignores animated VRC constraint
+        /// properties, so it can't share the PC avatar's weight-0 setup.
+        /// </summary>
+        [MenuItem("Tools/ProjectGabriel/Wire Quest Avatar To Rig")]
+        public static void WireQuestAvatar()
+        {
+            var avatar = Selection.activeGameObject;
+            var animator = avatar ? avatar.GetComponent<Animator>() : null;
+            if (animator == null || !animator.isHuman)
+            {
+                EditorUtility.DisplayDialog("FBT Rig", "Select the quest avatar root first.", "ok");
+                return;
+            }
+
+            var ctrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(OUT_DIR + "/FBT_Action.controller");
+            if (ctrl == null)
+            {
+                EditorUtility.DisplayDialog("FBT Rig", "Build the rig on the PC avatar first.", "ok");
+                return;
+            }
+            var prms = AssetDatabase.LoadAssetAtPath(OUT_DIR + "/FBT_Params.asset",
+                FindType("VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters"));
+            var menu = AssetDatabase.LoadAssetAtPath(OUT_DIR + "/FBT_Menu.asset",
+                FindType("VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu"));
+
+            WireDescriptor(avatar, ctrl, prms, menu);
+
+            var hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+            var conType = FindType("VRC.SDK3.Dynamics.Constraint.Components.VRCRotationConstraint");
+            var con = (hips != null && conType != null) ? hips.GetComponent(conType) : null;
+            if (con == null)
+            {
+                Debug.LogWarning("[FBT] no hips constraint on '" + avatar.name + "', copy the rigged hips over from the PC avatar");
+            }
+            else
+            {
+                conType.GetField("GlobalWeight").SetValue(con, 1f);
+                EditorUtility.SetDirty(con);
+            }
+
+            EditorUtility.SetDirty(avatar);
+            AssetDatabase.SaveAssets();
+            Debug.Log("[FBT] quest avatar '" + avatar.name + "' wired to the rig, hips constraint pinned on. Reupload it.");
+        }
+
         [MenuItem("Tools/ProjectGabriel/Export muscle_ranges.json")]
         public static void ExportRanges()
         {
@@ -291,6 +374,130 @@ namespace ProjectGabriel.Editor
         }
 
         // ---------- helpers ----------
+
+        /// <summary>
+        /// Empty the controller in place instead of deleting it. Deleting gives
+        /// the rebuilt asset a new guid, which silently nulls the Action layer
+        /// on every OTHER avatar pointing at it (the quest build, mainly), and
+        /// nothing warns you until it uploads without a puppet.
+        /// </summary>
+        private static AnimatorController PrepareController(string path)
+        {
+            var ctrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
+            if (ctrl == null)
+                return AnimatorController.CreateAnimatorControllerAtPath(path);
+
+            while (ctrl.layers.Length > 0) ctrl.RemoveLayer(0);
+            while (ctrl.parameters.Length > 0) ctrl.RemoveParameter(0);
+            foreach (var sub in AssetDatabase.LoadAllAssetsAtPath(path))
+                if (sub != ctrl) UnityEngine.Object.DestroyImmediate(sub, true);
+            ctrl.AddLayer("Base Layer");
+            return ctrl;
+        }
+
+        /// <summary>Reuse the asset at path if it exists, so its guid holds.</summary>
+        private static UnityEngine.Object LoadOrCreate(Type type, string path)
+        {
+            var existing = AssetDatabase.LoadAssetAtPath(path, type);
+            if (existing != null) return existing;
+            var asset = ScriptableObject.CreateInstance(type);
+            AssetDatabase.CreateAsset(asset, path);
+            return asset;
+        }
+
+        /// <summary>
+        /// Two extra layers: one always-on Direct tree that lerps every proxy
+        /// toward its real parameter, and one that picks the local or remote
+        /// smoothing amount. The lerp is a blendtree reading the proxy it just
+        /// wrote, so each frame it lands a fraction of the way there and the
+        /// stepped network values come out as a curve.
+        /// </summary>
+        private static void BuildSmoothingLayers(AnimatorController ctrl, List<string> paramNames)
+        {
+            var root = new BlendTree
+            {
+                name = "OSCm Root DBT",
+                blendType = BlendTreeType.Direct,
+                hideFlags = HideFlags.HideInHierarchy,
+            };
+            AssetDatabase.AddObjectToAsset(root, ctrl);
+
+            var kids = new List<ChildMotion>();
+            foreach (var full in paramNames)
+            {
+                string bare = full.Substring(4);            // FBT/LElbow -> LElbow
+                string proxy = PROXY_PREFIX + bare;
+                var lo = AapClip("OSCm_" + bare + "_min", proxy, -1f);
+                var hi = AapClip("OSCm_" + bare + "_max", proxy, 1f);
+                // 0 = proxy chases the real param, 1 = proxy holds what it had
+                var chase = Tree1D(ctrl, "OSCm Chase " + bare, full, (lo, -1f), (hi, 1f));
+                var hold = Tree1D(ctrl, "OSCm Hold " + bare, proxy, (lo, -1f), (hi, 1f));
+                var lerp = new BlendTree
+                {
+                    name = "OSCm " + bare,
+                    blendType = BlendTreeType.Simple1D,
+                    blendParameter = SMOOTH_PARAM,
+                    useAutomaticThresholds = false,
+                    hideFlags = HideFlags.HideInHierarchy,
+                };
+                lerp.AddChild(chase, 0f);
+                lerp.AddChild(hold, 1f);
+                AssetDatabase.AddObjectToAsset(lerp, ctrl);
+                kids.Add(DirectChild(lerp));
+            }
+            root.children = kids.ToArray();
+
+            var smoothing = new AnimatorControllerLayer
+            {
+                name = "OSCmooth",
+                defaultWeight = 1f,
+                stateMachine = new AnimatorStateMachine
+                {
+                    name = "OSCmooth",
+                    hideFlags = HideFlags.HideInHierarchy,
+                },
+            };
+            AssetDatabase.AddObjectToAsset(smoothing.stateMachine, ctrl);
+            var run = smoothing.stateMachine.AddState("Smooth", new Vector3(250, 0, 0));
+            run.motion = root;
+            run.writeDefaultValues = true;
+            smoothing.stateMachine.defaultState = run;
+            ctrl.AddLayer(smoothing);
+
+            // remote clients get the smoothing, the local view stays instant
+            var select = new AnimatorControllerLayer
+            {
+                name = "OSCmooth Local",
+                defaultWeight = 1f,
+                stateMachine = new AnimatorStateMachine
+                {
+                    name = "OSCmooth Local",
+                    hideFlags = HideFlags.HideInHierarchy,
+                },
+            };
+            AssetDatabase.AddObjectToAsset(select.stateMachine, ctrl);
+            var remote = select.stateMachine.AddState("Remote", new Vector3(250, 0, 0));
+            remote.motion = AapClip("OSCm_Smoothing_remote", SMOOTH_PARAM, REMOTE_SMOOTHNESS);
+            remote.writeDefaultValues = true;
+            var local = select.stateMachine.AddState("Local", new Vector3(250, 120, 0));
+            local.motion = AapClip("OSCm_Smoothing_local", SMOOTH_PARAM, LOCAL_SMOOTHNESS);
+            local.writeDefaultValues = true;
+            select.stateMachine.defaultState = remote;
+            var toLocal = remote.AddTransition(local);
+            toLocal.hasExitTime = false; toLocal.duration = 0f;
+            toLocal.AddCondition(AnimatorConditionMode.If, 0, "IsLocal");
+            ctrl.AddLayer(select);
+        }
+
+        /// <summary>Clip that drives an animator float parameter (an AAP).</summary>
+        private static AnimationClip AapClip(string name, string param, float value)
+        {
+            var clip = NewClip(name);
+            var binding = new EditorCurveBinding { path = "", type = typeof(Animator), propertyName = param };
+            AnimationUtility.SetEditorCurve(clip, binding, Flat(value));
+            SaveClip(clip);
+            return clip;
+        }
 
         private static AnimationClip MuscleClip(string name, (string muscle, float w)[] chain, float sign)
         {
@@ -356,7 +563,7 @@ namespace ProjectGabriel.Editor
             var pType = FindType("VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters");
             if (pType == null) { Debug.LogWarning("[FBT] VRCExpressionParameters type missing"); return null; }
             var entryType = pType.GetNestedType("Parameter");
-            var asset = ScriptableObject.CreateInstance(pType);
+            var asset = LoadOrCreate(pType, path);
 
             var allNames = new List<string> { "FBT/Enable" };
             foreach (var (param, _) in MUSCLE_PARAMS) allNames.Add("FBT/" + param);
@@ -377,8 +584,7 @@ namespace ProjectGabriel.Editor
                 arr.SetValue(e, i);
             }
             pType.GetField("parameters").SetValue(asset, arr);
-            AssetDatabase.DeleteAsset(path);
-            AssetDatabase.CreateAsset(asset, path);
+            EditorUtility.SetDirty(asset);
             return asset;
         }
 
@@ -387,7 +593,7 @@ namespace ProjectGabriel.Editor
             var mType = FindType("VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu");
             if (mType == null) { Debug.LogWarning("[FBT] VRCExpressionsMenu type missing"); return null; }
             var cType = mType.GetNestedType("Control");
-            var asset = ScriptableObject.CreateInstance(mType);
+            var asset = LoadOrCreate(mType, path);
 
             object control = Activator.CreateInstance(cType);
             cType.GetField("name").SetValue(control, "FBT Puppet");
@@ -401,10 +607,10 @@ namespace ProjectGabriel.Editor
 
             var controlsField = mType.GetField("controls");
             var list = (IList)controlsField.GetValue(asset);
+            list.Clear();
             list.Add(control);
 
-            AssetDatabase.DeleteAsset(path);
-            AssetDatabase.CreateAsset(asset, path);
+            EditorUtility.SetDirty(asset);
             return asset;
         }
 
