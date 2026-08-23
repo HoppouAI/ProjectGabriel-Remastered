@@ -89,6 +89,26 @@ class ArdyEngine:
         self._loop_last = False
         self._emb_cache = {}
 
+        # a held prompt drifts. the rollout only ever sees its own output
+        # through a 12 frame window, so small biases compound with nothing to
+        # correct them: holding a sit for 3 minutes took the normalized latent
+        # from |z| 6.3 to 34.5 and stretched bone lengths by half a metre, ie
+        # the decoded joints stopped describing a real body. static poses are
+        # worst because a near constant history carries almost no signal, a
+        # gait cycle at least keeps re-injecting structure.
+        # there is no absolute limit to clamp against, healthy |z| is prompt
+        # dependent (stand 1.5, sit 6.5, run 18.6), so instead keep a known
+        # good conditioning window from just after the prompt landed and fall
+        # back to it on a leash.
+        self._anchor = None
+        self._anchor_prompt = None
+        self._anchor_z = 0.0
+        self._anchor_at = 0
+        self._prompt_at = 0
+        self._anchor_after = int(4.0 * self.fps)
+        self._anchor_settle = int(8.0 * self.fps)
+        self._reanchor_every = int(15.0 * self.fps)
+
         self._motion = None        # [1, T, D] normalized, tail of the rollout
         self._motion_base = 0      # absolute index of _motion[:, 0]
         self._frames = []          # decoded per-frame dicts, parallel tail
@@ -254,6 +274,8 @@ class ArdyEngine:
             self._once_active = False
             self._queue = []
             self._step_until = None
+            self._anchor = None
+            self._anchor_prompt = None  # also re-bases _prompt_at off frame 0
             self._text_feat = self._encode(self.idle_prompt)
             self._epoch += 1
             self._cond.notify_all()
@@ -279,6 +301,64 @@ class ArdyEngine:
                 self._worker_err = e
                 self._cond.notify_all()
 
+    def _rebase(self, anchor):
+        """put an anchor window back at the current world pose.
+
+        the history tensor carries absolute planar position and heading, and
+        autoregressive_step reads them straight off it (_encode_init_history
+        recenters on the last history frame and ignores init_global_translation
+        entirely when a history is passed). so replaying an older window as-is
+        rewinds him through the world: measured a 14m jump in a single frame
+        mid walk. rotate then translate so the swap is invisible."""
+        rep = self.model.motion_rep
+        a = rep.unnormalize(anchor)
+        cur = rep.unnormalize(self._motion[:, -1:])
+        a = rep.rotate(a, rep.get_root_heading_angle(cur)[:, 0]
+                       - rep.get_root_heading_angle(a)[:, -1])
+        delta = (rep.get_root_pos(cur)[:, 0][:, [0, 2]]
+                 - rep.get_root_pos(a)[:, -1][:, [0, 2]])
+        return rep.normalize(rep.translate_2d(a, delta))
+
+    def _guard_history(self, hist):
+        """keep the conditioning window inside the distribution the model was
+        trained on, see the _anchor note in __init__.
+
+        the anchor is captured once the prompt has landed, then reused either
+        on a timer or as soon as |z| runs away from where it started. the
+        threshold is relative because a healthy run sits higher than a broken
+        sit does."""
+        if self.prompt != self._anchor_prompt:
+            self._anchor = None
+            self._anchor_prompt = self.prompt
+            self._prompt_at = self.frame_idx
+        z = float(hist.abs().max())
+        age = self.frame_idx - self._prompt_at
+        if age < self._anchor_after:
+            # prompt still landing, nothing here is representative yet
+            self._anchor = None
+            self._anchor_z = 0.0
+            return hist
+        if age < self._anchor_settle:
+            # learn what healthy looks like for THIS prompt over a window, not
+            # at one instant: 4s into a walk he is still accelerating, and a
+            # baseline taken there reads 5.8 against a steady state of 10-12,
+            # which trips the divergence test on a perfectly good gait.
+            self._anchor = hist.clone()
+            self._anchor_z = max(self._anchor_z, z)
+            self._anchor_at = self.frame_idx
+            return hist
+        if self._anchor is None:
+            return hist
+        if (z > max(2.0 * self._anchor_z, self._anchor_z + 5.0)
+                or self.frame_idx - self._anchor_at >= self._reanchor_every):
+            # _motion is conditioning only, never served, so rewriting it is
+            # invisible downstream. the base keeps _truncate_to_served honest.
+            self._motion = self._rebase(self._anchor)
+            self._motion_base = self.frame_idx + 1 - self._motion.shape[1]
+            self._anchor_at = self.frame_idx
+            return self._motion
+        return hist
+
     def _snapshot(self):
         """grab everything a generation step needs, under the lock. tensors
         are immutable once created (truncation reslices, append cats), so
@@ -289,7 +369,8 @@ class ArdyEngine:
             init_h = torch.zeros(1, device=self.device)
         else:
             hist_len = min(self._motion.shape[1], self._hist_cap) // self._patch * self._patch
-            hist = self._motion[:, -hist_len:]
+            hist = self._guard_history(self._motion[:, -hist_len:])
+            hist_len = hist.shape[1]
             init_t = init_h = None
         return {'epoch': self._epoch, 'text_feat': self._text_feat,
                 'hist': hist, 'hist_len': hist_len, 'init_t': init_t, 'init_h': init_h}
