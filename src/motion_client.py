@@ -58,27 +58,21 @@ MODEL_ONCE_HOLD_S = 12.0
 # navigation handoff. the voxel explorer and the wanderer drive VRChat move
 # inputs directly, and they dedupe against their own last sent value, so the
 # puppet writing 0 to Vertical/LookHorizontal every frame silently strands
-# them mid path. anything that steers the avatar calls motion_drive() and the
-# puppet gets out of the way. it's a heartbeat rather than start/stop calls
-# because navigation has half a dozen exit paths (arrival, cancel, align
-# done, seek timeout) and a missed stop would wedge the body forever.
+# them mid path. anything that steers the avatar calls navigation_tick() and
+# the puppet keeps off those channels until it stops. it's a heartbeat rather
+# than start/stop calls because navigation has half a dozen exit paths
+# (arrival, cancel, align done, seek timeout) and a missed stop would wedge
+# the body forever.
 NAV_HEARTBEAT_S = 0.5
 NAV_WALK_PROMPT = "a person walks forward"
-STEER_SEND_HZ = 10.0
 _nav_until = 0.0
-_nav_drive = (0.0, 0.0, False)
 _CLIENT = None
 
 
-def motion_drive(forward=0.0, turn=0.0, run=False):
-    """Called by whatever is steering the avatar. Returns True if the motion
-    model is taking over the walking, in which case the caller must NOT write
-    move inputs itself."""
-    global _nav_until, _nav_drive
+def navigation_tick():
+    """Called by whatever is steering the avatar, every tick it drives."""
+    global _nav_until
     _nav_until = time.monotonic() + NAV_HEARTBEAT_S
-    _nav_drive = (float(forward), float(turn), bool(run))
-    c = _CLIENT
-    return bool(c is not None and c.steers_navigation)
 
 
 def navigation_driving():
@@ -243,19 +237,17 @@ class MotionClient:
         self._locomotion = True   # expression gestures shouldn't walk him off
         self._nav_mode = nav_mode  # 'pause' or 'model' while something else navigates
         self._navigating = False
-        self._nav_resume = None   # prompt to restore once navigation lets go
-        self._steer_next = 0.0
+        self._nav_held = None     # 'paused' or 'walking', what to undo on release
 
     @property
     def is_ardy(self):
         return self.backend == "ardy"
 
     @property
-    def steers_navigation(self):
-        """True when generated walking should carry him to the destination
-        instead of the navigator's own move inputs."""
-        return (self._nav_mode == "model" and self._active
-                and self._got_frame and self.is_ardy)
+    def walks_for_navigation(self):
+        """True when the puppet plays a walk animation while the navigation
+        system does the actual moving."""
+        return self._nav_mode == "model" and self.is_ardy
 
     @property
     def active(self):
@@ -387,40 +379,32 @@ class MotionClient:
             self._zero_inputs()
 
     async def _nav_update(self, now):
-        """hand the body to whatever is navigating, or drive the walk for it."""
+        """navigation drives the avatar, the puppet either gets out of the way
+        or plays a walk on the spot over the top of it."""
         driving = navigation_driving()
         if driving == self._navigating:
-            if driving and self._nav_mode == "model" and now >= self._steer_next:
-                self._steer_next = now + 1.0 / STEER_SEND_HZ
-                fwd, turn, run = _nav_drive
-                try:
-                    await self._send({"type": "steer", "forward": fwd,
-                                      "turn": turn, "run": run})
-                except Exception:
-                    pass
             return
         self._navigating = driving
         if driving:
-            if self._nav_mode == "model":
-                self._nav_resume = self.current_prompt
+            if self.walks_for_navigation:
                 try:
+                    # locomotion off: the generated stride is animation only,
+                    # the navigator owns where he actually goes
                     await self.play(NAV_WALK_PROMPT, owner="navigation")
                 except ConnectionError:
-                    # server gone, let the navigator drive itself this trip
-                    self._nav_resume = None
                     self._navigating = False
+                    return
+                self.set_locomotion(False)
+                self._nav_held = "walking"
             elif self._active:
-                self._nav_resume = self.current_prompt
                 self._set_active(False, zero=False)
+                self._nav_held = "paused"
             return
-        if self._nav_resume is None:
-            return
-        resume, self._nav_resume = self._nav_resume, None
-        if self._nav_mode == "model":
+        held, self._nav_held = self._nav_held, None
+        if held == "walking":
             await self.stop_motion()
-        else:
+        elif held == "paused":
             self._set_active(True)
-            logger.debug(f"motion puppet back after navigation (was {resume!r})")
 
     def _zero_inputs(self):
         self._osc.send_message("/input/Vertical", 0.0)
@@ -509,9 +493,14 @@ class MotionClient:
                 await self._floor_update(now, dt)
                 await self._nav_update(now)
 
-                if self._navigating and self._nav_mode != "model":
-                    # someone else is walking him, stay off the move inputs
-                    # and off the puppet so vrchat animates the walk
+                if self._navigating:
+                    # never touch the move inputs while something else is
+                    # driving. in model mode the body still animates a walk,
+                    # it just doesn't decide where he goes
+                    if self.walks_for_navigation and self._active and self._got_frame:
+                        for p in PARAMS:
+                            self._osc.send_message(
+                                PREFIX + p, float(self._filters[p](self._target[p], dt)))
                     sv = sh = sl = 0.0
                     await asyncio.sleep(interval)
                     continue
@@ -520,7 +509,7 @@ class MotionClient:
                     for p in PARAMS:
                         cur = self._filters[p](self._target[p], dt)
                         self._osc.send_message(PREFIX + p, float(cur))
-                    if not self._locomotion and not self._navigating:
+                    if not self._locomotion:
                         # gesturing in place, keep the generated root motion
                         # out of the move inputs so he doesn't drift away
                         sv = sh = sl = 0.0

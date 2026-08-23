@@ -99,11 +99,6 @@ async def client_loop(ws, engine, retargeter, params_of, raw_of, send_raw, backe
                 # world floor offset under the avatar root, from the client's
                 # FloorDown raycast reading. small and frequent, no logging.
                 retargeter.set_world_floor(msg.get('offset', 0.0))
-            elif mtype == 'steer':
-                # navigation aiming the generated walk. 10hz, no logging.
-                if hasattr(engine, 'set_steer'):
-                    engine.set_steer(msg.get('forward', 0.0), msg.get('turn', 0.0),
-                                     bool(msg.get('run', False)))
             elif mtype == 'stop':
                 print('prompt: stop -> idle')
                 await asyncio.to_thread(engine.set_prompt, engine.idle_prompt)

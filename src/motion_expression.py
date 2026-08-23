@@ -23,18 +23,28 @@ TICK_S = 0.5
 CONNECT_RETRY_S = 20.0
 
 # used when config.yml has no motion.expression block, so turning motion on is
-# enough to get the behaviour without editing prompts by hand
+# enough to get the behaviour without editing prompts by hand.
+# these are screened with benchmarks/ardy_prompts.py, not written by taste:
+# the model renders concrete whole-body gestures and ignores subtle or mood
+# based ones. "stretches their arms and rolls their shoulders" and "looks
+# around slowly, bored" both generated less movement than two runs of "stands
+# still" differ by, ie nothing. "stretches both arms above their head" is the
+# same idea named concretely and moves 12x more. keep new prompts physical.
 DEFAULT_TALKING = [
+    "a person gestures emphatically while speaking",
     "a person talks while gesturing with both hands",
-    "a person speaks and shrugs lightly",
-    "a person talks casually, one hand moving as they explain",
     "a person nods while talking, hands relaxed",
+    "a person spreads their arms wide while talking",
+    "a person talks casually, one hand moving as they explain",
+    "a person points ahead while explaining something",
 ]
-DEFAULT_THINKING = "a person stands still and looks up thoughtfully, hand near their chin"
+DEFAULT_THINKING = "a person scratches their head and shrugs"
 DEFAULT_IDLE = [
-    "a person shifts their weight and glances around",
-    "a person stretches their arms and rolls their shoulders",
-    "a person stands and looks around slowly, bored",
+    "a person stretches both arms above their head",
+    "a person swings their arms and stretches their back",
+    "a person scratches the back of their head",
+    "a person yawns and stretches their arms out wide",
+    "a person leans on one leg and folds their arms",
 ]
 
 
@@ -113,7 +123,8 @@ class MotionExpression:
 
     def _want(self):
         """What the body should be doing right now."""
-        if self._suppressed:
+        from src.motion_client import navigation_driving
+        if self._suppressed or navigation_driving():
             return None
         if self._speaking and self._talking:
             return "talk"

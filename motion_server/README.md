@@ -285,7 +285,6 @@ from its FloorDown raycast, folded into HipsY).
 
 Server -> client on connect: `{"type": "hello", "backend": "ardy"|"dart",
 "model": ..., "fps": n}`, so the client can gate backend specific features.
-
 Server -> client at model fps: `{"type": "frame", "t": n, "params": {...}}`
 where params holds the 29 FBT values plus locomotion extras prefixed `_`:
 `_vfwd`/`_vside` (m/s body frame), `_vyaw` (rad/s, + = right), `_x`/`_y`/`_yaw`.

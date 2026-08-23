@@ -9,37 +9,13 @@
 # gated LLM2Vec llama so no meta approval is needed (~5.5GB vram, encodes a
 # prompt in ~0.3s, cached).
 
-import math
 import threading
-import time
 from pathlib import Path
 
 import numpy as np
 import torch
 
 ENCODER_PATH = str(Path(__file__).parent / 'text_encoders' / 'llm2vec_nf4')
-
-# steering: navigation hands us vrchat style axes and we turn them into 2D
-# root waypoints for the model to walk to. ardy conditions on those natively
-# (the paper's root paths/waypoints control), so the stride is generated to
-# reach them instead of us sliding the avatar along under a walk animation.
-# heading is [cos, sin] with forward = (sin, cos) in xz, and turning right
-# lowers the angle, both measured off the model.
-STEER_WALK_MS = 1.3
-STEER_RUN_MS = 2.2
-STEER_TTL_S = 1.0
-# the navigator's turn axis is coarse on purpose: it keeps a 0.5 magnitude
-# floor to beat vrchat's look deadzone. read as a spin rate that pins him
-# turning on the spot, so it's read as "how far off is the way i want to
-# face" and the waypoints arc toward it instead.
-STEER_TURN_ARC = math.radians(75.0)
-STEER_ARC_EASE_S = 1.0
-# goals have to reach past the generation horizon to mean anything: 0.4s of
-# waypoints is a few cm of lateral offset and the model just walks straight
-# through them. the reference projects velocity goals 2s out, one every 10
-# frames, and grows the visible window to cover them.
-STEER_GOAL_S = 2.0
-STEER_GOAL_INTERVAL = 10
 
 
 class ArdyEngine:
@@ -82,7 +58,6 @@ class ArdyEngine:
         self._steps = min(int(steps), base_steps)
         self._cfg = (float(cfg_text), float(cfg_constraint))
         self._hist_cap = max(self._patch, int(hist_cap_s * self.fps) // self._patch * self._patch)
-        self._max_window = (10 * self.fps // self._patch) * self._patch
 
         self.idle_prompt = 'a person stands still'
         # 'stands still' describes a state, not a transition: from a seated
@@ -112,8 +87,6 @@ class ArdyEngine:
         self._queue = []
         self._step_until = None
         self._loop_last = False
-        self._steer = None
-        self._steer_until = 0.0
         self._emb_cache = {}
 
         self._motion = None        # [1, T, D] normalized, tail of the rollout
@@ -268,37 +241,6 @@ class ArdyEngine:
             self._truncate_to_served(cut_history=cut)
         return self.prompt
 
-    def set_steer(self, forward, turn, run=False):
-        """aim the generated walk. axes are vrchat style, +forward and +right."""
-        with self.lock:
-            self._steer = (max(-1.0, min(1.0, float(forward))),
-                           max(-1.0, min(1.0, float(turn))), bool(run))
-            self._steer_until = time.monotonic() + STEER_TTL_S
-
-    def _steer_goal(self, hist_len):
-        """future 2D root waypoints from the requested velocity, one per token."""
-        if self._steer is None or time.monotonic() >= self._steer_until or not self._frames:
-            return None
-        forward, turn, run = self._steer
-        last = self._frames[-1]
-        cs = np.ravel(last['heading'])
-        angle = math.atan2(float(cs[1]), float(cs[0]))
-        pos = np.asarray(last['root_pos'], dtype=np.float64)[[0, 2]].copy()
-        speed = forward * (STEER_RUN_MS if run else STEER_WALK_MS)
-        target = angle - turn * STEER_TURN_ARC
-        ease = max(1.0, STEER_ARC_EASE_S * self.fps)
-        dt = 1.0 / self.fps
-        idx, pts = [], []
-        for i in range(1, int(STEER_GOAL_S * self.fps) + 1):
-            a = angle + (target - angle) * min(1.0, i / ease)
-            pos = pos + np.array([math.sin(a), math.cos(a)]) * speed * dt
-            if i % STEER_GOAL_INTERVAL == 0:
-                idx.append(hist_len + i - 1)
-                pts.append(pos.copy())
-        if not idx:
-            return None
-        return idx, np.stack(pts)
-
     def reset(self):
         """forget the rollout, next motion spawns fresh at the origin."""
         with self.lock:
@@ -350,30 +292,7 @@ class ArdyEngine:
             hist = self._motion[:, -hist_len:]
             init_t = init_h = None
         return {'epoch': self._epoch, 'text_feat': self._text_feat,
-                'hist': hist, 'hist_len': hist_len, 'init_t': init_t, 'init_h': init_h,
-                'goal': self._steer_goal(hist_len)}
-
-    @torch.no_grad()
-    def _build_goal(self, goal, hist_len, length):
-        """turn 2D root waypoints into the observed/mask pair the model wants."""
-        from ardy.constraints import Root2DConstraintSet
-        idx, pts = goal
-        keep = [i for i, f in enumerate(idx) if f < length]
-        if not keep:
-            return None, None
-        rep = self.model.motion_rep
-        cset = Root2DConstraintSet(
-            rep.skeleton,
-            torch.tensor([idx[i] for i in keep], device=self.device, dtype=torch.long),
-            torch.tensor(pts[keep], device=self.device, dtype=torch.float32),
-        )
-        observed, mask = rep.create_conditions_from_constraints(
-            [cset], length=length, to_normalize=False, device=str(self.device))
-        observed = rep.normalize(observed) * mask
-        # history frames are already known, only the future is a goal
-        mask[:hist_len] = 0.0
-        observed[:hist_len] = 0.0
-        return observed[None], mask[None]
+                'hist': hist, 'hist_len': hist_len, 'init_t': init_t, 'init_h': init_h}
 
     @torch.no_grad()
     def _run_step(self, snap):
@@ -381,19 +300,10 @@ class ArdyEngine:
         hist_len = snap['hist_len']
         text_feat = snap['text_feat']
         mask = torch.ones(1, text_feat.shape[1], device=self.device, dtype=torch.bool)
-        goal = snap['goal']
-        win = hist_len + self._horizon
-        observed_motion = motion_mask = None
-        if goal is not None:
-            # widen the window so the furthest waypoint is visible as future
-            # context, then still only keep the horizon and replan
-            win = min(max(win, goal[0][-1] + 1), self._max_window)
-            win = math.ceil(win / self._patch) * self._patch
-            observed_motion, motion_mask = self._build_goal(goal, hist_len, win)
         samples = self.model.autoregressive_step(
-            num_frames=win,
+            num_frames=hist_len + self._horizon,
             num_denoising_steps=self._steps,
-            motion_mask=motion_mask, observed_motion=observed_motion,
+            motion_mask=None, observed_motion=None,
             cfg_weight=self._cfg,
             texts=None, text_feat=text_feat, text_pad_mask=mask,
             init_history_sequence=snap['hist'],
@@ -402,10 +312,9 @@ class ArdyEngine:
         )
         out = self.model.motion_rep.inverse(
             self.model.motion_rep.unnormalize(samples), is_normalized=False)
-        end = hist_len + self._horizon
 
         def np_of(key):
-            return out[key][0, hist_len:end].float().cpu().numpy()
+            return out[key][0, hist_len:].float().cpu().numpy()
 
         joints = np_of('posed_joints')
         rots = np_of('global_rot_mats')
@@ -415,7 +324,7 @@ class ArdyEngine:
         frames = [{'joints': joints[i], 'rotmats': rots[i], 'heading': heading[i],
                    'root_pos': root[i], 'smooth_root': smooth[i]}
                   for i in range(joints.shape[0])]
-        return samples[:, hist_len:end], frames
+        return samples[:, hist_len:], frames
 
     def _append(self, new, frames):
         """attach a finished chunk, under the lock."""

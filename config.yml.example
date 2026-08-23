@@ -543,12 +543,12 @@ motion:
   pose_monitor: 1
   # What the puppet does while the navigation system is walking him somewhere
   # (gotoWaypoint, wandering, exploring). Those systems steer with VRChat's
-  # own move inputs, so the puppet has to get out of the way or they fight.
+  # own move inputs, so the puppet has to stay off those channels or they
+  # fight and he stops dead mid path. Either way navigation does the moving.
   #   pause = drop the puppet for the trip, VRChat animates the walk normally,
   #           and the generated body comes back on arrival. Safe default.
-  #   model = the motion model does the walking. Steering gets fed to it as a
-  #           root velocity goal and its generated stride carries him there,
-  #           so navigation looks like real walking instead of a glide.
+  #   model = keep the puppet up playing a generated walk on the spot, so his
+  #           body strides properly while the waypoint system carries him.
   #           Needs the ardy backend, falls back to pause on dart.
   navigation: pause
 
@@ -561,19 +561,27 @@ motion:
   # one it is running and this stays off on DART.
   expression:
     enabled: true
+    # Prompts here have to name a concrete, physical, whole-body gesture. The
+    # motion model renders those and quietly ignores subtle or mood based ones
+    # ("looks around slowly, bored" generates literally nothing). Screen your
+    # own with: motion_server/.venv-ardy/Scripts/python benchmarks/ardy_prompts.py
     # Gestures while speaking, rotated so a long answer isn't one looping wave.
     talking:
+      - "a person gestures emphatically while speaking"
       - "a person talks while gesturing with both hands"
-      - "a person speaks and shrugs lightly"
-      - "a person talks casually, one hand moving as they explain"
       - "a person nods while talking, hands relaxed"
+      - "a person spreads their arms wide while talking"
+      - "a person talks casually, one hand moving as they explain"
+      - "a person points ahead while explaining something"
     # Played while he is thinking or digging through memories.
-    thinking: "a person stands still and looks up thoughtfully, hand near their chin"
+    thinking: "a person scratches their head and shrugs"
     # Fidgets once he's been quiet for idle_after seconds.
     idle:
-      - "a person shifts their weight and glances around"
-      - "a person stretches their arms and rolls their shoulders"
-      - "a person stands and looks around slowly, bored"
+      - "a person stretches both arms above their head"
+      - "a person swings their arms and stretches their back"
+      - "a person scratches the back of their head"
+      - "a person yawns and stretches their arms out wide"
+      - "a person leans on one leg and folds their arms"
     # Seconds before the talking gesture switches to a different one.
     switch_interval: 6.0
     # Seconds of quiet before the idle fidgets start.
