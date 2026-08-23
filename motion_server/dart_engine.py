@@ -196,6 +196,7 @@ class MotionEngine:
 
     def normalize_prompt(self, text):
         """nudge whatever the client sent toward this models training style."""
+        from ardy_engine import has_subject  # shared caption convention, no DART deps
         text = ' '.join(str(text).replace('.', ' ').replace('!', ' ').split())
         if not text:
             return self.idle_prompt
@@ -206,7 +207,7 @@ class MotionEngine:
                 if low.startswith(pre):
                     text = text[len(pre):]
                     break
-        elif 'person' not in low:
+        elif not has_subject(text):
             # hml3d wants humanml3d style captions, give terse verbs a subject
             text = f'a person {text}'
         return text

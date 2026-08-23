@@ -17,6 +17,27 @@ import torch
 
 ENCODER_PATH = str(Path(__file__).parent / 'text_encoders' / 'llm2vec_nf4')
 
+# words that count as the caption already having a subject. bare 'person' in
+# the string is not enough: 'punches a man' still needs one, while 'a tall man
+# runs' already has one, so the noun only counts at the head of the sentence.
+_SUBJECT_NOUNS = frozenset((
+    'person', 'man', 'woman', 'guy', 'girl', 'human', 'boy', 'lady',
+    'male', 'female', 'figure', 'character', 'dude',
+))
+_SUBJECT_PRONOUNS = frozenset(('he', 'she', 'they', 'someone', 'somebody'))
+_DETERMINERS = frozenset(('a', 'an', 'the', 'this', 'that', 'one'))
+
+
+def has_subject(text):
+    w = text.lower().split()
+    if not w:
+        return False
+    if w[0] in _SUBJECT_PRONOUNS:
+        return True
+    if w[0] in _DETERMINERS:
+        return any(x in _SUBJECT_NOUNS for x in w[1:3])
+    return False
+
 
 class ArdyEngine:
     """owns the ARDY rollout state. all methods must be called from one thread."""
@@ -145,11 +166,15 @@ class ArdyEngine:
         return feat
 
     def normalize_prompt(self, text):
-        """ardy wants humanml style captions, same as the hml3d dart variant."""
+        """ardy wants humanml style captions, same as the hml3d dart variant.
+
+        only gives the caption a subject if it hasn't got one. the old test was
+        'person' not in text, so 'a man runs' went in as 'a person a man runs',
+        which is why asking for a gendered gait never appeared to do anything."""
         text = ' '.join(str(text).replace('.', ' ').replace('!', ' ').split())
         if not text:
             return self.idle_prompt
-        if 'person' not in text.lower():
+        if not has_subject(text):
             text = f'a person {text}'
         return text
 
