@@ -176,14 +176,14 @@ async def handle(ws, osc, st, line):
         if not st.loco:
             zero_inputs(osc)
         print(f"  -> locomotion {'ON (he walks around)' if st.loco else 'OFF (walks in place)'}")
-    elif cmd in ("hist", "steps", "margin", "contact", "reanchor", "cfg", "ramp"):
+    elif cmd in ("hist", "steps", "margin", "contact", "cfg", "ramp"):
         try:
             val = float(rest)
         except ValueError:
             print(f"  usage: /{cmd} <number>")
             return True
         key = {"hist": "history", "steps": "steps", "margin": "root_margin",
-               "contact": "contact_threshold", "reanchor": "reanchor",
+               "contact": "contact_threshold",
                "cfg": "cfg_text", "ramp": "ramp"}[cmd]
         await ws.send(json.dumps({"type": "tune", key: val}))
     elif cmd == "post":

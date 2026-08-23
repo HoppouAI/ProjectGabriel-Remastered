@@ -2,12 +2,12 @@
 # (fps / idle_prompt / normalize_prompt / set_prompt / reset / next_frame)
 # but backed by nvidia ARDY core checkpoints instead of DART.
 #
-# streaming pattern mirrors the official interactive demo's _generate_step:
-# keep a normalized motion tensor, feed its tail (a multiple of the token
-# size) as history each autoregressive_step, append the new horizon, decode
-# with motion_rep.inverse. text encoder is the community NF4 quant of the
-# gated LLM2Vec llama so no meta approval is needed (~5.5GB vram, encodes a
-# prompt in ~0.3s, cached).
+# streaming pattern mirrors the loop body of ardy's own long generation: the
+# hybrid latent history is the state and persists across steps, each step
+# denoises one horizon onto it and requantizes, and the explicit motion we
+# stream out is a decoded copy that never feeds back in. text encoder is the
+# community NF4 quant of the gated LLM2Vec llama so no meta approval is needed
+# (~5.5GB vram, encodes a prompt in ~0.3s, cached).
 
 import threading
 from pathlib import Path
@@ -93,28 +93,18 @@ class ArdyEngine:
         self._loop_last = False
         self._emb_cache = {}
 
-        # a held prompt drifts. the rollout only ever sees its own output
-        # through a 12 frame window, so small biases compound with nothing to
-        # correct them: holding a sit for 3 minutes took the normalized latent
-        # from |z| 6.3 to 34.5 and stretched bone lengths by half a metre, ie
-        # the decoded joints stopped describing a real body. static poses are
-        # worst because a near constant history carries almost no signal, a
-        # gait cycle at least keeps re-injecting structure.
-        # there is no absolute limit to clamp against, healthy |z| is prompt
-        # dependent (stand 1.5, sit 6.5, run 18.6), so instead keep a known
-        # good conditioning window from just after the prompt landed and fall
-        # back to it on a leash.
-        self._anchor = None
-        self._anchor_prompt = None
-        self._anchor_z = 0.0
-        self._anchor_at = 0
+        # a held prompt used to drift badly: |z| 6.3 -> 34.5 over three minutes
+        # of sitting, bones stretched half a metre, ie the decoded joints
+        # stopped describing a real body. the cause was feeding DECODED motion
+        # back in as the next history, which re-runs the autoencoder both ways
+        # every 0.4s. ardy's own long generation never does that, it keeps the
+        # rollout in the hybrid latent and only decodes at the very end, so the
+        # tokenizer round trip happens once instead of 150 times a minute.
+        # we hold the same latent here and decode a throwaway copy to serve.
+        self._hyb = None           # [1, T_tok, D] hybrid latent, the real state
+        self._transl = None        # [1, 3] world offset the latent is centred against
         self._prompt_at = 0
-        self._anchor_after = int(4.0 * self.fps)
-        self._anchor_settle = int(8.0 * self.fps)
-        # 0 = no periodic re-anchor. a long history is the actual cure, and
-        # re-seeding on a timer is visible: he drifts, then visibly snaps back.
-        # the divergence test below stays as a net for a real blow-up.
-        self._reanchor_every = 0
+        self._last_prompt = None
 
         # a full window of the OLD action outvotes a new prompt until enough of
         # it has scrolled out, which reads as him ignoring you for a few seconds.
@@ -123,7 +113,7 @@ class ArdyEngine:
         self._resp_ramp = int(2.5 * self.fps)
         self._resp_floor = max(self._patch, int(0.8 * self.fps) // self._patch * self._patch)
 
-        self._motion = None        # [1, T, D] normalized, tail of the rollout
+        self._motion = None        # [1, T, D] normalized, tail of what was served
         self._motion_base = 0      # absolute index of _motion[:, 0]
         self._frames = []          # decoded per-frame dicts, parallel tail
         self._frames_base = 0
@@ -182,8 +172,12 @@ class ArdyEngine:
         if self._motion is None:
             return
         keep = max(self.frame_idx + 1 - self._motion_base + self._replan_bridge, self._patch)
-        keep = min(keep, self._motion.shape[1])
+        keep = min((keep + self._patch - 1) // self._patch * self._patch, self._motion.shape[1])
         self._motion = self._motion[:, :keep]
+        # the latent has to lose the same frames, otherwise he carries on from a
+        # future that never got served and the switch shows as a jump
+        if self._hyb is not None:
+            self._hyb = self._hyb[:, :max(1, keep // self._patch)]
         fkeep = min(max(self.frame_idx + 1 - self._frames_base + self._replan_bridge, 0),
                     len(self._frames))
         del self._frames[fkeep:]
@@ -191,6 +185,8 @@ class ArdyEngine:
             cut = self._motion.shape[1] - self._patch
             self._motion = self._motion[:, cut:]
             self._motion_base += cut
+            if self._hyb is not None:
+                self._hyb = self._hyb[:, -1:]
 
     def _begin_stop(self):
         """head for idle, returns whether history needs cutting.
@@ -297,7 +293,7 @@ class ArdyEngine:
             if root_margin is not None:
                 self._root_margin = float(root_margin)
             if reanchor is not None:
-                self._reanchor_every = int(float(reanchor) * self.fps)
+                pass  # kept so older clients dont error, the latent requantize replaced it
             self._epoch += 1  # void the in-flight chunk so changes land now
             self._cond.notify_all()
         return self.tuning()
@@ -309,7 +305,6 @@ class ArdyEngine:
                 'postprocess': self._postprocess,
                 'contact_threshold': self._contact_thresh,
                 'root_margin': self._root_margin,
-                'reanchor_s': round(self._reanchor_every / self.fps, 2),
                 'cfg_text': self._cfg[0],
                 'ramp_s': round(self._resp_ramp / self.fps, 2)}
 
@@ -326,8 +321,9 @@ class ArdyEngine:
             self._once_active = False
             self._queue = []
             self._step_until = None
-            self._anchor = None
-            self._anchor_prompt = None  # also re-bases _prompt_at off frame 0
+            self._hyb = None
+            self._transl = None
+            self._last_prompt = None   # re-bases _prompt_at off frame 0
             self._text_feat = self._encode(self.idle_prompt)
             self._epoch += 1
             self._cond.notify_all()
@@ -342,71 +338,16 @@ class ArdyEngine:
                            >= self._lookahead):
                         self._cond.wait(0.05)
                     snap = self._snapshot()
-                samples, frames = self._run_step(snap)
+                samples, frames, hyb, transl = self._run_step(snap)
                 with self._cond:
                     if snap['epoch'] == self._epoch:
-                        self._append(samples, frames)
+                        self._append(samples, frames, hyb, transl)
                         self._cond.notify_all()
                     # else: prompt/reset landed mid generation, discard
         except Exception as e:
             with self._cond:
                 self._worker_err = e
                 self._cond.notify_all()
-
-    def _rebase(self, anchor):
-        """put an anchor window back at the current world pose.
-
-        the history tensor carries absolute planar position and heading, and
-        autoregressive_step reads them straight off it (_encode_init_history
-        recenters on the last history frame and ignores init_global_translation
-        entirely when a history is passed). so replaying an older window as-is
-        rewinds him through the world: measured a 14m jump in a single frame
-        mid walk. rotate then translate so the swap is invisible."""
-        rep = self.model.motion_rep
-        a = rep.unnormalize(anchor)
-        cur = rep.unnormalize(self._motion[:, -1:])
-        a = rep.rotate(a, rep.get_root_heading_angle(cur)[:, 0]
-                       - rep.get_root_heading_angle(a)[:, -1])
-        delta = (rep.get_root_pos(cur)[:, 0][:, [0, 2]]
-                 - rep.get_root_pos(a)[:, -1][:, [0, 2]])
-        return rep.normalize(rep.translate_2d(a, delta))
-
-    def _guard_history(self, hist):
-        """keep the conditioning window inside the distribution the model was
-        trained on, see the _anchor note in __init__.
-
-        the anchor is captured once the prompt has landed, then reused either
-        on a timer or as soon as |z| runs away from where it started. the
-        threshold is relative because a healthy run sits higher than a broken
-        sit does. prompt changes are picked up by the caller."""
-        z = float(hist.abs().max())
-        age = self.frame_idx - self._prompt_at
-        if age < self._anchor_after:
-            # prompt still landing, nothing here is representative yet
-            self._anchor = None
-            self._anchor_z = 0.0
-            return hist
-        if age < self._anchor_settle:
-            # learn what healthy looks like for THIS prompt over a window, not
-            # at one instant: 4s into a walk he is still accelerating, and a
-            # baseline taken there reads 5.8 against a steady state of 10-12,
-            # which trips the divergence test on a perfectly good gait.
-            self._anchor = hist.clone()
-            self._anchor_z = max(self._anchor_z, z)
-            self._anchor_at = self.frame_idx
-            return hist
-        if self._anchor is None:
-            return hist
-        timer_due = (self._reanchor_every
-                     and self.frame_idx - self._anchor_at >= self._reanchor_every)
-        if z > max(2.0 * self._anchor_z, self._anchor_z + 5.0) or timer_due:
-            # _motion is conditioning only, never served, so rewriting it is
-            # invisible downstream. the base keeps _truncate_to_served honest.
-            self._motion = self._rebase(self._anchor)
-            self._motion_base = self.frame_idx + 1 - self._motion.shape[1]
-            self._anchor_at = self.frame_idx
-            return self._motion
-        return hist
 
     def _hist_cap_now(self):
         """how much context this step gets, see _resp_ramp in __init__."""
@@ -420,51 +361,87 @@ class ArdyEngine:
         """grab everything a generation step needs, under the lock. tensors
         are immutable once created (truncation reslices, append cats), so
         holding references is safe."""
-        if self.prompt != self._anchor_prompt:
-            # checked here too, so the ramp starts on the same frame the prompt
-            # lands rather than one step late
-            self._anchor = None
-            self._anchor_prompt = self.prompt
+        if self.prompt != self._last_prompt:
+            self._last_prompt = self.prompt
             self._prompt_at = self.frame_idx
-            self._anchor_z = 0.0
-        if self._motion is None:
-            hist, hist_len = None, 0
-            init_t = torch.zeros(1, 3, device=self.device)
-            init_h = torch.zeros(1, device=self.device)
-        else:
-            hist_len = min(self._motion.shape[1], self._hist_cap_now()) // self._patch * self._patch
-            hist = self._guard_history(self._motion[:, -hist_len:])
-            hist_len = hist.shape[1]
-            init_t = init_h = None
+        want_tok = max(1, self._hist_cap_now() // self._patch)
         return {'epoch': self._epoch, 'text_feat': self._text_feat,
-                'hist': hist, 'hist_len': hist_len, 'init_t': init_t, 'init_h': init_h}
+                'hyb': self._hyb, 'transl': self._transl, 'want_tok': want_tok}
 
     @torch.no_grad()
     def _run_step(self, snap):
-        """the gpu heavy part, runs outside the lock."""
-        hist_len = snap['hist_len']
+        """one autoregressive window, mirroring the loop body of ardy's own
+        __call__ rather than their single shot autoregressive_step helper.
+
+        the difference is what carries between steps. autoregressive_step takes
+        EXPLICIT motion in and hands EXPLICIT motion back, so driving it in a
+        loop tokenizes and detokenizes every 0.4s; encode(decode(z)) != z and
+        the error feeds straight into the next step. their long generation
+        keeps the hybrid latent across every step and decodes once at the end.
+        we do the same, and treat the decode purely as output."""
+        from ardy.model.ardy_model import translate_normalized_root_motion
+        model = self.model
+        rep = model.motion_rep
+        hybrid = model.hybrid
+        patch, horizon = self._patch, self._horizon
         text_feat = snap['text_feat']
         mask = torch.ones(1, text_feat.shape[1], device=self.device, dtype=torch.bool)
-        samples = self.model.autoregressive_step(
-            num_frames=hist_len + self._horizon,
-            num_denoising_steps=self._steps,
-            motion_mask=None, observed_motion=None,
-            cfg_weight=self._cfg,
-            texts=None, text_feat=text_feat, text_pad_mask=mask,
-            init_history_sequence=snap['hist'],
-            init_global_translation=snap['init_t'],
-            init_first_heading_angle=snap['init_h'],
+
+        hyb, transl = snap['hyb'], snap['transl']
+        if transl is None:
+            transl = torch.zeros(1, rep.nfeats_dict['root_pos'], device=self.device)
+        if hyb is None:
+            hist_frames = 0
+            heading = torch.zeros(1, device=self.device)
+        else:
+            hyb = hyb[:, -snap['want_tok']:]
+            hist_frames = hyb.shape[1] * patch
+            # the denoiser wants the heading of the first frame of the window it
+            # is actually given, so read it back off the window we sliced
+            root, _ = hybrid.get_root_and_latent_body_motion_from_hybrid(hyb)
+            heading = rep.get_root_heading_angle(
+                rep.global_root_stats.unnormalize(root))[:, 0]
+
+        steps_t = torch.tensor([self._steps], device=self.device)
+        use_timesteps = model.diffusion.space_timesteps(steps_t[0])[0]
+        model.diffusion.calc_diffusion_vars(use_timesteps)
+        indices = list(range(self._steps))[::-1]
+
+        hyb = model._generate_window(
+            hyb, transl, 0, hist_frames, hist_frames + horizon,
+            text_feat, mask, heading, None, None,
+            steps_t, self._cfg, indices,
+            progress_bar=lambda it: it, target_motion=None, cfg_type=None,
         )
-        rep = self.model.motion_rep
+        # recentring on the newest frame keeps the root features small, and the
+        # requantize is the bit that matters: it snaps the body latents back
+        # onto the codebook grid every step, so they cannot slowly wander off
+        # the manifold the decoder was trained on.
+        center = torch.full((1,), hist_frames + horizon - 1,
+                            device=self.device, dtype=torch.long)
+        hyb, center_pos, _ = model._recenter_history(hyb, center, requantize=True)
+        transl = transl + center_pos
+
+        # decode a throwaway copy in world space, the latent above is the state
+        root, body = hybrid.get_root_and_latent_body_motion_from_hybrid(hyb)
+        world = hybrid.get_hybrid_motion_from_root_and_latent_body_motion(
+            translate_normalized_root_motion(root, transl, rep), body)
+        nframes = hyb.shape[1] * patch
+        samples = hybrid.get_explicit_motion_from_hybrid(
+            world,
+            torch.ones(1, nframes, device=self.device, dtype=torch.bool),
+            torch.full((1,), nframes, device=self.device, dtype=torch.long),
+            motion_mask=None,
+        )
+        hist_len = nframes - horizon
         out = rep.inverse(rep.unnormalize(samples), is_normalized=False)
 
         if self._postprocess:
             # ardy's own foot-contact cleanup, on by default in their generate.py
             # for every model but g1. it plants the feet (they otherwise sink and
-            # skate) and pulls the root back to the ground plane. the corrected
-            # frames are written back into samples on purpose: the loop conditions
-            # on its own output, so correcting only what we serve would leave the
-            # error in the history to compound.
+            # skate) and pulls the root back to the ground plane. output only,
+            # deliberately: correcting explicit motion cannot be folded back into
+            # the latent without re-encoding, which is the thing that broke it.
             from ardy.postprocess import post_process_motion
             fix = post_process_motion(
                 out['local_rot_mats'][:, hist_len:],
@@ -492,22 +469,30 @@ class ArdyEngine:
         frames = [{'joints': joints[i], 'rotmats': rots[i], 'heading': heading[i],
                    'root_pos': root[i], 'smooth_root': smooth[i]}
                   for i in range(joints.shape[0])]
-        return samples[:, hist_len:], frames
+        return samples[:, hist_len:], frames, hyb, transl
 
-    def _append(self, new, frames):
+    def _append(self, new, frames, hyb, transl):
         """attach a finished chunk, under the lock."""
+        self._hyb = hyb
+        self._transl = transl
         if self._motion is None:
             self._motion = new
         else:
             self._motion = torch.cat([self._motion, new], dim=1)
         self._frames.extend(frames)
 
-        # trim tails so hour-long sessions dont grow without bound
+        # trim tails so hour-long sessions dont grow without bound. cuts stay
+        # patch aligned so _motion and _hyb keep indexing the same frames.
         max_keep = max(self._hist_cap * 2, self._lookahead + self._hist_cap)
+        max_keep = max(max_keep // self._patch * self._patch, self._patch)
         if self._motion.shape[1] > max_keep:
-            cut = self._motion.shape[1] - max_keep
-            self._motion = self._motion[:, cut:]
-            self._motion_base += cut
+            cut = (self._motion.shape[1] - max_keep) // self._patch * self._patch
+            if cut:
+                self._motion = self._motion[:, cut:]
+                self._motion_base += cut
+        keep_tok = max_keep // self._patch
+        if self._hyb.shape[1] > keep_tok:
+            self._hyb = self._hyb[:, -keep_tok:]
         served = self.frame_idx - self._frames_base
         if served > max_keep:
             cut = served - self._patch
