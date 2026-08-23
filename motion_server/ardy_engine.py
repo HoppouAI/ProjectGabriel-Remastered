@@ -21,8 +21,9 @@ ENCODER_PATH = str(Path(__file__).parent / 'text_encoders' / 'llm2vec_nf4')
 class ArdyEngine:
     """owns the ARDY rollout state. all methods must be called from one thread."""
 
-    def __init__(self, model='core8', device='cuda', steps=8, hist_cap_s=0.6,
-                 cfg_text=2.0, cfg_constraint=2.0):
+    def __init__(self, model='core8', device='cuda', steps=8, hist_cap_s=7.2,
+                 cfg_text=2.0, cfg_constraint=2.0, postprocess=True,
+                 contact_threshold=0.5, root_margin=0.04):
         # hist_cap_s is the STEADY STATE context fed back each step, and it
         # is a real tradeoff, measured in benchmarks/ardy_history.py over 3
         # runs each at 0.2 / 0.6 / 2.0s:
@@ -58,6 +59,9 @@ class ArdyEngine:
         self._steps = min(int(steps), base_steps)
         self._cfg = (float(cfg_text), float(cfg_constraint))
         self._hist_cap = max(self._patch, int(hist_cap_s * self.fps) // self._patch * self._patch)
+        self._postprocess = bool(postprocess)
+        self._contact_thresh = float(contact_threshold)
+        self._root_margin = float(root_margin)
 
         self.idle_prompt = 'a person stands still'
         # 'stands still' describes a state, not a transition: from a seated
@@ -107,7 +111,10 @@ class ArdyEngine:
         self._prompt_at = 0
         self._anchor_after = int(4.0 * self.fps)
         self._anchor_settle = int(8.0 * self.fps)
-        self._reanchor_every = int(15.0 * self.fps)
+        # 0 = no periodic re-anchor. a long history is the actual cure, and
+        # re-seeding on a timer is visible: he drifts, then visibly snaps back.
+        # the divergence test below stays as a net for a real blow-up.
+        self._reanchor_every = 0
 
         self._motion = None        # [1, T, D] normalized, tail of the rollout
         self._motion_base = 0      # absolute index of _motion[:, 0]
@@ -261,6 +268,37 @@ class ArdyEngine:
             self._truncate_to_served(cut_history=cut)
         return self.prompt
 
+    def set_tuning(self, history=None, steps=None, postprocess=None,
+                   contact_threshold=None, root_margin=None, reanchor=None):
+        """live knobs so this can be dialled in from the client while in game."""
+        with self.lock:
+            if history is not None:
+                self._hist_cap = max(self._patch,
+                                     int(float(history) * self.fps) // self._patch * self._patch)
+            if steps is not None:
+                base = int(getattr(getattr(self.model, 'diffusion', None), 'num_base_steps', 10) or 10)
+                self._steps = max(1, min(int(steps), base))
+            if postprocess is not None:
+                self._postprocess = bool(postprocess)
+            if contact_threshold is not None:
+                self._contact_thresh = float(contact_threshold)
+            if root_margin is not None:
+                self._root_margin = float(root_margin)
+            if reanchor is not None:
+                self._reanchor_every = int(float(reanchor) * self.fps)
+            self._epoch += 1  # void the in-flight chunk so changes land now
+            self._cond.notify_all()
+        return self.tuning()
+
+    def tuning(self):
+        return {'history_s': round(self._hist_cap / self.fps, 2),
+                'history_frames': self._hist_cap,
+                'steps': self._steps,
+                'postprocess': self._postprocess,
+                'contact_threshold': self._contact_thresh,
+                'root_margin': self._root_margin,
+                'reanchor_s': round(self._reanchor_every / self.fps, 2)}
+
     def reset(self):
         """forget the rollout, next motion spawns fresh at the origin."""
         with self.lock:
@@ -349,8 +387,9 @@ class ArdyEngine:
             return hist
         if self._anchor is None:
             return hist
-        if (z > max(2.0 * self._anchor_z, self._anchor_z + 5.0)
-                or self.frame_idx - self._anchor_at >= self._reanchor_every):
+        timer_due = (self._reanchor_every
+                     and self.frame_idx - self._anchor_at >= self._reanchor_every)
+        if z > max(2.0 * self._anchor_z, self._anchor_z + 5.0) or timer_due:
             # _motion is conditioning only, never served, so rewriting it is
             # invisible downstream. the base keeps _truncate_to_served honest.
             self._motion = self._rebase(self._anchor)
@@ -391,8 +430,31 @@ class ArdyEngine:
             init_global_translation=snap['init_t'],
             init_first_heading_angle=snap['init_h'],
         )
-        out = self.model.motion_rep.inverse(
-            self.model.motion_rep.unnormalize(samples), is_normalized=False)
+        rep = self.model.motion_rep
+        out = rep.inverse(rep.unnormalize(samples), is_normalized=False)
+
+        if self._postprocess:
+            # ardy's own foot-contact cleanup, on by default in their generate.py
+            # for every model but g1. it plants the feet (they otherwise sink and
+            # skate) and pulls the root back to the ground plane. the corrected
+            # frames are written back into samples on purpose: the loop conditions
+            # on its own output, so correcting only what we serve would leave the
+            # error in the history to compound.
+            from ardy.postprocess import post_process_motion
+            fix = post_process_motion(
+                out['local_rot_mats'][:, hist_len:],
+                out['root_positions'][:, hist_len:],
+                out['foot_contacts'][:, hist_len:],
+                rep.skeleton,
+                contact_threshold=self._contact_thresh,
+                root_margin=self._root_margin,
+            )
+            fixed = rep.normalize(rep(local_joint_rots=fix['local_rot_mats'],
+                                      root_positions=fix['root_positions'],
+                                      to_normalize=False))
+            samples = torch.cat([samples[:, :hist_len], fixed], dim=1)
+            # re-decode so heading and contacts agree with the corrected pose
+            out = rep.inverse(rep.unnormalize(samples), is_normalized=False)
 
         def np_of(key):
             return out[key][0, hist_len:].float().cpu().numpy()

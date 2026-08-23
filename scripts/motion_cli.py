@@ -47,6 +47,13 @@ HELP = """
   /on  /off  /toggle  the FBT puppet itself
   /loco               drive him through the world, or walk in place
   /status             what everything is currently doing
+
+  /hist <s>           history fed back per step. ardy trains on 10s windows,
+                      too short and he forgets the pose and drifts. try 7.2
+  /steps <n>          denoising steps, 1-10. lower = faster, rougher
+  /post               foot contact correction on/off (plants his feet)
+  /margin <m>         how hard the correction pins the root down (0.04)
+  /tune               show the current settings
   /help  /quit
 """
 
@@ -68,6 +75,7 @@ class State:
         self.last_frame_at = 0.0
         self.enabled = True
         self.loco = True
+        self.post = True
         self.prompt = "(none)"
         self.fps = 0.0
 
@@ -164,6 +172,20 @@ async def handle(ws, osc, st, line):
         if not st.loco:
             zero_inputs(osc)
         print(f"  -> locomotion {'ON (he walks around)' if st.loco else 'OFF (walks in place)'}")
+    elif cmd in ("hist", "steps", "margin", "contact", "reanchor"):
+        try:
+            val = float(rest)
+        except ValueError:
+            print(f"  usage: /{cmd} <number>")
+            return True
+        key = {"hist": "history", "steps": "steps", "margin": "root_margin",
+               "contact": "contact_threshold", "reanchor": "reanchor"}[cmd]
+        await ws.send(json.dumps({"type": "tune", key: val}))
+    elif cmd == "post":
+        st.post = not st.post
+        await ws.send(json.dumps({"type": "tune", "postprocess": st.post}))
+    elif cmd == "tune":
+        await ws.send(json.dumps({"type": "tune"}))
     elif cmd in ("s", "status"):
         age = time.monotonic() - st.last_frame_at if st.last_frame_at else -1
         stale = "  STREAM STALLED" if age > 1.0 else ""
@@ -223,6 +245,14 @@ async def main():
             tick, last_tick = 0, time.monotonic()
             async for raw in ws:
                 msg = json.loads(raw)
+                if msg.get("type") == "tuning":
+                    t = msg["tuning"]
+                    st.post = bool(t.get("postprocess", st.post))
+                    print(f"\n  history={t['history_s']}s ({t['history_frames']}f)  "
+                          f"steps={t['steps']}  postprocess={t['postprocess']}  "
+                          f"margin={t['root_margin']}  contact={t['contact_threshold']}  "
+                          f"reanchor={t['reanchor_s']}s\n> ", end="", flush=True)
+                    continue
                 if msg.get("type") != "frame":
                     continue
                 params = msg.get("params") or {}
