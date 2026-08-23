@@ -84,6 +84,9 @@ class MotionMixin:
         # keep a strong floor so the last few degrees still actually turn,
         # ramp up fast for big corrections.
         mag = min(0.85, max(0.30, abs(delta) / 30.0))
+        from src.motion_client import motion_drive
+        if motion_drive(0.0, sign * mag, False):
+            return False
         # push lookhorizontal every tick (not just on change) so face tracker
         # or other systems writing 0 to lookhorizontal cant strand us.
         try:
@@ -100,6 +103,10 @@ class MotionMixin:
 
     def _send_osc(self, forward: float, turn: float, run: bool) -> None:
         # reference SendOSC: dedupe each channel against last value
+        from src.motion_client import motion_drive
+        if motion_drive(forward, turn, run):
+            # generated walking is carrying him there, don't fight it
+            return
         c = self.osc.client
         forward = max(-1.0, min(1.0, forward))
         turn = max(-1.0, min(1.0, turn))

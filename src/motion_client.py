@@ -55,6 +55,35 @@ FLOOR_SEND_HZ = 5.0
 # expression layer is allowed to take the body back.
 MODEL_ONCE_HOLD_S = 12.0
 
+# navigation handoff. the voxel explorer and the wanderer drive VRChat move
+# inputs directly, and they dedupe against their own last sent value, so the
+# puppet writing 0 to Vertical/LookHorizontal every frame silently strands
+# them mid path. anything that steers the avatar calls motion_drive() and the
+# puppet gets out of the way. it's a heartbeat rather than start/stop calls
+# because navigation has half a dozen exit paths (arrival, cancel, align
+# done, seek timeout) and a missed stop would wedge the body forever.
+NAV_HEARTBEAT_S = 0.5
+NAV_WALK_PROMPT = "a person walks forward"
+STEER_SEND_HZ = 10.0
+_nav_until = 0.0
+_nav_drive = (0.0, 0.0, False)
+_CLIENT = None
+
+
+def motion_drive(forward=0.0, turn=0.0, run=False):
+    """Called by whatever is steering the avatar. Returns True if the motion
+    model is taking over the walking, in which case the caller must NOT write
+    move inputs itself."""
+    global _nav_until, _nav_drive
+    _nav_until = time.monotonic() + NAV_HEARTBEAT_S
+    _nav_drive = (float(forward), float(turn), bool(run))
+    c = _CLIENT
+    return bool(c is not None and c.steers_navigation)
+
+
+def navigation_driving():
+    return time.monotonic() < _nav_until
+
 
 def _snap_axis(v):
     if abs(v) < AXIS_CUTOFF:
@@ -184,7 +213,8 @@ class PoseTracker:
 
 class MotionClient:
     def __init__(self, osc_client, host, port, walk_full=2.0, turn_full=1.8,
-                 pose_tracking=False, pose_monitor=1, raycast_state=None):
+                 pose_tracking=False, pose_monitor=1, raycast_state=None,
+                 nav_mode="pause"):
         self._osc = osc_client
         self._uri = f"ws://{host}:{port}"
         self._ws = None
@@ -211,10 +241,21 @@ class MotionClient:
         self.owner = None         # 'model' or 'expression', who asked for the current motion
         self._owner_until = 0.0   # model ownership lapses here for finite motions
         self._locomotion = True   # expression gestures shouldn't walk him off
+        self._nav_mode = nav_mode  # 'pause' or 'model' while something else navigates
+        self._navigating = False
+        self._nav_resume = None   # prompt to restore once navigation lets go
+        self._steer_next = 0.0
 
     @property
     def is_ardy(self):
         return self.backend == "ardy"
+
+    @property
+    def steers_navigation(self):
+        """True when generated walking should carry him to the destination
+        instead of the navigator's own move inputs."""
+        return (self._nav_mode == "model" and self._active
+                and self._got_frame and self.is_ardy)
 
     @property
     def active(self):
@@ -335,15 +376,51 @@ class MotionClient:
             raise ConnectionError("motion server not connected")
         await self._ws.send(json.dumps(obj))
 
-    def _set_active(self, on):
+    def _set_active(self, on, zero=True):
         self._active = on
         self._osc.send_message(PREFIX + "Enable", bool(on))
         if self._tracker is not None:
             self._tracker.reset_anchor()
             if on:
                 self._tracker.start()
-        if not on:
+        if not on and zero:
             self._zero_inputs()
+
+    async def _nav_update(self, now):
+        """hand the body to whatever is navigating, or drive the walk for it."""
+        driving = navigation_driving()
+        if driving == self._navigating:
+            if driving and self._nav_mode == "model" and now >= self._steer_next:
+                self._steer_next = now + 1.0 / STEER_SEND_HZ
+                fwd, turn, run = _nav_drive
+                try:
+                    await self._send({"type": "steer", "forward": fwd,
+                                      "turn": turn, "run": run})
+                except Exception:
+                    pass
+            return
+        self._navigating = driving
+        if driving:
+            if self._nav_mode == "model":
+                self._nav_resume = self.current_prompt
+                try:
+                    await self.play(NAV_WALK_PROMPT, owner="navigation")
+                except ConnectionError:
+                    # server gone, let the navigator drive itself this trip
+                    self._nav_resume = None
+                    self._navigating = False
+            elif self._active:
+                self._nav_resume = self.current_prompt
+                self._set_active(False, zero=False)
+            return
+        if self._nav_resume is None:
+            return
+        resume, self._nav_resume = self._nav_resume, None
+        if self._nav_mode == "model":
+            await self.stop_motion()
+        else:
+            self._set_active(True)
+            logger.debug(f"motion puppet back after navigation (was {resume!r})")
 
     def _zero_inputs(self):
         self._osc.send_message("/input/Vertical", 0.0)
@@ -430,12 +507,20 @@ class MotionClient:
                 last = now
                 beta = 1.0 - math.exp(-dt / LOCO_TAU)
                 await self._floor_update(now, dt)
+                await self._nav_update(now)
+
+                if self._navigating and self._nav_mode != "model":
+                    # someone else is walking him, stay off the move inputs
+                    # and off the puppet so vrchat animates the walk
+                    sv = sh = sl = 0.0
+                    await asyncio.sleep(interval)
+                    continue
 
                 if self._active and self._got_frame:
                     for p in PARAMS:
                         cur = self._filters[p](self._target[p], dt)
                         self._osc.send_message(PREFIX + p, float(cur))
-                    if not self._locomotion:
+                    if not self._locomotion and not self._navigating:
                         # gesturing in place, keep the generated root motion
                         # out of the move inputs so he doesn't drift away
                         sv = sh = sl = 0.0
@@ -476,5 +561,7 @@ def get_motion_client(config, osc):
             pose_tracking=config.motion_pose_tracking,
             pose_monitor=config.motion_pose_monitor,
             raycast_state=getattr(osc, "raycast_state", None),
+            nav_mode=config.motion_navigation,
         )
+        _CLIENT = _client
     return _client

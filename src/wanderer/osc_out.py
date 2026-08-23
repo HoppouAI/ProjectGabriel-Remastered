@@ -9,6 +9,9 @@ class OscMixin:
     def _send_osc(self, turn, forward):
         if not self.osc or self._paused:
             return
+        from src.motion_client import motion_drive
+        if motion_drive(forward, turn, False):
+            return
         client = self.osc.client
         client.send_message("/input/LookHorizontal", float(max(-1, min(1, turn))))
         client.send_message("/input/Vertical", float(max(-1, min(1, forward))))

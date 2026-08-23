@@ -604,6 +604,11 @@ class Config:
         return self.get("motion", "pose_monitor", default=1)
 
     @property
+    def motion_navigation(self):
+        mode = str(self.get("motion", "navigation", default="pause")).lower()
+        return mode if mode in ("pause", "model") else "pause"
+
+    @property
     def motion_expression(self):
         return self.get("motion", "expression", default={}) or {}
 
