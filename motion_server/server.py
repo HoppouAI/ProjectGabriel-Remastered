@@ -95,20 +95,6 @@ async def client_loop(ws, engine, retargeter, params_of, raw_of, send_raw, backe
                     bool(msg.get('loop_last', False)))
                 print(f'sequence: {len(used)} steps -> {used}')
                 state['paused'] = False
-            elif mtype == 'tune':
-                if not hasattr(engine, 'set_tuning'):
-                    print('tune: unsupported on this backend, ignored')
-                    continue
-                got = await asyncio.to_thread(
-                    engine.set_tuning,
-                    history=msg.get('history'), steps=msg.get('steps'),
-                    postprocess=msg.get('postprocess'),
-                    contact_threshold=msg.get('contact_threshold'),
-                    root_margin=msg.get('root_margin'),
-                    reanchor=msg.get('reanchor'),
-                    cfg_text=msg.get('cfg_text'), ramp=msg.get('ramp'))
-                print(f'tune: {got}')
-                await ws.send(json.dumps({'type': 'tuning', 'tuning': got}))
             elif mtype == 'floor':
                 # world floor offset under the avatar root, from the client's
                 # FloorDown raycast reading. small and frequent, no logging.
@@ -166,12 +152,10 @@ async def main():
     ap.add_argument('--respacing', default=None,
                     help="dart sampling override: '' = full 10 step, 'ddim5' fast. default follows the model")
     ap.add_argument('--steps', type=int, default=8, help='ardy denoising steps (10 max, 8 keeps realtime margin)')
-    ap.add_argument('--history', type=float, default=7.2,
-                    help='ardy context seconds fed back each step. ardy is trained on '
-                         '10s windows and their generate.py feeds back 9.6s, short '
-                         'history drifts because the model is being asked to continue '
-                         'from a context it never saw in training. 9.6 is the reference, '
-                         '7.2 keeps realtime headroom')
+    ap.add_argument('--history', type=float, default=0.6,
+                    help='ardy context seconds fed back each step. longer holds static '
+                         'poses better but smothers the prompt so loops stall out, '
+                         'shorter is snappier but drops the pose. 0.6 measured best')
     ap.add_argument('--raw', action='store_true', help='include raw joint data in frames')
     args = ap.parse_args()
 
