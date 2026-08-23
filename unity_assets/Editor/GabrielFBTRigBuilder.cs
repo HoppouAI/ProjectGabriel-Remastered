@@ -74,11 +74,13 @@ namespace ProjectGabriel.Editor
         //
         // value is the fraction of the old value kept per frame, so higher is
         // smoother AND laggier, and the real time constant moves with the
-        // viewer's framerate (~0.1s at 90fps here). local is 0: the python
-        // client already one-euro filters at 60Hz and local response should
-        // stay instant.
+        // viewer's framerate. 0.92 was ~0.13s at 90fps, longer than the gap
+        // between param syncs, so it smeared poses together and flattened the
+        // motion instead of just rounding off the steps. 0.80 is ~0.05s, about
+        // half a sync interval. local is 0: the python client already one-euro
+        // filters at 60Hz and local response should stay instant.
         private const float LOCAL_SMOOTHNESS = 0f;
-        private const float REMOTE_SMOOTHNESS = 0.92f;
+        private const float REMOTE_SMOOTHNESS = 0.80f;
         private const string PROXY_PREFIX = "OSCm_Proxy/FBT/";
         private const string SMOOTH_PARAM = "OSCm/Smoothing";
 
