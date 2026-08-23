@@ -57,14 +57,20 @@ PARAM_MUSCLES = {
 # param values for the anatomical standing rest pose. arm values solved in
 # the unity sampler so the wrists land where darts stand pose puts them
 # (hands by the outer thighs, ~0.29m lateral), not the old hand-tuned guess
-# that parked them in front of the crotch. ArmTW 0.4 rotates the elbow
-# flexion plane outward which is what actually frees the hands.
+# that parked them in front of the crotch.
+# ArmTW is a bias added on top of whatever twist the model reports, and twist
+# is unobservable while the elbow is straight: measured on the sampler, moving
+# it 0.0 -> 0.4 shifts the standing hand by 0.4mm, so it was never doing the
+# job the old comment claimed. it is very visible once the elbow bends though,
+# 0.4 threw the forearm 15 deg out to the side at mid bend, which is why he ran
+# with his arms winged out. 0.2 keeps the forearm swinging in the sagittal
+# plane (-3 deg at half bend, +4 at full).
 NEUTRAL = {
     'SpineFB': 0.0, 'SpineLR': 0.0, 'SpineTW': 0.0,
     'HeadNod': 0.0, 'HeadTilt': 0.0, 'HeadTurn': 0.0,
-    'LArmUp': -0.6, 'LArmFB': 0.1, 'LArmTW': 0.4,
+    'LArmUp': -0.6, 'LArmFB': 0.1, 'LArmTW': 0.2,
     'LElbow': 1.0, 'LWristUD': 0.0, 'LWristIO': 0.0,
-    'RArmUp': -0.6, 'RArmFB': 0.1, 'RArmTW': 0.4,
+    'RArmUp': -0.6, 'RArmFB': 0.1, 'RArmTW': 0.2,
     'RElbow': 1.0, 'RWristUD': 0.0, 'RWristIO': 0.0,
     'LLegFB': 0.58, 'LLegIO': 0.0, 'LKnee': 0.85, 'LFootUD': -0.3,
     'RLegFB': 0.58, 'RLegIO': 0.0, 'RKnee': 0.85, 'RFootUD': -0.3,
