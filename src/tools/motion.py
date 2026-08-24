@@ -108,6 +108,14 @@ class MotionTools(BaseTool):
             self._client = get_motion_client(self.config, self.osc)
         return self._client
 
+    def _active_client(self):
+        # the expression layer and the walk path share this client, so it can be
+        # driving the body long before playMotion is ever called here
+        if self._client is None:
+            from src.motion_client import active_motion_client
+            self._client = active_motion_client()
+        return self._client
+
     async def handle(self, name, args):
         if name == "playMotion":
             prompt = str(args.get("prompt", "")).strip()
@@ -140,13 +148,15 @@ class MotionTools(BaseTool):
             msg += " (holding the last one)" if loop_last else " (then back to standing)"
             return {"result": "ok", "message": msg}
         elif name == "stopMotion":
-            if self._client is None:
+            client = self._active_client()
+            if client is None:
                 return {"result": "ok", "message": "no motion playing"}
-            await self._client.stop_motion()
+            await client.stop_motion()
             return {"result": "ok", "message": "motion stopped, standing idle"}
         elif name == "resetPose":
-            if self._client is None:
+            client = self._active_client()
+            if client is None:
                 return {"result": "ok", "message": "motion system not active"}
-            await self._client.reset()
+            await client.reset()
             return {"result": "ok", "message": "motion context cleared, body control released"}
         return None

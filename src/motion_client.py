@@ -568,5 +568,9 @@ def get_motion_client(config, osc):
             raycast_state=getattr(osc, "raycast_state", None),
             nav_mode=config.motion_navigation,
         )
-        _CLIENT = _client
+    return _client
+
+
+def active_motion_client():
+    """Whoever is already driving the body, without connecting just to ask."""
     return _client
