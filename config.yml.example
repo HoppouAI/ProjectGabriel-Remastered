@@ -81,8 +81,9 @@ gemini:
     #   auto   = Uses Gemini's built-in automatic activity detection. Simple, no extra deps.
     #   silero = Uses Silero VAD locally for speech detection with activityStart/activityEnd.
     #            More stable on 3.1 models, prevents stalls from noise. Requires torch.
-    #            Also gates audio during tool calls and model speech to avoid
-    #            1007/1008 disconnects from stale audio leaking to the server.
+    #            Also gates audio during model speech and blocking tool calls to
+    #            avoid 1007/1008 disconnects from stale audio leaking to the server.
+    #            Background tool calls on 3.8 models leave the mic open.
     mode: "auto"
 
     # Sensitivity for detecting the START of speech (auto mode only)
