@@ -14,6 +14,7 @@ from src.model_caps import (
     resolve_tool_behavior,
     resolve_tool_scheduling,
 )
+from src.tool_call_types import default_call_type
 
 logger = logging.getLogger(__name__)
 
@@ -129,18 +130,39 @@ class Config:
     def tool_scheduling(self, name: str):
         return self._tool_settings(name)["scheduling"]
 
+    def _effective_call_type(self, name: str, caps):
+        # tools.yml wins, built in defaults only fill in where the model leaves it optional
+        typ, sched = self.tool_type(name), self.tool_scheduling(name)
+        if caps.async_tools != "optional":
+            return typ, sched
+        default_type, default_sched = default_call_type(name)
+        if typ == TOOL_TYPE_DEFAULT and default_type:
+            typ = default_type
+        if sched is None and typ == default_type:
+            sched = default_sched
+        return typ, sched
+
     def behavior_for_tool(self, name: str):
         """FunctionDeclaration.behavior value for this tool, or None to leave alone."""
-        behavior, _reason = resolve_tool_behavior(self.model_capabilities, self.tool_type(name))
+        caps = self.model_capabilities
+        typ, _sched = self._effective_call_type(name, caps)
+        behavior, _reason = resolve_tool_behavior(caps, typ)
         return behavior
 
     def scheduling_for_tool(self, name: str):
         """FunctionResponse.scheduling value for this tool, or None for no hint."""
-        behavior = self.behavior_for_tool(name)
-        scheduling, _reason = resolve_tool_scheduling(
-            self.model_capabilities, self.tool_scheduling(name), behavior
-        )
+        caps = self.model_capabilities
+        typ, sched = self._effective_call_type(name, caps)
+        behavior, _reason = resolve_tool_behavior(caps, typ)
+        scheduling, _reason = resolve_tool_scheduling(caps, sched, behavior)
         return scheduling
+
+    def tool_runs_blocking(self, name: str) -> bool:
+        """True when the model sits and waits on this tool's result."""
+        caps = self.model_capabilities
+        if caps.async_tools == "none":
+            return True
+        return self.behavior_for_tool(name) == "BLOCKING"
 
     def tool_compat_notes(self):
         """Explain any tools.yml setting the current model cannot honor, grouped per problem."""

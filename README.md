@@ -175,7 +175,7 @@ tools:
 
 | Value | What happens |
 |:---|:---|
-| `auto` | Default. Lets the model decide, which means blocking on 2.5 and 3.1, and non-blocking on 3.8. |
+| `auto` | Default. Blocking on 2.5 and 3.1. On `gemini-3.8-live` each built-in tool gets a sensible pick: actions like emotes, movement and music run in the background silently, quick lookups like the time block, and slow lookups like web search run in the background and get mentioned when they finish. Plugin tools run in the background. |
 | `blocking` | The model pauses and waits for the result before saying anything else. Predictable ordering, but the conversation stalls while the tool runs. |
 | `non_blocking` | The tool runs in the background and the model keeps talking. Use this for anything slow. |
 

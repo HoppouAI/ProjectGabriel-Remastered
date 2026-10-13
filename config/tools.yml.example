@@ -20,8 +20,12 @@
 # `tool: {enabled: true}`. Use the long form when you want to set a type.
 #
 # ── type ── when the model has to wait for a tool result
-#   auto          default. leaves the decision to the model, which means
-#                 blocking on 2.5 and 3.1 models, and non-blocking on 3.8.
+#   auto          default. blocking on 2.5 and 3.1 models. On
+#                 gemini-3.8-live built-in actions (emotes, movement,
+#                 music) run in the background silently, quick lookups
+#                 block, and slow lookups (web search, memory recall)
+#                 run in the background and get mentioned when done.
+#                 Plugin tools run in the background.
 #   blocking      the model pauses and waits for the result. Predictable
 #                 ordering, but the conversation stalls while the tool runs.
 #   non_blocking  the tool runs in the background while the model keeps

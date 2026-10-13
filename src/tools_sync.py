@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 TOOLS_PATH = Path("config/tools.yml")
 
 # bump this when the header text changes so existing files get the new banner
-HEADER_VERSION = 3
+HEADER_VERSION = 4
 HEADER_MARKER = f"tools.yml-schema: {HEADER_VERSION}"
 
 HEADER_COMMENT = (
@@ -65,8 +65,12 @@ The short `tool: true/false` form still works and is the same as
 `tool: {enabled: true}`. Use the long form when you want to set a type.
 
 type:                    # when the model has to wait for a tool result
-  auto         default. leaves the decision to the model, which is
-               blocking on older models and non-blocking on 3.8 models.
+  auto         default. blocking on older models. on gemini-3.8-live
+               built-in actions (emotes, movement, music) run in the
+               background silently, quick lookups block, and slow
+               lookups (web search, memory recall) run in the background
+               and get mentioned when done. plugin tools run in the
+               background.
   blocking     the model pauses and waits for the result. Predictable
                ordering, but the conversation stalls while the tool runs.
   non_blocking the tool runs in the background and the model keeps
