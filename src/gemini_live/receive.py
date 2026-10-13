@@ -328,8 +328,7 @@ class ReceiveLoopMixin:
             self._blocking_tool_calls += 1
             self._tool_call_pending = True
             await self._gate_audio(session)
-            if self.config.model_capabilities.async_tools == "none":
-                # old models regenerate after the response, so drop what was queued before the call
+            if self.config.stop_audio_on_tool_call:
                 if self._tts:
                     self._tts.interrupt()
                 self._playback_interrupted = True

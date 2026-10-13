@@ -609,6 +609,11 @@ class Config:
         return self.get("gemini", "vad", "silence_duration_ms", default=500)
 
     @property
+    def stop_audio_on_tool_call(self):
+        # the mic is muted for blocking calls regardless, this only decides if his speech gets cut too
+        return bool(self.get("gemini", "tool_calls", "stop_audio_output", default=False))
+
+    @property
     def vad_silero_threshold(self):
         """Speech probability threshold for Silero VAD (0.0-1.0). Default 0.5."""
         return self.get("gemini", "vad", "silero_threshold", default=0.5)

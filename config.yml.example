@@ -110,6 +110,15 @@ gemini:
     # Default 0.5 is a good starting point. Lower = more sensitive, higher = stricter.
     # silero_threshold: 0.5
 
+  # ── Tool Calls ──
+  # On 2.5 and 3.1 models every tool call makes the model stop and wait for the
+  # result (on 3.8 only quick lookups do). The mic is always muted during that
+  # wait so stray audio cant disconnect the session.
+  tool_calls:
+    # Also cut off whatever Gabriel was still saying when the tool call came in.
+    # false lets him finish his sentence, true stops his voice straight away.
+    stop_audio_output: false
+
   # ── Generation Parameters ──
   temperature: 1.0     # 0.0-2.0, controls randomness (default: 1.0, higher = more creative)
 

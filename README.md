@@ -127,6 +127,7 @@ Everything lives in `config.yml`. Key sections:
 | `gemini` &rarr; `voice` | Prebuilt voice: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr |
 | `gemini` &rarr; `vad` &rarr; `mode` | Voice Activity Detection: `auto` (server-side) or `silero` (local) |
 | `gemini` &rarr; `thinking` | How much the model reasons before it answers |
+| `gemini` &rarr; `tool_calls` &rarr; `stop_audio_output` | Whether Gabriel gets cut off mid sentence when the model stops to wait for a tool. Off by default, the mic is muted during the wait either way |
 | `vrchat` &rarr; `osc_ip`, `osc_send_port`, `osc_receive_port` | OSC IP and ports |
 | `vrchat_api` | VRChat account credentials for avatar switching, friends, etc |
 | `yolo` &rarr; `enabled` | Toggle person/face tracking |

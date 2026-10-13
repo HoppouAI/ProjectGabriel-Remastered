@@ -26,6 +26,7 @@ class FakeConfig:
         self.vad_mode = "auto"
         self.obs_enabled = False
         self.chatbox_page_delay = 0.2
+        self.stop_audio_on_tool_call = False
 
     def tool_runs_blocking(self, name):
         return self.model_capabilities.async_tools == "none" or name in self._blocking
@@ -230,9 +231,23 @@ def test_plain_turn_complete_ends_turn_without_status():
     asyncio.run(go())
 
 
-def test_legacy_blocking_call_still_drops_stale_audio():
+def test_legacy_blocking_call_mutes_mic_but_keeps_speech_by_default():
     async def go():
         h = Harness(FakeConfig("gemini-3.1-flash-live-preview"))
+        session, loop_task = await run_script(h, [audio(), tool_call(("c1", "anything"))], 0.01)
+        assert h._audio_in_queue.qsize() == 1 and not h._playback_interrupted
+        assert h._tool_call_pending and h._audio_gated
+        await asyncio.sleep(QUICK + 0.05)
+        assert [ids for ids, _ in session.tool_responses] == [["c1"]]
+        assert not h._tool_call_pending and not h._audio_gated
+        await stop(loop_task)
+    asyncio.run(go())
+
+
+def test_legacy_blocking_call_cuts_speech_when_configured():
+    async def go():
+        h = Harness(FakeConfig("gemini-3.1-flash-live-preview"))
+        h.config.stop_audio_on_tool_call = True
         session, loop_task = await run_script(h, [audio(), tool_call(("c1", "anything"))], 0.01)
         assert h._audio_in_queue.qsize() == 0 and h._tool_call_pending
         await asyncio.sleep(QUICK + 0.05)
