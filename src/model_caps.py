@@ -298,16 +298,23 @@ def check_alpha_features(
     return notes
 
 
-def interaction_is_idle(server_content) -> bool:
-    """True when the model reported interaction_status=IDLE.
-
-    Only newer models send this, older ones leave it unset, so an absent value
-    is treated as "not idle" and callers fall back to turn_complete.
-    """
+def interaction_status(server_content):
+    """IDLE, IN_PROGRESS or REQUIRES_ACTION, or None when the server didnt say."""
     status = getattr(server_content, "interaction_status", None)
     if status is None:
-        return False
-    return str(getattr(status, "value", status)).upper().endswith("IDLE")
+        return None
+    name = str(getattr(status, "value", status)).upper()
+    if name.endswith("UNSPECIFIED"):
+        return None
+    for known in ("IN_PROGRESS", "REQUIRES_ACTION", "IDLE"):
+        if name.endswith(known):
+            return known
+    return None
+
+
+def interaction_is_idle(server_content) -> bool:
+    """True when the model reported interaction_status=IDLE, absent counts as not idle."""
+    return interaction_status(server_content) == "IDLE"
 
 
 def describe(caps: ModelCapabilities) -> str:

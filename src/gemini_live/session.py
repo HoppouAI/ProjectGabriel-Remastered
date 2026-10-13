@@ -50,8 +50,13 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         self._tts_audio_task: asyncio.Task | None = None  # Managed separately for hot-swap
         self._speaking = False
         self._thinking_shown = False
-        self._awaiting_idle = False  # True when we hold the mic shut until the model reports IDLE
-        self._awaiting_idle_since = 0
+        self._interaction_busy = False  # model is speaking, reasoning or waiting on tools for this request
+        self._last_model_activity = 0
+        self._uses_interaction_status = False  # server reports IDLE itself, so turn_complete isnt the end
+        self._tool_tasks = {}  # call id -> task running it
+        self._cancelled_tool_ids = set()
+        self._blocking_tool_calls = 0
+        self._chatbox_task = None
         self._transcript_buffer = ""
         self._input_transcript_buffer = ""  # Buffer for user speech
         self._session_handle = None
@@ -287,33 +292,15 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         logger.info(f"Mic mute set to {muted}")
 
     async def send_text(self, text: str):
-        """Send a normal user-style text turn to the model. Works on
-        both half-cascade (2.5) and native-audio (3.x) Live models.
-
-        - 3.x models w/ automatic VAD: just send_realtime_input(text=...).
-          Activity markers are forbidden here and will get you a precondition
-          error. The server treats the realtime text as a complete user turn
-          on its own.
-        - 3.x models w/ manual VAD (silero): wrap the text with activity_start
-          and activity_end so the server knows the turn closed.
-        - 2.5 / half-cascade: send_client_content with role=user and
-          turn_complete=True. send_realtime_input(text=) is a v3 addition,
-          older endpoints reject it or silently no-op.
-
-        Waits for the model to finish its current turn first. Firing text
-        into the middle of an active model turn makes the server reject the
-        frame with 1007 (precondition failed).
-        """
+        """Send a user text turn once the model is done, text mid turn gets a 1007."""
         if not self._session:
             return
         if self._tool_call_pending:
-            logger.debug("Skipping text send - tool call pending")
+            logger.debug("Skipping text send, blocking tool call pending")
             return
-        # Wait up to 30s for model to stop speaking, same pattern as
-        # send_client_content_safe. Otherwise the server rejects our
-        # frame and tears the socket down.
+        # activity markers with auto vad are a precondition error on 3.x, only silero wraps them
         for _ in range(300):
-            if not self._speaking:
+            if not self._speaking and not self._interaction_busy:
                 break
             await asyncio.sleep(0.1)
         try:
@@ -381,19 +368,12 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
             return False
 
     async def send_client_content_safe(self, turns, turn_complete=True):
-        """Send client content, waiting until the model stops speaking to avoid interruptions.
-        
-        Per Gemini Live best practices: sendClientContent with turnComplete=True
-        while the model is speaking will interrupt it mid-speech.
-        
-        For 3.1 models: send_client_content is only for initial history seeding.
-        Mid-session text updates must use send_realtime_input(text=...) instead.
-        """
+        """Send client content once the model is done, turn_complete mid speech cuts it off."""
         if not self._session:
             return
         # Wait up to 30s for model to finish speaking
         for _ in range(300):
-            if not self._speaking:
+            if not self._speaking and not self._interaction_busy:
                 break
             await asyncio.sleep(0.1)
         try:
@@ -646,8 +626,15 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                     self._audio_gated = False
                     self._manual_vad_speaking = False
                     self._manual_vad_silence_start = 0
-                    self._awaiting_idle = False
-                    self._awaiting_idle_since = 0
+                    self._speaking = False
+                    self._interaction_busy = False
+                    self._last_model_activity = 0
+                    self._uses_interaction_status = not self.config.model_capabilities.turn_complete_is_idle
+                    self._tool_tasks = {}
+                    self._cancelled_tool_ids = set()
+                    self._blocking_tool_calls = 0
+                    self._tool_call_pending = False
+                    self._chatbox_task = None
                     # Reset Silero VAD internal state if loaded
                     if self._silero_vad is not None:
                         self._silero_vad.reset_states()
@@ -685,10 +672,14 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                         self._session = None
                         self._stream_closing = True
                         self._idle_chatbox.stop()
+                        # running tools are left to finish so their side effects stay whole, their results get dropped
+                        if self._chatbox_task:
+                            tasks.append(self._chatbox_task)
                         for task in tasks:
                             task.cancel()
                         if tasks:
                             await asyncio.gather(*tasks, return_exceptions=True)
+                        self._chatbox_task = None
                         if self._pending_finalize_task:
                             self._pending_finalize_task.cancel()
                             self._pending_finalize_task = None
@@ -1017,22 +1008,21 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         """Monitor for idle state, stop talking animations, and trigger idle animation."""
         while True:
             await asyncio.sleep(1)
-            # Models with background reasoning hold the mic shut after a turn until
-            # they report IDLE. If that never turns up, dont leave the mic closed.
-            if self._awaiting_idle and self._awaiting_idle_since:
-                waited = time.time() - self._awaiting_idle_since
-                if waited >= self._idle_watchdog_seconds:
-                    logger.warning(
-                        f"{self.config.model} never sent interaction_status=IDLE after its turn "
-                        f"({waited:.0f}s), releasing the audio gate so the mic works again"
-                    )
-                    _broadcast_console("info", "Model went quiet without reporting IDLE, mic released")
-                    self._awaiting_idle = False
-                    self._awaiting_idle_since = 0
-                    self._end_model_turn()
-            # The awaiting-idle branch above owns _speaking during that window, so
-            # don't let the animation timeout clear it out from under us.
-            if self._speaking and not self._awaiting_idle and self._last_audio_time > 0:
+            # IDLE can go missing, dont stay "busy" forever once everything has gone quiet
+            if (
+                self._interaction_busy
+                and not self._speaking
+                and not self._tool_tasks
+                and self._last_model_activity
+                and time.time() - self._last_model_activity >= self._idle_watchdog_seconds
+            ):
+                logger.warning(
+                    f"{self.config.model} went quiet for {self._idle_watchdog_seconds:.0f}s "
+                    f"without reporting interaction_status=IDLE, treating it as done"
+                )
+                _broadcast_console("info", "Model went quiet without reporting IDLE, treating it as done")
+                self._end_model_turn()
+            if self._speaking and self._last_audio_time > 0:
                 idle_time = time.time() - self._last_audio_time
                 if idle_time >= self._idle_timeout:
                     logger.debug(f"AI idle for {idle_time:.1f}s, stopping talking animations")
@@ -1054,7 +1044,10 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
             except Exception:
                 plugin_busy = False
             # Anything keeping the AI busy suppresses idle
-            busy = music_playing or tracker_active or music_gen_active or plugin_busy
+            busy = (
+                music_playing or tracker_active or music_gen_active or plugin_busy
+                or self._interaction_busy or bool(self._tool_tasks)
+            )
             # Don't trigger idle during active tasks
             if self._emotion_system:
                 self._emotion_system.set_seated(self.osc.seated)
