@@ -85,6 +85,7 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
         self._idle_watchdog_seconds = 30.0  # Drop the post-turn mic hold if IDLE never shows up
         self._last_interaction_time = time.time()  # Track last user/AI interaction for engagement
         self._idle_engagement_sent = False  # Only send one engagement prompt per idle period
+        self._mind = None
         self._is_idle = False  # True when AI is idle (not speaking, no active tasks)
         self._replay_context = []  # Previous session entries to replay on error reconnect
         self._pending_finalize_task = None
@@ -1075,11 +1076,17 @@ class GeminiLiveSession(ReceiveLoopMixin, AudioLoopsMixin, VisionLoopMixin, Conf
                 self._idle_engagement_sent = True
                 logger.info(f"Idle for {IDLE_ENGAGEMENT_SECONDS}s, sending engagement prompt")
                 _broadcast_console("info", "Sending idle engagement prompt")
-                await self.send_text(
+                goal_nudge = None
+                if self._mind is not None:
+                    try:
+                        goal_nudge = self._mind.idle_prompt()
+                    except Exception as e:
+                        logger.debug(f"mind idle prompt failed: {e}")
+                await self.send_text(goal_nudge or (
                     "System update - You have been idle for a while. "
                     "Try to engage nearby people in conversation. "
                     "Say something interesting, ask a question, or make an observation to get someone to talk to you."
-                )
+                ))
 
     async def _now_playing_loop(self):
         """Background task that ticks the chatbox orchestrator. The

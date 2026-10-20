@@ -718,6 +718,23 @@ memory:
   vector_min_score_local: 0.55                # Local embeddings (LM Studio): lower scores, looser threshold
   # vector_min_score: 0.82                    # (legacy) single threshold for both, overrides the active provider
 
+# ── Mind: learns from finished sessions and keeps goals and promises between them (needs memory enabled) ──
+mind:
+  enabled: false
+  model: "gemini-3.5-flash-lite"      # background model that reflects on sessions, any Gemini text model works
+  reflect_interval_minutes: 20        # how often it looks for finished sessions
+  quiet_minutes: 10                   # a session counts as finished after this long with no new messages
+  session_gap_minutes: 20             # transcript files closer together than this count as one session (a new file starts on every reconnect)
+  min_messages: 6                     # skip sessions shorter than this
+  max_sessions_per_pass: 5            # cap on sessions reflected per pass, the rest wait for the next one
+  backfill_days: 0                    # on first start, also learn from sessions this many days back (0 = only new ones)
+  lesson_half_life_days: 30           # lessons fade by half in this many days unless something reinforces them
+  prompt_lessons: 8                   # strongest lessons put in his prompt
+  prompt_goals: 6                     # open goals and promises put in his prompt
+  idle_goals: true                    # when idle, nudge him toward a goal instead of just "talk to someone"
+  commitment_reminders: true          # remind him of promises when that person joins the instance
+  reminder_cooldown_minutes: 30
+
 # ══════════════════════════════════════════════════════════
 # Avatar Emotion/Animation System
 # ══════════════════════════════════════════════════════════

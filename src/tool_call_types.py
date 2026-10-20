@@ -27,6 +27,7 @@ _QUICK_LOOKUPS = {
     "listPersonalities", "listMusic", "listVoices", "listTTSProviders", "listMemories",
     "searchMemories", "searchSoundboard", "getSystemSpecs", "vrchatGetAvatarScale",
     "getDiscordStatus", "getYapModeStatus", "listWaypoints", "searchTools",
+    "goals", "personProfile", "lessons",
 }
 
 # network or model backed, run it in the background and bring it up when done
@@ -36,6 +37,7 @@ _SLOW_LOOKUPS = {
     "searchAvatars", "searchWorlds", "listFriendRequests",
     "socialFetchMessages", "socialFetchMessagesByUser", "socialGetOnline",
     "socialGetPendingRequests", "socialGetProfile", "socialListFriends",
+    "reflectNow",
 }
 
 

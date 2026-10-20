@@ -540,6 +540,16 @@ class Config:
         except Exception as e:
             logger.warning(f"plugin prompt contributors failed: {e}")
 
+        if self.mind_enabled:
+            try:
+                from src.mind import current
+                rt = current()
+                block = rt.prompt_block() if rt else ""
+                if block:
+                    parts.append(block)
+            except Exception as e:
+                logger.warning(f"mind prompt block failed: {e}")
+
         # generated body: how to express himself with it, and how it relates
         # to the older canned animation tool when both are on
         if self.motion_enabled:
@@ -924,6 +934,13 @@ class Config:
     @property
     def prompt_memory_count(self):
         return self.get("memory", "prompt_memory_count", default=10)
+
+    @property
+    def mind_enabled(self):
+        return bool(self.get("mind", "enabled", default=False)) and self.memory_enabled
+
+    def mind(self, key, default=None):
+        return self.get("mind", key, default=default)
 
     @property
     def tts_provider(self):

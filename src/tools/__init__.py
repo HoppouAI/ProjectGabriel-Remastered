@@ -5,6 +5,7 @@ from src.tools import (  # noqa: F401
     avatar_scaling,
     emotions_tools,
     memory_tools,
+    mind_tools,
     movement,
     music,
     personalities,

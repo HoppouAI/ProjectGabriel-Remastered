@@ -132,6 +132,7 @@ Everything lives in `config.yml`. Key sections:
 | `vrchat_api` | VRChat account credentials for avatar switching, friends, etc |
 | `yolo` &rarr; `enabled` | Toggle person/face tracking |
 | `memory` | Memory backend settings |
+| `mind` | Learning from past sessions, plus goals and promises that carry over. Off by default, see [Mind](#mind) |
 | `plugins` | Plugin loader and trust settings |
 
 Prompt files live in `config/prompts/`. Personalities live in `config/prompts/personalities.yml`.
@@ -150,6 +151,32 @@ Any Gemini Live model works. Set `model` under the `gemini` section in `config.y
 Older and newer models are all supported. Anything not recognised falls back to the closest generation based on the version number and says so in the console on startup.
 
 **Thinking settings fix themselves.** The `thinking` section has a token budget for 2.5 models and a level for 3.x models. Whichever one your model does not understand gets dropped automatically, and the reason is printed on startup. Picking the wrong one cannot break a session.
+
+### Mind
+
+With the mind turned on, Gabriel actually learns from his sessions instead of only remembering what he chose to save mid conversation. To turn it on, open `config.yml`, find the `mind:` section (copy it from `config.yml.example` if it is missing) and set `enabled` to `true`. It needs the memory system on.
+
+**He reflects after every session.** Once a session has been quiet for a while, a background model reads the transcript next to the memories it touches. It adds new memories, fixes ones that turned out wrong, promotes short term memories that came up again, and retires ones that are clearly outdated. Pinned memories are never touched.
+
+**He learns lessons about himself.** Things like "keep answers short when a group is talking" or "Alex does not like being called buddy". Lessons get stronger every time a session confirms them and fade when nothing does. His strongest ones go into his prompt, so his behavior changes over time.
+
+**He keeps track of people.** Each person he knows gets a short profile and a list of facts. When people he knows are in the instance, their profiles go into his prompt.
+
+**Goals and promises carry over.** He keeps goals of his own, plans, and promises to specific people, and manages them with the `goals` tool. When someone he promised something to joins the instance he gets reminded. When nobody is talking, he gets nudged to work on a goal instead of just being told to talk to someone.
+
+**Every change is logged and can be undone.** To see what it changed and why, run:
+
+```bash
+.venv\Scripts\python.exe -m src.mind log
+```
+
+Then undo any change by its number:
+
+```bash
+.venv\Scripts\python.exe -m src.mind undo 12
+```
+
+`lessons`, `goals` and `people <name>` show the rest. This data lives in `data/mind.sqlite`, next to your normal memories.
 
 ### Tools (`config/tools.yml`)
 
@@ -368,6 +395,7 @@ src/
   face_tracker.py    YOLOv8 face tracking
   gemini_live/       Gemini Live session management
   memory/            Persistent memory (MongoDB / SQLite + vector search)
+  mind/              Reflection, lessons, people and goals across sessions
   tools/             Gemini function-calling tools
   plugins/           Plugin loader and API
 discord_bot/         Discord bot (separate Gemini Live session)

@@ -212,6 +212,13 @@ async def main(save_audio=False):
     instance_monitor.start()
     session.tool_handler.instance_monitor = instance_monitor
 
+    # reflection + goals across sessions
+    if config.mind_enabled:
+        from src.mind import MindRuntime
+        mind = MindRuntime(config, session=session, instance_monitor=instance_monitor)
+        session._mind = mind
+        mind.start()
+
     # VRChat API for avatar switching (background login)
     vrchat_api = None
     if config.vrchat_api_username:
