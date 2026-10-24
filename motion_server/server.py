@@ -2,9 +2,9 @@
 # runs on the GPU box, generates motion from text prompts and streams
 # retargeted FBT params over websocket. two backends:
 #   dart (babel/hml3d): vendored DART tree, smpl bodies (dart_engine.py)
-#   ardy (core8): nvidia ARDY autoregressive diffusion (ardy_engine.py)
+#   ardy (core8/core40): nvidia ARDY autoregressive diffusion (ardy_engine.py)
 #
-# usage: python server.py [--model hml3d|babel|core8] [--host 0.0.0.0] [--port 8765]
+# usage: python server.py [--model hml3d|babel|core8|core40] [--host 0.0.0.0] [--port 8765]
 
 import json
 import time
@@ -15,7 +15,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 
 DART_MODELS = ('babel', 'hml3d')
-ARDY_MODELS = ('core8',)
+ARDY_MODELS = ('core8', 'core40')
 
 
 def build_backend(args):
@@ -147,7 +147,8 @@ async def main():
     ap.add_argument('--port', type=int, default=8765)
     ap.add_argument('--model', default='babel', choices=list(DART_MODELS + ARDY_MODELS),
                     help='babel = verb prompts 30fps, hml3d = sentence prompts 20fps, '
-                         'core8 = ardy sentence prompts 20fps (needs .venv-ardy)')
+                         'core8 = ardy sentence prompts 20fps (needs .venv-ardy), '
+                         'core40 = same ardy skeleton planning 2s ahead, smoother but slower to react')
     ap.add_argument('--guidance', type=float, default=5.0, help='dart classifier-free guidance')
     ap.add_argument('--respacing', default=None,
                     help="dart sampling override: '' = full 10 step, 'ddim5' fast. default follows the model")

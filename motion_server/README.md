@@ -12,7 +12,7 @@ Two backends share one server and one protocol:
 
 - [DART](https://github.com/zkf1997/DART) (`babel`, `hml3d`): the original
   backend, vendored tree in `DART/`, runs in `.venv`
-- [ARDY](https://github.com/nv-tlabs/ardy) (`core8`): nvidia's autoregressive
+- [ARDY](https://github.com/nv-tlabs/ardy) (`core8`, `core40`): nvidia's autoregressive
   motion diffusion, noticeably higher quality and better style control,
   clone in `ARDY/`, runs in `.venv-ardy`
 
@@ -44,16 +44,16 @@ DesktopFBT puppet rig on the avatar           direct blend tree + VRC
                                               rotation constraint
 ```
 
-Three models, selectable with `--model`:
+Four models, selectable with `--model`:
 
-| | `babel` (default) | `hml3d` | `core8` (ARDY) |
-|---|---|---|---|
-| prompts | bare action verbs ("dance") | full sentences | full sentences, best style following |
-| fps | 30 | 20 | 20 |
-| bodies | SMPL-X | SMPL-H | Core-27 skeleton |
-| sampling | ddim5 | full 10 step | 8 of 10 steps (realtime margin on a 3060) |
-| venv | `.venv` | `.venv` | `.venv-ardy` |
-| quality | okay | better | best, understands zombie/limp/sneak style prompts |
+| | `babel` (default) | `hml3d` | `core8` (ARDY) | `core40` (ARDY) |
+|---|---|---|---|---|
+| prompts | bare action verbs ("dance") | full sentences | full sentences, best style following | same as core8 |
+| fps | 30 | 20 | 20 | 20 |
+| bodies | SMPL-X | SMPL-H | Core-27 skeleton | Core-27 skeleton |
+| sampling | ddim5 | full 10 step | 8 of 10 steps (realtime margin on a 3060) | same |
+| venv | `.venv` | `.venv` | `.venv-ardy` | `.venv-ardy` |
+| quality | okay | better | best, understands zombie/limp/sneak style prompts | plans 2s per step instead of 0.4s, more coherent long actions, slower to react to a new prompt |
 
 The server normalizes incoming prompts to whichever style its model was
 trained on (wraps terse verbs in "a person ..." for hml3d, strips the
@@ -222,6 +222,10 @@ build it with MinGW if the editable install didn't
 
 The `core8` checkpoint (nvidia/ARDY-Core-RP-20FPS-Horizon8, 765MB,
 Apache/NVIDIA Open Model) downloads itself into the HF cache on first run.
+`core40` (nvidia/ARDY-Core-RP-20FPS-Horizon40, also 765MB) works the same
+way. It is the same Core-27 skeleton and motion representation, only the
+generation horizon differs (40 frames per step instead of 8), so
+retarget_core.py and CORE_REST are shared and nothing needs recalibrating.
 
 The text encoder is the gated part upstream: ARDY wants LLM2Vec on top of
 meta-llama/Meta-Llama-3-8B-Instruct (16GB, meta approval wall). We skip the
@@ -250,9 +254,10 @@ Speed on an RTX 3060 12GB (Gate A, 6s clips): 8 denoise steps = 27fps mean /
 ```
 motion_server\.venv\Scripts\python.exe motion_server\server.py --model hml3d
 motion_server\.venv-ardy\Scripts\python.exe motion_server\server.py --model core8
+motion_server\.venv-ardy\Scripts\python.exe motion_server\server.py --model core40
 ```
 
-Flags: `--model babel|hml3d|core8`, `--port 8765`, `--raw` (include raw
+Flags: `--model babel|hml3d|core8|core40`, `--port 8765`, `--raw` (include raw
 joint data in frames). DART only: `--guidance 5.0` (3 = looser and more
 natural, 7 = obeys prompts harder but stiff), `--respacing` (override
 sampling, `''` = full 10 step, `ddim5` = fast). ARDY only: `--steps 8`
@@ -431,7 +436,7 @@ Either backend:
   on MotionEngine in dart_engine.py. ARDY hasn't needed this so far (its
   training data grounds much harder); if it starts floating, port the same
   trick into ardy_engine.py.
-- ARDY generates in 0.4s chunks on a lookahead worker thread: the next chunk
+- ARDY generates in 0.4s chunks (2s on core40) on a lookahead worker thread: the next chunk
   renders on the gpu while the current one streams, so frames leave evenly at
   20fps (measured p50 gap 47ms) instead of stall-then-burst. The server also
   carries up to 0.6s of catch-up debt for chunks that overrun. If it still

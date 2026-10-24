@@ -545,7 +545,7 @@ motion:
   # server from motion_server/ running, usually on a separate PC with a GPU,
   # plus the DesktopFBT puppet rig on your avatar. When enabled the AI gets
   # tools to perform motions, stop them, and reset its pose.
-  # The server picks the model (--model babel/hml3d/core8), the client here
+  # The server picks the model (--model babel/hml3d/core8/core40), the client here
   # doesn't care which backend is running.
   enabled: false
   # Where the motion server is listening (ip of the GPU PC on your LAN)
@@ -586,7 +586,7 @@ motion:
   # fidget kicks in once he's been quiet, and the puppet is handed back to
   # VRChat entirely when nothing is going on (which also stops the GPU work).
   # Anything he asks for himself with playMotion takes priority.
-  # Needs the ARDY backend (--model core8), the server tells the client which
+  # Needs the ARDY backend (--model core8 or core40), the server tells the client which
   # one it is running and this stays off on DART.
   expression:
     enabled: true

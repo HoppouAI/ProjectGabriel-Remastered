@@ -9,7 +9,9 @@
 # gated LLM2Vec llama so no meta approval is needed (~5.5GB vram, encodes a
 # prompt in ~0.3s, cached).
 
+import math
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -148,6 +150,8 @@ class ArdyEngine:
         # prompt switch, to cover the ~300ms it takes to make the first chunk
         # of the new prompt. two tokens is 400ms at 20fps.
         self._replan_bridge = 2 * self._patch
+        self._step_s = None
+        self._steps_timed = 0
         self._worker_err = None
         threading.Thread(target=self._worker_loop, daemon=True).start()
         print(f'ardy engine ready on {self.device}, fps={self.fps} patch={self._patch} '
@@ -179,29 +183,29 @@ class ArdyEngine:
         return text
 
     def _truncate_to_served(self, cut_history):
-        """drop frames generated under the previous prompt. with cut_history,
-        also shrink kept history to one token so the old pose stops acting as
-        an attractor (long history dominates the text condition).
-
-        keeps _replan_bridge frames past the playhead on purpose: cutting
-        exactly at the playhead leaves nothing to serve while the first chunk
-        of the new prompt generates, so every switch stalls ~300ms and then
-        bursts. the bridge is old-prompt motion but it is only a fifth of a
-        second and the new chunk conditions on it, so it joins cleanly."""
+        """drop old prompt frames but keep a bridge past the playhead, cut_history also shrinks history to one token"""
         self._epoch += 1  # void any chunk the worker has in flight
         self._cond.notify_all()
         if self._motion is None:
             return
-        keep = max(self.frame_idx + 1 - self._motion_base + self._replan_bridge, self._patch)
+        bridge = self._bridge()
+        keep = max(self.frame_idx + 1 - self._motion_base + bridge, self._patch)
         keep = min(keep, self._motion.shape[1])
         self._motion = self._motion[:, :keep]
-        fkeep = min(max(self.frame_idx + 1 - self._frames_base + self._replan_bridge, 0),
+        fkeep = min(max(self.frame_idx + 1 - self._frames_base + bridge, 0),
                     len(self._frames))
         del self._frames[fkeep:]
         if cut_history and self._motion.shape[1] > self._patch:
             cut = self._motion.shape[1] - self._patch
             self._motion = self._motion[:, cut:]
             self._motion_base += cut
+
+    def _bridge(self):
+        # core40 chunks take longer than 400ms to make, so cover the measured step time
+        if self._step_s is None:
+            return self._replan_bridge
+        need = math.ceil(self._step_s * 1.25 * self.fps / self._patch) * self._patch
+        return max(self._replan_bridge, need)
 
     def _begin_stop(self):
         """head for idle, returns whether history needs cutting.
@@ -315,8 +319,13 @@ class ArdyEngine:
                            >= self._lookahead):
                         self._cond.wait(0.05)
                     snap = self._snapshot()
+                t0 = time.perf_counter()
                 samples, frames = self._run_step(snap)
+                dt = time.perf_counter() - t0
                 with self._cond:
+                    self._steps_timed += 1
+                    if self._steps_timed > 2:  # first steps include cuda warmup
+                        self._step_s = dt if self._step_s is None else 0.8 * self._step_s + 0.2 * dt
                     if snap['epoch'] == self._epoch:
                         self._append(samples, frames)
                         self._cond.notify_all()

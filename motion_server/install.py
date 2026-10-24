@@ -30,6 +30,7 @@ ARDY_GIT = 'https://github.com/nv-tlabs/ardy'
 DART_GIT = 'https://github.com/zkf1997/DART'
 ENCODER_REPO = 'Aero-Ex/KIMODO-Meta3_llm2vec_NF4'
 CORE8_REPO = 'nvidia/ARDY-Core-RP-20FPS-Horizon8'
+CORE40_REPO = 'nvidia/ARDY-Core-RP-20FPS-Horizon40'
 TORCH_DART = 'torch==2.5.1+cu121'
 TORCH_DART_INDEX = 'https://download.pytorch.org/whl/cu121'
 TORCH_ARDY_INDEX = 'https://download.pytorch.org/whl/cu126'
@@ -237,7 +238,7 @@ def drive_walk(path):
 # -- ARDY backend -------------------------------------------------------------
 
 def install_ardy():
-    head('ARDY backend (core8)')
+    head('ARDY backend (core8 / core40)')
     venv = HERE / '.venv-ardy'
     ensure_venv(venv, '3.11')
 
@@ -283,6 +284,11 @@ def install_ardy():
              'from huggingface_hub import snapshot_download; '
              f'snapshot_download({CORE8_REPO!r})'])
         ok('core8 checkpoint cached')
+    if ask('also prefetch core40 (same skeleton, plans 2s ahead, another 765MB)?'):
+        run([venv_python(venv), '-c',
+             'from huggingface_hub import snapshot_download; '
+             f'snapshot_download({CORE40_REPO!r})'])
+        ok('core40 checkpoint cached')
 
     if py_ok(venv, 'from motion_correction import motion_postprocess'):
         ok('motion_correction extension builds')
@@ -410,6 +416,8 @@ def summary(chose_ardy, chose_dart):
     if chose_ardy:
         print(f'  {_c("1", "core8 (best):")} motion_server\\.venv-ardy\\Scripts\\python.exe '
               'motion_server\\server.py --model core8')
+        print(f'  {_c("1", "core40:")}       motion_server\\.venv-ardy\\Scripts\\python.exe '
+              'motion_server\\server.py --model core40')
     if chose_dart:
         print(f'  {_c("1", "hml3d:")}        motion_server\\.venv\\Scripts\\python.exe '
               'motion_server\\server.py --model hml3d')
@@ -428,7 +436,7 @@ def summary(chose_ardy, chose_dart):
 
 def main():
     print(_c('1;35', '\n  Gabriel motion server installer'))
-    print('  models: core8 (ARDY, best quality) / babel + hml3d (DART, original)')
+    print('  models: core8 + core40 (ARDY, best quality) / babel + hml3d (DART, original)')
 
     choice = (sys.argv[1] if len(sys.argv) > 1 else '').lower()
     if choice not in ('ardy', 'dart', 'all'):
