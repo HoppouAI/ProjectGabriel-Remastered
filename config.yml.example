@@ -580,6 +580,14 @@ motion:
   #           body strides properly while the waypoint system carries him.
   #           Needs the ardy backend, falls back to pause on dart.
   navigation: pause
+  # How the body pose gets to other players.
+  #   params = the normal FBT avatar parameters. Works on every version of
+  #            the rig, but uses most of the avatar's synced parameter space.
+  #   face   = sent through VRChat's face tracking sync instead, which costs
+  #            no synced parameter space. Only works on an avatar uploaded
+  #            with the face tracking version of the rig, and face tracking
+  #            has to be allowed in VRChat's Tracking & IK settings.
+  transport: params
 
   # Automatic expression using generated motion. Replaces the canned emotion
   # animations for body language: gesture motions play while he talks, a

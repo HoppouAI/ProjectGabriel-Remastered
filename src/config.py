@@ -867,6 +867,11 @@ class Config:
         return mode if mode in ("pause", "model") else "pause"
 
     @property
+    def motion_transport(self):
+        mode = str(self.get("motion", "transport", default="params")).lower()
+        return mode if mode in ("params", "face") else "params"
+
+    @property
     def motion_expression(self):
         return self.get("motion", "expression", default={}) or {}
 

@@ -38,6 +38,13 @@ PARAMS = [
     "HipsY", "HipsPitch", "HipsRoll",
 ]
 
+# face transport slots must match the avatars forward-to-animator behaviors, (key*255/127 - 1) * valid
+FACE_ADDR = "/tracking/face/v1"
+FACE_KEYS = 102
+FACE_SLOTS = [26, 27, 28, 29, 34, 35, 44, 45, 46, 47, 48, 49, 78, 79,
+              86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100]
+FACE_VALID = 101  # NeckFlexLeft, held at 255 while streaming so dropped data reads as rest pose not -1
+
 # floor auto-calibration from the root-mounted FloorDown VRCRaycast. while
 # standing, the reading slow-follows into a baseline (auto-zeros avatar
 # scale, capsule hover, whatever). when the pose goes low the baseline
@@ -208,8 +215,10 @@ class PoseTracker:
 class MotionClient:
     def __init__(self, osc_client, host, port, walk_full=2.0, turn_full=1.8,
                  pose_tracking=False, pose_monitor=1, raycast_state=None,
-                 nav_mode="pause", run_full=4.0):
+                 nav_mode="pause", run_full=4.0, transport="params"):
         self._osc = osc_client
+        self._face = transport == "face"
+        self._face_buf = bytearray(FACE_KEYS)
         self._uri = f"ws://{host}:{port}"
         self._ws = None
         self._recv_task = None
@@ -411,6 +420,18 @@ class MotionClient:
         elif held == "paused":
             self._set_active(True)
 
+    def _push_pose(self, dt):
+        if not self._face:
+            for p in PARAMS:
+                self._osc.send_message(PREFIX + p, float(self._filters[p](self._target[p], dt)))
+            return
+        buf = self._face_buf
+        for p, slot in zip(PARAMS, FACE_SLOTS):
+            v = max(-1.0, min(1.0, self._filters[p](self._target[p], dt)))
+            buf[slot] = int(round((v + 1.0) * 127.0))
+        buf[FACE_VALID] = 255
+        self._osc.send_message(FACE_ADDR, bytes(buf))
+
     def _zero_inputs(self):
         self._osc.send_message("/input/Vertical", 0.0)
         self._osc.send_message("/input/Horizontal", 0.0)
@@ -506,17 +527,13 @@ class MotionClient:
                     # driving. in model mode the body still animates a walk,
                     # it just doesn't decide where he goes
                     if self.walks_for_navigation and self._active and self._got_frame:
-                        for p in PARAMS:
-                            self._osc.send_message(
-                                PREFIX + p, float(self._filters[p](self._target[p], dt)))
+                        self._push_pose(dt)
                     sv = sh = sl = 0.0
                     await asyncio.sleep(interval)
                     continue
 
                 if self._active and self._got_frame:
-                    for p in PARAMS:
-                        cur = self._filters[p](self._target[p], dt)
-                        self._osc.send_message(PREFIX + p, float(cur))
+                    self._push_pose(dt)
                     if not self._locomotion:
                         # gesturing in place, keep the generated root motion
                         # out of the move inputs so he doesn't drift away
@@ -567,6 +584,7 @@ def get_motion_client(config, osc):
             pose_monitor=config.motion_pose_monitor,
             raycast_state=getattr(osc, "raycast_state", None),
             nav_mode=config.motion_navigation,
+            transport=config.motion_transport,
         )
     return _client
 
