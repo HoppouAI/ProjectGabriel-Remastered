@@ -19,6 +19,7 @@ namespace ProjectGabriel.Editor
     ///
     /// Menu: Tools > ProjectGabriel > Build Desktop FBT Rig   (avatar selected)
     ///        Tools > ProjectGabriel > Export muscle_ranges.json
+    ///        Tools > ProjectGabriel > Export FBT calibration
     ///
     /// HOW IT WORKS (read this before touching anything):
     ///   - 29 synced float params (FBT/*) + 1 bool (FBT/Enable) = 233/256 bits.
@@ -389,6 +390,219 @@ namespace ProjectGabriel.Editor
                 File.WriteAllText(path, sb.ToString());
                 Debug.Log($"[FBT] wrote {path} (drop into motion_server/)");
             }
+        }
+
+        [MenuItem("Tools/ProjectGabriel/Export FBT calibration")]
+        public static void ExportCalibrationMenu()
+        {
+            var avatar = Selection.activeGameObject;
+            var animator = avatar ? avatar.GetComponent<Animator>() : null;
+            if (animator == null || !animator.isHuman)
+            {
+                EditorUtility.DisplayDialog("FBT Rig", "Select a humanoid avatar root first.", "ok");
+                return;
+            }
+            string path = EditorUtility.SaveFilePanel("Export FBT calibration", "", "fbt_calibration.json", "json");
+            if (!string.IsNullOrEmpty(path))
+                ExportCalibration(avatar, path);
+        }
+
+        // poses the avatar through its own fbt params and records where the bones really land, the motion server solves against this
+        public static string ExportCalibration(GameObject avatar, string path)
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var animator = avatar.GetComponent<Animator>();
+            var root = avatar.transform;
+            var all = avatar.GetComponentsInChildren<Transform>(true);
+            var savedPos = new Vector3[all.Length];
+            var savedRot = new Quaternion[all.Length];
+            var savedScale = new Vector3[all.Length];
+            for (int i = 0; i < all.Length; i++)
+            {
+                savedPos[i] = all[i].localPosition;
+                savedRot[i] = all[i].localRotation;
+                savedScale[i] = all[i].localScale;
+            }
+
+            var muscleIdx = new Dictionary<string, int>();
+            for (int i = 0; i < HumanTrait.MuscleName.Length; i++)
+                muscleIdx[HumanTrait.MuscleName[i]] = i;
+            var chains = new Dictionary<string, (string muscle, float w)[]>();
+            foreach (var (param, chain) in MUSCLE_PARAMS)
+                chains[param] = chain;
+
+            var handler = new HumanPoseHandler(animator.avatar, root);
+            var pose = new HumanPose();
+            handler.GetHumanPose(ref pose);
+            var bodyPos = pose.bodyPosition;
+            var sb = new System.Text.StringBuilder();
+            int samples = 0;
+
+            void Apply(params (string p, float v)[] vals)
+            {
+                var m = new float[HumanTrait.MuscleCount];
+                foreach (var (p, v) in vals)
+                    foreach (var (mus, w) in chains[p])
+                        m[muscleIdx[mus]] += v * w;
+                pose.muscles = m;
+                pose.bodyPosition = bodyPos;
+                pose.bodyRotation = Quaternion.identity;
+                handler.SetHumanPose(ref pose);
+                samples++;
+            }
+
+            Transform B(HumanBodyBones b) => animator.GetBoneTransform(b);
+            Quaternion RootRel(Transform t) => Quaternion.Inverse(root.rotation) * t.rotation;
+            var rest = new Dictionary<HumanBodyBones, Quaternion>();
+            // rotation each bone did since the all-zero pose, in root axes
+            Quaternion Frame(HumanBodyBones b) => RootRel(B(b)) * Quaternion.Inverse(rest[b]);
+            // unity is left handed with +x right, the server works with +x = model left
+            Vector3 M(Vector3 v) => new Vector3(-v.x, v.y, v.z);
+            Vector3 Dir(HumanBodyBones from, HumanBodyBones to, HumanBodyBones frame)
+            {
+                var w = Quaternion.Inverse(root.rotation) * (B(to).position - B(from).position).normalized;
+                return M(Quaternion.Inverse(Frame(frame)) * w);
+            }
+            Quaternion RelQ(HumanBodyBones parent, HumanBodyBones child)
+            {
+                var q = Quaternion.Inverse(Frame(parent)) * Frame(child);
+                return new Quaternion(q.x, -q.y, -q.z, q.w);
+            }
+            float Ang(Vector3 a, Vector3 b) => Vector3.Angle(a, b) * Mathf.Deg2Rad;
+            float[] Grid(int n)
+            {
+                var g = new float[n];
+                for (int i = 0; i < n; i++) g[i] = -1f + 2f * i / (n - 1);
+                return g;
+            }
+            void V(Vector3 v) => sb.Append('[').Append(v.x.ToString("F5", inv)).Append(',').Append(v.y.ToString("F5", inv)).Append(',').Append(v.z.ToString("F5", inv)).Append(']');
+            void Q(Quaternion q) => sb.Append('[').Append(q.x.ToString("F5", inv)).Append(',').Append(q.y.ToString("F5", inv)).Append(',').Append(q.z.ToString("F5", inv)).Append(',').Append(q.w.ToString("F5", inv)).Append(']');
+            void F(float f) => sb.Append(f.ToString("F5", inv));
+
+            const int N_ARM = 21, N_2D = 41, N_1D = 61, N_ROT = 13;
+            const float ARM_ELBOW = -0.3f;
+            try
+            {
+                Apply();
+                foreach (HumanBodyBones b in Enum.GetValues(typeof(HumanBodyBones)))
+                    if (b != HumanBodyBones.LastBone && B(b) != null)
+                        rest[b] = RootRel(B(b));
+                var chest = B(HumanBodyBones.UpperChest) ? HumanBodyBones.UpperChest : HumanBodyBones.Chest;
+
+                sb.Append("{\n\"version\": 1,\n\"avatar\": \"").Append(animator.avatar.name).Append("\",\n");
+                sb.Append("\"humanScale\": "); F(animator.humanScale); sb.Append(",\n");
+                sb.Append("\"armElbow\": "); F(ARM_ELBOW); sb.Append(",\n");
+
+                foreach (var side in new[] { "L", "R" })
+                {
+                    bool l = side == "L";
+                    var ua = l ? HumanBodyBones.LeftUpperArm : HumanBodyBones.RightUpperArm;
+                    var la = l ? HumanBodyBones.LeftLowerArm : HumanBodyBones.RightLowerArm;
+                    var ha = l ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand;
+                    var ul = l ? HumanBodyBones.LeftUpperLeg : HumanBodyBones.RightUpperLeg;
+                    var ll = l ? HumanBodyBones.LeftLowerLeg : HumanBodyBones.RightLowerLeg;
+                    var ft = l ? HumanBodyBones.LeftFoot : HumanBodyBones.RightFoot;
+                    var to = l ? HumanBodyBones.LeftToes : HumanBodyBones.RightToes;
+
+                    // arm: [up][fb][tw] -> upper arm dir and forearm dir in the chest frame
+                    sb.Append("\"arm").Append(side).Append("\": {\"u\": [");
+                    var fs = new System.Text.StringBuilder();
+                    var g = Grid(N_ARM);
+                    bool first = true;
+                    foreach (var up in g) foreach (var fb in g) foreach (var tw in g)
+                    {
+                        Apply((side + "ArmUp", up), (side + "ArmFB", fb), (side + "ArmTW", tw), (side + "Elbow", ARM_ELBOW));
+                        if (!first) sb.Append(',');
+                        V(Dir(ua, la, chest));
+                        var f = Dir(la, ha, chest);
+                        if (!first) fs.Append(',');
+                        fs.Append('[').Append(f.x.ToString("F5", inv)).Append(',').Append(f.y.ToString("F5", inv)).Append(',').Append(f.z.ToString("F5", inv)).Append(']');
+                        first = false;
+                    }
+                    sb.Append("], \"f\": [").Append(fs).Append("]},\n");
+
+                    sb.Append("\"elbow").Append(side).Append("\": [");
+                    first = true;
+                    foreach (var e in Grid(N_1D))
+                    {
+                        Apply((side + "Elbow", e));
+                        if (!first) sb.Append(',');
+                        F(Ang(Dir(ua, la, chest), Dir(la, ha, chest)));
+                        first = false;
+                    }
+                    sb.Append("],\n");
+
+                    // leg: [fb][io] -> thigh dir in the hips frame
+                    sb.Append("\"leg").Append(side).Append("\": [");
+                    first = true;
+                    foreach (var fb in Grid(N_2D)) foreach (var io in Grid(N_2D))
+                    {
+                        Apply((side + "LegFB", fb), (side + "LegIO", io));
+                        if (!first) sb.Append(',');
+                        V(Dir(ul, ll, HumanBodyBones.Hips));
+                        first = false;
+                    }
+                    sb.Append("],\n");
+
+                    sb.Append("\"knee").Append(side).Append("\": [");
+                    first = true;
+                    foreach (var k in Grid(N_1D))
+                    {
+                        Apply((side + "Knee", k));
+                        if (!first) sb.Append(',');
+                        F(Ang(Dir(ul, ll, HumanBodyBones.Hips), Dir(ll, ft, HumanBodyBones.Hips)));
+                        first = false;
+                    }
+                    sb.Append("],\n");
+
+                    sb.Append("\"foot").Append(side).Append("\": [");
+                    first = true;
+                    foreach (var k in Grid(N_1D))
+                    {
+                        Apply((side + "FootUD", k));
+                        if (!first) sb.Append(',');
+                        F(Ang(Dir(ll, ft, HumanBodyBones.Hips), Dir(ft, to, HumanBodyBones.Hips)));
+                        first = false;
+                    }
+                    sb.Append("],\n");
+                }
+
+                foreach (var (key, parent, child) in new[]
+                {
+                    ("spine", HumanBodyBones.Hips, chest),
+                    ("head", chest, HumanBodyBones.Head),
+                })
+                {
+                    var names = key == "spine" ? new[] { "SpineFB", "SpineLR", "SpineTW" } : new[] { "HeadNod", "HeadTilt", "HeadTurn" };
+                    sb.Append('"').Append(key).Append("\": [");
+                    bool first = true;
+                    var g = Grid(N_ROT);
+                    foreach (var a in g) foreach (var b in g) foreach (var c in g)
+                    {
+                        Apply((names[0], a), (names[1], b), (names[2], c));
+                        if (!first) sb.Append(',');
+                        Q(RelQ(parent, child));
+                        first = false;
+                    }
+                    sb.Append("],\n");
+                }
+                sb.Append("\"grids\": {\"arm\": ").Append(N_ARM).Append(", \"leg\": ").Append(N_2D)
+                  .Append(", \"joint\": ").Append(N_1D).Append(", \"rot\": ").Append(N_ROT).Append("}\n}\n");
+            }
+            finally
+            {
+                for (int i = 0; i < all.Length; i++)
+                {
+                    all[i].localPosition = savedPos[i];
+                    all[i].localRotation = savedRot[i];
+                    all[i].localScale = savedScale[i];
+                }
+                handler.Dispose();
+            }
+            File.WriteAllText(path, sb.ToString());
+            string msg = $"[FBT] wrote {path} from '{avatar.name}', {samples} poses sampled (drop it in motion_server/)";
+            Debug.Log(msg);
+            return msg;
         }
 
         // ---------- helpers ----------
