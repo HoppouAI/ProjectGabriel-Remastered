@@ -22,7 +22,7 @@ namespace ProjectGabriel.Editor
     ///        Tools > ProjectGabriel > Export FBT calibration
     ///
     /// HOW IT WORKS (read this before touching anything):
-    ///   - 29 synced float params (FBT/*) + 1 bool (FBT/Enable) = 233/256 bits.
+    ///   - 31 synced float params (FBT/*) + 1 bool (FBT/Enable) = 249/256 bits.
     ///   - One Direct Blend Tree in the Action layer, every child weighted by
     ///     FBT/One (always 1). Each muscle param is a 1D tree lerping a _min
     ///     clip (param -1) to a _max clip (param +1). Muscle clips write
@@ -32,10 +32,11 @@ namespace ProjectGabriel.Editor
     ///   - Hips rotation CANNOT use RootQ: unity nlerp-averages body rotation
     ///     across ALL blend tree children, so ~30 muscle clips each voting
     ///     "upright" crush 90 deg to ~3 deg. RootQ from layers above 0 is
-    ///     discarded outright and muscle layers below stomp it. Instead two
-    ///     proxy transforms under the avatar root get generic euler curves
-    ///     (those blend per-curve, zero dilution) and a VRCRotationConstraint
-    ///     on the Hips bone follows them. Its GlobalWeight is animated to 1
+    ///     discarded outright and muscle layers below stomp it. Instead pitch
+    ///     and roll arrive as sin/cos pairs that move two aim targets with
+    ///     generic position curves (per-curve blend, zero dilution, and no
+    ///     wrap at 180 so flips stay continuous), two proxies aim at them and
+    ///     a VRCRotationConstraint on the Hips bone follows. Its GlobalWeight is animated to 1
     ///     only inside the puppet state; write-defaults returns it to the
     ///     scene value 0 when the puppet disengages.
     ///   - Puppet state behaviours: tracking -> Animation for all body parts,
@@ -44,15 +45,14 @@ namespace ProjectGabriel.Editor
     /// </summary>
     public static class GabrielFBTRigBuilder
     {
-        private const string OUT_DIR = "Assets/HoppouAI/DesktopFBT";
-        private const string CLIP_DIR = OUT_DIR + "/Clips";
+        public const string DEFAULT_OUT_DIR = "Assets/HoppouAI/DesktopFBT";
+        private static string OUT_DIR = DEFAULT_OUT_DIR;
+        private static string CLIP_DIR => OUT_DIR + "/Clips";
 
-        // hips rotation range mapped over param -1..1. retarget.py
-        // HIPS_PITCH_MAX_DEG / HIPS_ROLL_MAX_DEG must match. 180 covers
-        // handstands and lying face down/up (proxy transforms blend euler
-        // curves per-curve, so the full range interpolates cleanly).
-        private const float PITCH_RANGE_DEG = 180f;
-        private const float ROLL_RANGE_DEG = 180f;
+        // hips pitch/roll ride as sin+cos pairs so flips never wrap, aim constraints turn them back into rotation
+        private static readonly string[] HIPS_ROT_PARAMS = { "HipsPitchS", "HipsPitchC", "HipsRollS", "HipsRollC" };
+        private const string PITCH_TARGET = "FBT_HipsPitchTarget";
+        private const string ROLL_TARGET = "FBT_HipsRollTarget";
 
         // HipsY drop below standing at param -1. the param is in ARDY/smpl
         // metres (retarget divides by hipsy_down_m), so the rig converts them
@@ -128,7 +128,21 @@ namespace ProjectGabriel.Editor
                 EditorUtility.DisplayDialog("FBT Rig", "Select a humanoid avatar root first.", "ok");
                 return;
             }
+            BuildInto(avatar, DEFAULT_OUT_DIR);
+        }
 
+        // build into another asset folder, so an experiment never rewrites the rig other avatars still point at
+        public static void BuildInto(GameObject avatar, string outDir)
+        {
+            var prev = OUT_DIR;
+            OUT_DIR = outDir;
+            try { BuildCore(avatar); }
+            finally { OUT_DIR = prev; }
+        }
+
+        private static void BuildCore(GameObject avatar)
+        {
+            var animator = avatar.GetComponent<Animator>();
             Directory.CreateDirectory(CLIP_DIR);
 
             // measure standing body height so HipsY mid matches this avatar
@@ -156,13 +170,17 @@ namespace ProjectGabriel.Editor
             clips["HipsY_min"] = FloatClip("FBT_HipsY_min", "", typeof(Animator), "RootT.y", midY - hipsyDownRig);
             clips["HipsY_mid"] = FloatClip("FBT_HipsY_mid", "", typeof(Animator), "RootT.y", midY);
             clips["HipsY_max"] = FloatClip("FBT_HipsY_max", "", typeof(Animator), "RootT.y", midY + hipsyUpRig);
-            // proxy rotation: pitch +1 = +X euler (lean forward), roll +1 = -Z (lean right)
-            clips["Pitch_min"] = FloatClip("FBT_HipsPitch_min", "FBT_HipsPitchProxy", typeof(Transform), "localEulerAnglesRaw.x", -PITCH_RANGE_DEG);
-            clips["Pitch_mid"] = FloatClip("FBT_HipsPitch_mid", "FBT_HipsPitchProxy", typeof(Transform), "localEulerAnglesRaw.x", 0f);
-            clips["Pitch_max"] = FloatClip("FBT_HipsPitch_max", "FBT_HipsPitchProxy", typeof(Transform), "localEulerAnglesRaw.x", +PITCH_RANGE_DEG);
-            clips["Roll_min"] = FloatClip("FBT_HipsRoll_min", "FBT_HipsPitchProxy/FBT_HipsRollProxy", typeof(Transform), "localEulerAnglesRaw.z", +ROLL_RANGE_DEG);
-            clips["Roll_mid"] = FloatClip("FBT_HipsRoll_mid", "FBT_HipsPitchProxy/FBT_HipsRollProxy", typeof(Transform), "localEulerAnglesRaw.z", 0f);
-            clips["Roll_max"] = FloatClip("FBT_HipsRoll_max", "FBT_HipsPitchProxy/FBT_HipsRollProxy", typeof(Transform), "localEulerAnglesRaw.z", -ROLL_RANGE_DEG);
+            // pitch target circles in the proxy's y/z plane: (0, -sin, cos) leans forward for +pitch, roll target is (sin, cos, 0) under the pitch proxy
+            var p0 = avatar.transform.InverseTransformPoint(hips.position);
+            var rollPath = "FBT_HipsPitchProxy/" + ROLL_TARGET;
+            clips["HipsPitchS_min"] = FloatClip("FBT_HipsPitchS_min", PITCH_TARGET, typeof(Transform), "m_LocalPosition.y", p0.y + 1f);
+            clips["HipsPitchS_max"] = FloatClip("FBT_HipsPitchS_max", PITCH_TARGET, typeof(Transform), "m_LocalPosition.y", p0.y - 1f);
+            clips["HipsPitchC_min"] = FloatClip("FBT_HipsPitchC_min", PITCH_TARGET, typeof(Transform), "m_LocalPosition.z", p0.z - 1f);
+            clips["HipsPitchC_max"] = FloatClip("FBT_HipsPitchC_max", PITCH_TARGET, typeof(Transform), "m_LocalPosition.z", p0.z + 1f);
+            clips["HipsRollS_min"] = FloatClip("FBT_HipsRollS_min", rollPath, typeof(Transform), "m_LocalPosition.x", -1f);
+            clips["HipsRollS_max"] = FloatClip("FBT_HipsRollS_max", rollPath, typeof(Transform), "m_LocalPosition.x", 1f);
+            clips["HipsRollC_min"] = FloatClip("FBT_HipsRollC_min", rollPath, typeof(Transform), "m_LocalPosition.y", -1f);
+            clips["HipsRollC_max"] = FloatClip("FBT_HipsRollC_max", rollPath, typeof(Transform), "m_LocalPosition.y", 1f);
             clips["Empty"] = FloatClip("FBT_Empty", "", typeof(Animator), "DummyUnused", 0f);
 
             var conType = FindType("VRC.SDK3.Dynamics.Constraint.Components.VRCRotationConstraint");
@@ -179,16 +197,18 @@ namespace ProjectGabriel.Editor
             ctrl.AddParameter(one);
             foreach (var (param, _) in MUSCLE_PARAMS)
                 ctrl.AddParameter("FBT/" + param, AnimatorControllerParameterType.Float);
-            foreach (var p in new[] { "FBT/HipsY", "FBT/HipsPitch", "FBT/HipsRoll" })
-                ctrl.AddParameter(p, AnimatorControllerParameterType.Float);
+            ctrl.AddParameter("FBT/HipsY", AnimatorControllerParameterType.Float);
+            foreach (var p in HIPS_ROT_PARAMS)
+                ctrl.AddParameter(FloatParam("FBT/" + p, RotDefault(p)));
 
             // smoothing proxies. animator-only, never added to the expression
             // parameters, so they cost nothing against the 256 sync bits.
             var smoothed = new List<string>();
             foreach (var (param, _) in MUSCLE_PARAMS) smoothed.Add("FBT/" + param);
-            smoothed.AddRange(new[] { "FBT/HipsY", "FBT/HipsPitch", "FBT/HipsRoll" });
+            smoothed.Add("FBT/HipsY");
+            foreach (var p in HIPS_ROT_PARAMS) smoothed.Add("FBT/" + p);
             foreach (var p in smoothed)
-                ctrl.AddParameter(PROXY_PREFIX + p.Substring(4), AnimatorControllerParameterType.Float);
+                ctrl.AddParameter(FloatParam(PROXY_PREFIX + p.Substring(4), RotDefault(p.Substring(4))));
             ctrl.AddParameter(new AnimatorControllerParameter
             {
                 name = SMOOTH_PARAM,
@@ -215,10 +235,9 @@ namespace ProjectGabriel.Editor
                     (clips[param + "_min"], -1f), (clips[param + "_max"], 1f))));
             children.Add(DirectChild(Tree1D(ctrl, "FBT HipsY", PROXY_PREFIX + "HipsY",
                 (clips["HipsY_min"], -1f), (clips["HipsY_mid"], 0f), (clips["HipsY_max"], 1f))));
-            children.Add(DirectChild(Tree1D(ctrl, "FBT HipsPitch", PROXY_PREFIX + "HipsPitch",
-                (clips["Pitch_min"], -1f), (clips["Pitch_mid"], 0f), (clips["Pitch_max"], 1f))));
-            children.Add(DirectChild(Tree1D(ctrl, "FBT HipsRoll2", PROXY_PREFIX + "HipsRoll",
-                (clips["Roll_min"], -1f), (clips["Roll_mid"], 0f), (clips["Roll_max"], 1f))));
+            foreach (var p in HIPS_ROT_PARAMS)
+                children.Add(DirectChild(Tree1D(ctrl, "FBT " + p, PROXY_PREFIX + p,
+                    (clips[p + "_min"], -1f), (clips[p + "_max"], 1f))));
             if (clips.ContainsKey("ConstraintOn"))
                 children.Add(DirectChild(clips["ConstraintOn"]));
             master.children = children.ToArray();
@@ -255,42 +274,7 @@ namespace ProjectGabriel.Editor
             var menuAsset = BuildExpressionsMenu(OUT_DIR + "/FBT_Menu.asset");
 
             // ---- avatar hierarchy: proxies + constraint ----
-            var oldProxy = avatar.transform.Find("FBT_HipsPitchProxy");
-            if (oldProxy != null) UnityEngine.Object.DestroyImmediate(oldProxy.gameObject);
-            var pitchGo = new GameObject("FBT_HipsPitchProxy");
-            pitchGo.transform.SetParent(avatar.transform, false);
-            pitchGo.transform.localPosition = avatar.transform.InverseTransformPoint(hips.position);
-            var rollGo = new GameObject("FBT_HipsRollProxy");
-            rollGo.transform.SetParent(pitchGo.transform, false);
-
-            if (conType != null)
-            {
-                var oldCon = hips.GetComponent(conType);
-                if (oldCon != null) UnityEngine.Object.DestroyImmediate(oldCon);
-                var con = hips.gameObject.AddComponent(conType);
-                var srcType = FindType("VRC.Dynamics.VRCConstraintSource");
-                var sourcesField = conType.GetField("Sources");
-                object sources = sourcesField.GetValue(con);
-                object src = Activator.CreateInstance(srcType);
-                srcType.GetField("SourceTransform").SetValue(src, rollGo.transform);
-                srcType.GetField("Weight").SetValue(src, 1f);
-                sources.GetType().GetMethod("Add", new[] { srcType }).Invoke(sources, new[] { src });
-                sourcesField.SetValue(con, sources);  // boxed struct list, must write back
-                var offQ = Quaternion.Inverse(rollGo.transform.rotation) * hips.rotation;
-                conType.GetField("RotationOffset").SetValue(con, offQ.eulerAngles);
-                conType.GetField("RotationAtRest").SetValue(con, hips.localRotation.eulerAngles);
-                conType.GetField("IsActive").SetValue(con, true);
-                // android's client does NOT apply animations to VRC constraint
-                // properties (found the hard way: quest saw zero hips rotation
-                // while PC worked). quest builds therefore run the constraint
-                // always-on (scene weight 1, hips slightly stiff outside the
-                // puppet), PC builds keep weight 0 and animate it to 1 inside
-                // the puppet state.
-                bool android = EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android;
-                conType.GetField("GlobalWeight").SetValue(con, android ? 1f : 0f);
-                conType.GetField("Locked").SetValue(con, true);
-                EditorUtility.SetDirty(con);
-            }
+            BuildHipsRig(avatar, hips, EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android);
 
             // ---- descriptor wiring ----
             WireDescriptor(avatar, ctrl, paramsAsset, menuAsset);
@@ -301,12 +285,7 @@ namespace ProjectGabriel.Editor
                       $"hips='{hipsPath}', {children.Count} tree children. Reupload the avatar.");
         }
 
-        /// <summary>
-        /// Point a second avatar (the quest build) at the rig that's already on
-        /// disk, without rebuilding it. Quest needs the hips constraint pinned
-        /// on in the scene because android ignores animated VRC constraint
-        /// properties, so it can't share the PC avatar's weight-0 setup.
-        /// </summary>
+        // quest needs the hips constraint pinned on in the scene, android ignores animated vrc constraint properties
         [MenuItem("Tools/ProjectGabriel/Wire Quest Avatar To Rig")]
         public static void WireQuestAvatar()
         {
@@ -317,37 +296,112 @@ namespace ProjectGabriel.Editor
                 EditorUtility.DisplayDialog("FBT Rig", "Select the quest avatar root first.", "ok");
                 return;
             }
-
-            var ctrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(OUT_DIR + "/FBT_Action.controller");
-            if (ctrl == null)
-            {
+            if (!WireQuestInto(avatar, DEFAULT_OUT_DIR))
                 EditorUtility.DisplayDialog("FBT Rig", "Build the rig on the PC avatar first.", "ok");
-                return;
-            }
-            var prms = AssetDatabase.LoadAssetAtPath(OUT_DIR + "/FBT_Params.asset",
+        }
+
+        public static bool WireQuestInto(GameObject avatar, string outDir)
+        {
+            var ctrl = AssetDatabase.LoadAssetAtPath<AnimatorController>(outDir + "/FBT_Action.controller");
+            if (ctrl == null)
+                return false;
+            var prms = AssetDatabase.LoadAssetAtPath(outDir + "/FBT_Params.asset",
                 FindType("VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionParameters"));
-            var menu = AssetDatabase.LoadAssetAtPath(OUT_DIR + "/FBT_Menu.asset",
+            var menu = AssetDatabase.LoadAssetAtPath(outDir + "/FBT_Menu.asset",
                 FindType("VRC.SDK3.Avatars.ScriptableObjects.VRCExpressionsMenu"));
 
             WireDescriptor(avatar, ctrl, prms, menu);
-
-            var hips = animator.GetBoneTransform(HumanBodyBones.Hips);
-            var conType = FindType("VRC.SDK3.Dynamics.Constraint.Components.VRCRotationConstraint");
-            var con = (hips != null && conType != null) ? hips.GetComponent(conType) : null;
-            if (con == null)
-            {
-                Debug.LogWarning("[FBT] no hips constraint on '" + avatar.name + "', copy the rigged hips over from the PC avatar");
-            }
-            else
-            {
-                conType.GetField("GlobalWeight").SetValue(con, 1f);
-                EditorUtility.SetDirty(con);
-            }
+            BuildHipsRig(avatar, avatar.GetComponent<Animator>().GetBoneTransform(HumanBodyBones.Hips), true);
 
             EditorUtility.SetDirty(avatar);
             AssetDatabase.SaveAssets();
             Debug.Log("[FBT] quest avatar '" + avatar.name + "' wired to the rig, hips constraint pinned on. Reupload it.");
+            return true;
         }
+
+        // proxies, aim targets and the hips constraint, must run with the avatar in its rest pose
+        private static void BuildHipsRig(GameObject avatar, Transform hips, bool pinned)
+        {
+            var root = avatar.transform;
+            foreach (var old in new[] { root.Find("FBT_HipsPitchProxy"), root.Find(PITCH_TARGET) })
+                if (old != null) UnityEngine.Object.DestroyImmediate(old.gameObject);
+
+            var p0 = root.InverseTransformPoint(hips.position);
+            var pitchGo = new GameObject("FBT_HipsPitchProxy");
+            pitchGo.transform.SetParent(root, false);
+            pitchGo.transform.localPosition = p0;
+            var rollGo = new GameObject("FBT_HipsRollProxy");
+            rollGo.transform.SetParent(pitchGo.transform, false);
+            var pitchTarget = new GameObject(PITCH_TARGET);
+            pitchTarget.transform.SetParent(root, false);
+            pitchTarget.transform.localPosition = p0 + Vector3.forward;
+            var rollTarget = new GameObject(ROLL_TARGET);
+            rollTarget.transform.SetParent(pitchGo.transform, false);
+            rollTarget.transform.localPosition = Vector3.up;
+
+            var aimType = FindType("VRC.SDK3.Dynamics.Constraint.Components.VRCAimConstraint");
+            if (aimType == null)
+            {
+                Debug.LogWarning("[FBT] VRCAimConstraint missing, hips rotation will not work (old SDK?)");
+                return;
+            }
+            AddAim(aimType, pitchGo, pitchTarget.transform, Vector3.forward, Vector3.right, root, Vector3.right);
+            AddAim(aimType, rollGo, rollTarget.transform, Vector3.up, Vector3.forward, pitchGo.transform, Vector3.forward);
+
+            var conType = FindType("VRC.SDK3.Dynamics.Constraint.Components.VRCRotationConstraint");
+            if (conType == null)
+            {
+                Debug.LogWarning("[FBT] VRC constraint type missing, hips rotation will not work (no SDK?)");
+                return;
+            }
+            var oldCon = hips.GetComponent(conType);
+            if (oldCon != null) UnityEngine.Object.DestroyImmediate(oldCon);
+            var con = hips.gameObject.AddComponent(conType);
+            AddSource(conType, con, rollGo.transform);
+            var offQ = Quaternion.Inverse(rollGo.transform.rotation) * hips.rotation;
+            conType.GetField("RotationOffset").SetValue(con, offQ.eulerAngles);
+            conType.GetField("RotationAtRest").SetValue(con, hips.localRotation.eulerAngles);
+            conType.GetField("IsActive").SetValue(con, true);
+            // pc keeps weight 0 and animates it to 1 in the puppet state, quest cant animate it so it stays on
+            conType.GetField("GlobalWeight").SetValue(con, pinned ? 1f : 0f);
+            conType.GetField("Locked").SetValue(con, true);
+            EditorUtility.SetDirty(con);
+        }
+
+        private static void AddAim(Type aimType, GameObject go, Transform target, Vector3 aim, Vector3 up, Transform upObject, Vector3 upVector)
+        {
+            var c = go.AddComponent(aimType);
+            AddSource(aimType, c, target);
+            aimType.GetField("AimAxis").SetValue(c, aim);
+            aimType.GetField("UpAxis").SetValue(c, up);
+            var wu = aimType.GetField("WorldUp");
+            wu.SetValue(c, Enum.Parse(wu.FieldType, "ObjectRotationUp"));
+            aimType.GetField("WorldUpTransform").SetValue(c, upObject);
+            aimType.GetField("WorldUpVector").SetValue(c, upVector);
+            aimType.GetField("RotationAtRest").SetValue(c, Vector3.zero);
+            aimType.GetField("RotationOffset").SetValue(c, Vector3.zero);
+            aimType.GetField("IsActive").SetValue(c, true);
+            aimType.GetField("GlobalWeight").SetValue(c, 1f);
+            aimType.GetField("Locked").SetValue(c, true);
+            EditorUtility.SetDirty(c);
+        }
+
+        private static void AddSource(Type conType, Component con, Transform source)
+        {
+            var srcType = FindType("VRC.Dynamics.VRCConstraintSource");
+            var sourcesField = conType.GetField("Sources");
+            object sources = sourcesField.GetValue(con);
+            object src = Activator.CreateInstance(srcType);
+            srcType.GetField("SourceTransform").SetValue(src, source);
+            srcType.GetField("Weight").SetValue(src, 1f);
+            sources.GetType().GetMethod("Add", new[] { srcType }).Invoke(sources, new[] { src });
+            sourcesField.SetValue(con, sources);  // boxed struct list, must write back
+        }
+
+        private static float RotDefault(string bare) => bare.EndsWith("C") && bare.StartsWith("Hips") ? 1f : 0f;
+
+        private static AnimatorControllerParameter FloatParam(string name, float def) =>
+            new AnimatorControllerParameter { name = name, type = AnimatorControllerParameterType.Float, defaultFloat = def };
 
         [MenuItem("Tools/ProjectGabriel/Export muscle_ranges.json")]
         public static void ExportRanges()
@@ -799,7 +853,8 @@ namespace ProjectGabriel.Editor
 
             var allNames = new List<string> { "FBT/Enable" };
             foreach (var (param, _) in MUSCLE_PARAMS) allNames.Add("FBT/" + param);
-            allNames.AddRange(new[] { "FBT/HipsY", "FBT/HipsPitch", "FBT/HipsRoll" });
+            allNames.Add("FBT/HipsY");
+            foreach (var p in HIPS_ROT_PARAMS) allNames.Add("FBT/" + p);
 
             var arr = Array.CreateInstance(entryType, allNames.Count);
             for (int i = 0; i < allNames.Count; i++)
@@ -810,7 +865,7 @@ namespace ProjectGabriel.Editor
                 var vtField = entryType.GetField("valueType");
                 vtField.SetValue(e, Enum.ToObject(vtField.FieldType, i == 0 ? 2 : 1));
                 entryType.GetField("saved").SetValue(e, false);
-                entryType.GetField("defaultValue").SetValue(e, 0f);
+                entryType.GetField("defaultValue").SetValue(e, RotDefault(allNames[i].Substring(4)));
                 var ns = entryType.GetField("networkSynced");
                 if (ns != null) ns.SetValue(e, true);
                 arr.SetValue(e, i);
