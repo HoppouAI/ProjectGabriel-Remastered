@@ -29,8 +29,15 @@ def build_backend(args):
         from ardy_engine import ArdyEngine
         from retarget_core import CoreRetargeter
         engine = ArdyEngine(model=args.model, steps=args.steps, hist_cap_s=args.history)
-        retargeter = CoreRetargeter(ranges_path, fps=engine.fps)
-        print(f'retargeter loaded (rest preset: core, {engine.fps}fps)')
+        calib = None if args.calibration.lower() == 'none' else Path(args.calibration)
+        if calib is not None and not calib.is_absolute():
+            calib = HERE / calib
+        if calib is not None and not calib.exists():
+            print(f'no avatar calibration at {calib}, using the generic mapping')
+            calib = None
+        retargeter = CoreRetargeter(ranges_path, fps=engine.fps, calib_path=calib)
+        how = f'calibrated to {retargeter.calib.avatar}' if retargeter.calib else 'generic mapping'
+        print(f'retargeter loaded (rest preset: core, {engine.fps}fps, {how})')
 
         def params_of(f):
             return retargeter.frame_to_params(
@@ -158,6 +165,9 @@ async def main():
                          'poses better but smothers the prompt so loops stall out, '
                          'shorter is snappier but drops the pose. 0.6 measured best')
     ap.add_argument('--raw', action='store_true', help='include raw joint data in frames')
+    ap.add_argument('--calibration', default='fbt_calibration.json',
+                    help="avatar calibration from unity (Tools > ProjectGabriel > Export FBT calibration), "
+                         "ardy models only. 'none' forces the generic mapping")
     args = ap.parse_args()
 
     engine, retargeter, params_of, raw_of = build_backend(args)

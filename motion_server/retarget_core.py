@@ -18,6 +18,7 @@ from collections import deque
 import numpy as np
 
 import retarget as base
+import fbt_calib
 from retarget import (
     PARAM_MUSCLES, NEUTRAL, SIGN, SCALE,
     HIPS_PITCH_MAX_DEG, HIPS_ROLL_MAX_DEG,
@@ -67,6 +68,10 @@ CORE_REST = {
     'SpineLR': -0.0091,
     'SpineTW': -0.0335,
 }
+
+# chest-in-hips and head-in-chest at the stand pose, so standing solves to an upright avatar
+SPINE_REST = fbt_calib._quat_to_mat((0.05579, -0.01674, 0.00363, 0.9983))
+HEAD_REST = fbt_calib._quat_to_mat((-0.01716, 0.01412, 0.00297, 0.99975))
 
 # measured stand pose: hips height and lowest joint above the y=0 floor
 STAND_HIPS_Y = 0.952
@@ -184,10 +189,11 @@ def extract_angles_core(rotmats, joints, heading):
 class CoreRetargeter(Retargeter):
     """same muscle gain machinery, ardy core27 inputs."""
 
-    def __init__(self, ranges_path, fps=20):
+    def __init__(self, ranges_path, fps=20, calib_path=None):
         base.REST_PRESETS['core'] = CORE_REST
         base.set_rest('core')
         super().__init__(ranges_path, fps=fps)
+        self.calib = fbt_calib.FBTCalibration(calib_path) if calib_path else None
         self._prev_pitch = None
         self._prev_roll = 0.0
         self._floor = 0.0
@@ -201,6 +207,22 @@ class CoreRetargeter(Retargeter):
         self._floor = 0.0
         self._absorbing = False
         self._hover_buf.clear()
+        if self.calib is not None:
+            self.calib.reset()
+
+    def _calibrated(self, joints, R):
+        J, cal, out = joints, self.calib, {}
+        Rh, Rc = R[HIPS], R[SPINE3]
+        out.update(cal.solve_spine(Rh.T @ Rc @ SPINE_REST.T))
+        out.update(cal.solve_head(Rc.T @ R[HEAD] @ HEAD_REST.T))
+        for side, sh, el, wr in (('L', L_ARM, L_FOREARM, L_HAND), ('R', R_ARM, R_FOREARM, R_HAND)):
+            out.update(cal.solve_arm(side, Rc.T @ _norm(J[el] - J[sh]), Rc.T @ _norm(J[wr] - J[el]),
+                                     NEUTRAL[f'{side}ArmTW']))
+        for side, hip, knee, ankle, toe in (('L', L_UPLEG, L_LEG, L_FOOT, L_TOE),
+                                            ('R', R_UPLEG, R_LEG, R_FOOT, R_TOE)):
+            out.update(cal.solve_leg(side, Rh.T @ _norm(J[knee] - J[hip]), Rh.T @ _norm(J[ankle] - J[knee]),
+                                     Rh.T @ _norm(J[toe] - J[ankle])))
+        return {k: _clamp(float(v)) for k, v in out.items()}
 
     @staticmethod
     def _continuous(angle, prev):
@@ -222,6 +244,8 @@ class CoreRetargeter(Retargeter):
         out = {}
         for param in PARAM_MUSCLES:
             out[param] = self._map(param, ang[param])
+        if self.calib is not None:
+            out.update(self._calibrated(joints, rotmats))
 
         pitch = self._continuous(ang['HipsPitch'] - base.REST_RAD.get('HipsPitch', 0.0),
                                  self._prev_pitch)

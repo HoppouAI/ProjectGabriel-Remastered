@@ -203,6 +203,16 @@ Rig facts (mirrored in retarget.py, keep in sync):
 humanScale + hips travel used by retarget.py. Regenerate with
 Tools > ProjectGabriel > Export muscle_ranges.json if the avatar changes.
 
+**Calibrate it to your avatar (ARDY models).** Select the avatar in Unity,
+run Tools > ProjectGabriel > Export FBT calibration and save the file as
+`fbt_calibration.json` in this folder. It poses the avatar through every FBT
+param and records where the bones really end up, and the server then solves
+each frame against that, so arms, legs and the spine land where the motion
+model put them instead of being estimated from generic muscle ranges. The
+server prints `calibrated to <avatar>` on start when it found the file.
+Export it again whenever the avatar's rig changes. The PC and Quest versions
+of one avatar share a skeleton, so one file covers both.
+
 ### 6. ARDY backend (optional, the good one)
 
 Separate venv because it wants modern torch/transformers that DART's

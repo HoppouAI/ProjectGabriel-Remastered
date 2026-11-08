@@ -17,6 +17,7 @@ motion_server/text_encoders/
 motion_server/body_models/
 motion_server/*.npz
 motion_server/test_frames.json
+motion_server/fbt_calibration.json
 
 __pycache__/
 *.py[cod]
