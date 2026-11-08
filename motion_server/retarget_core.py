@@ -257,6 +257,7 @@ class CoreRetargeter(Retargeter):
         self._prev_pitch, self._prev_roll = pitch, roll
         out['HipsPitch'] = _clamp(math.degrees(pitch) / HIPS_PITCH_MAX_DEG)
         out['HipsRoll'] = _clamp(math.degrees(roll) / HIPS_ROLL_MAX_DEG)
+        out.update(base.hips_rot_pairs(pitch, roll))
 
         # floor is y=0 exactly; below-floor frames get lifted per frame
         # (jumps stay real), sustained hovers get absorbed by the tracker

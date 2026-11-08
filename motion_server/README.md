@@ -172,8 +172,10 @@ and wires the avatar descriptor. Then reupload the avatar.
 
 Rig facts (mirrored in retarget.py, keep in sync):
 
-- 29 synced 8-bit floats + 1 bool = 233/256 sync bits.
-  26 muscle params, HipsY, HipsPitch, HipsRoll, FBT/Enable.
+- 31 synced 8-bit floats + 1 bool = 249/256 sync bits.
+  26 muscle params, HipsY, HipsPitchS/C, HipsRollS/C, FBT/Enable.
+  (Rigs built before the flip fix have HipsPitch/HipsRoll instead, 233 bits.
+  The server sends both, so either rig works.)
 - Action layer, one Direct Blend Tree, every child weighted by FBT/One (1.0).
   Each param is a Simple1D tree over min/max clips writing humanoid muscle
   curves with chain weights (SpineFB = Spine 1.0 + Chest 0.7 + UpperChest 0.5).
@@ -182,10 +184,12 @@ Rig facts (mirrored in retarget.py, keep in sync):
   the pelvis ~0.74m on "a person jumps up high"), -1.00 down (pelvis
   exactly on the floor at param -1). rig units = smpl meters * 1.05346
   (in-game fudge measured against the 1.0148 humanScale avatar).
-- Hips rotation: pitch +-90 deg (+1 = forward), roll +-90 (+1 = his right),
-  via two proxy transforms under the avatar root
-  (FBT_HipsPitchProxy euler x -> FBT_HipsRollProxy euler z) and a
-  VRCRotationConstraint on the Hips bone following the roll proxy. The
+- Hips rotation: pitch (+ = forward) and roll (+ = his right) arrive as
+  sin/cos pairs, so a front flip or cartwheel never wraps from +180 to -180
+  and smoothing can't spin him back through upright. The pairs move two aim
+  targets (FBT_HipsPitchTarget, FBT_HipsRollTarget), VRC aim constraints
+  point FBT_HipsPitchProxy -> FBT_HipsRollProxy at them, and a
+  VRCRotationConstraint on the Hips bone follows the roll proxy. The
   constraint GlobalWeight animates to 1 inside the puppet state and
   write-defaults returns it to the scene value 0 on exit.
 - WHY the constraint dance: unity nlerp-averages humanoid body rotation

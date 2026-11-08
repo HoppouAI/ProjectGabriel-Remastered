@@ -36,6 +36,7 @@ PARAMS = [
     "LLegFB", "LLegIO", "LKnee", "LFootUD",
     "RLegFB", "RLegIO", "RKnee", "RFootUD",
     "HipsY", "HipsPitch", "HipsRoll",
+    "HipsPitchS", "HipsPitchC", "HipsRollS", "HipsRollC",
 ]
 
 # face transport slots must match the avatars forward-to-animator behaviors, (key*255/127 - 1) * valid

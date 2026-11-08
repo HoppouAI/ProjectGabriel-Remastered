@@ -200,6 +200,12 @@ def _clamp(v, lo=-1.0, hi=1.0):
     return max(lo, min(hi, v))
 
 
+def hips_rot_pairs(pitch, roll):
+    """sin/cos of hips pitch and roll (radians), never wraps so flips and cartwheels stay continuous."""
+    return {'HipsPitchS': math.sin(pitch), 'HipsPitchC': math.cos(pitch),
+            'HipsRollS': math.sin(roll), 'HipsRollC': math.cos(roll)}
+
+
 def extract_angles(rotmats, joints):
     """raw anatomical angles (radians) per param plus root pitch/roll/yaw.
     arms are solved from predicted joint positions (shoulder->elbow->wrist)
@@ -375,6 +381,8 @@ class Retargeter:
             math.degrees(ang['HipsPitch'] - REST_RAD.get('HipsPitch', 0.0)) / HIPS_PITCH_MAX_DEG)
         out['HipsRoll'] = _clamp(
             math.degrees(ang['HipsRoll'] - REST_RAD.get('HipsRoll', 0.0)) / HIPS_ROLL_MAX_DEG)
+        out.update(hips_rot_pairs(ang['HipsPitch'] - REST_RAD.get('HipsPitch', 0.0),
+                                  ang['HipsRoll'] - REST_RAD.get('HipsRoll', 0.0)))
 
         # ground clamp: rollout drift can sink the whole body below the dart
         # floor and it never recovers. the floor plane sits where the standing
